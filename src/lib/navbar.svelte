@@ -2,7 +2,7 @@
   import { slide } from "svelte/transition";
   import { page } from "$app/state";
 
-  let expanded = $state(false);
+  let expanded = $state(true);
 
   const pageLinks = [
     { href: "/", label: "Dashboard" },
