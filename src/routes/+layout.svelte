@@ -19,11 +19,11 @@
     --width-content: 800px;
     --width-border: 2px;
 
-    /* Yes, lightness and chroma values are in fractions of the powers of two */
+    /* Yes, I have a thing for powers of two*/
     /* Yes, I have a problem */
     /* No, I won't change it */
-    --color-primary-l: calc(1 / 2);
-    --color-primary-c: calc(1 / 4);
+    --color-primary-l: calc(32 / 64);
+    --color-primary-c: calc(16 / 64);
     --color-primary-h: 135;
     --color-primary: oklch(var(--color-primary-l) var(--color-primary-c) var(--color-primary-h));
 
@@ -32,9 +32,9 @@
     --color-border-l: calc(46 / 64);
     --color-text-l: calc(2 / 64);
     --color-text-muted-l: calc(16 / 64);
-    --color-link-l: calc(3 / 8);
-    --color-link-hover-l: calc(1 / 2);
-    --color-link-visited-l: calc(1 / 4);
+    --color-link-l: calc(24 / 64);
+    --color-link-hover-l: calc(32 / 64);
+    --color-link-visited-l: calc(16 / 64);
 
     --color-base: oklch(from var(--color-primary) var(--color-base-l) calc(c / 16) h);
     --color-surface: oklch(from var(--color-primary) var(--color-surface-l) calc(c / 4) h);
@@ -48,15 +48,15 @@
 
   @media (prefers-color-scheme: dark) {
     :global(:root) {
-      --color-primary-l: calc(12 / 16);
-      --color-base-l: calc(1 / 8);
-      --color-surface-l: calc(2 / 8);
-      --color-border-l: calc(4 / 8);
-      --color-text-l: calc(6 / 8);
-      --color-text-muted-l: calc(1 / 2);
-      --color-link-l: calc(8 / 16);
-      --color-link-hover-l: calc(12 / 16);
-      --color-link-visited-l: calc(8 / 16);
+      --color-primary-l: calc(48 / 64);
+      --color-base-l: calc(8 / 64);
+      --color-surface-l: calc(16 / 64);
+      --color-border-l: calc(32 / 64);
+      --color-text-l: calc(48 / 64);
+      --color-text-muted-l: calc(32 / 64);
+      --color-link-l: calc(32 / 64);
+      --color-link-hover-l: calc(48 / 64);
+      --color-link-visited-l: calc(32 / 64);
     }
   }
 
