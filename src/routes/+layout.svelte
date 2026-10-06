@@ -26,6 +26,7 @@
     --color-primary-c: calc(16 / 64);
     --color-primary-h: 135;
     --color-primary: oklch(var(--color-primary-l) var(--color-primary-c) var(--color-primary-h));
+    --color-secondary: oklch(from var(--color-primary) l c calc(h + 64));
 
     --color-base-l: calc(62 / 64);
     --color-surface-l: calc(60 / 64);
@@ -41,9 +42,9 @@
     --color-border: oklch(from var(--color-primary) var(--color-border-l) calc(c / 8) h);
     --color-text: oklch(from var(--color-primary) var(--color-text-l) calc(c / 8) h);
     --color-text-muted: oklch(from var(--color-primary) var(--color-text-muted-l) calc(c / 8) h);
-    --color-link: oklch(from var(--color-primary) var(--color-link-l) c h);
-    --color-link-hover: oklch(from var(--color-primary) var(--color-link-hover-l) c h);
-    --color-link-visited: oklch(from var(--color-primary) var(--color-link-visited-l) c h);
+    --color-link: oklch(from var(--color-secondary) var(--color-link-l) c h);
+    --color-link-hover: oklch(from var(--color-secondary) var(--color-link-hover-l) c h);
+    --color-link-visited: oklch(from var(--color-secondary) var(--color-link-visited-l) c h);
   }
 
   @media (prefers-color-scheme: dark) {
