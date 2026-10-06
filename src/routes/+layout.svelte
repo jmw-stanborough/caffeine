@@ -51,7 +51,7 @@
       --color-primary-l: calc(48 / 64);
       --color-base-l: calc(8 / 64);
       --color-surface-l: calc(16 / 64);
-      --color-border-l: calc(32 / 64);
+      --color-border-l: calc(26 / 64);
       --color-text-l: calc(48 / 64);
       --color-text-muted-l: calc(32 / 64);
     }
