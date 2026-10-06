@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { slide } from "svelte/transition";
   import { page } from "$app/state";
+  import { slide } from "svelte/transition";
 
   let expanded = $state(true);
 
@@ -31,9 +31,6 @@
 
 <style>
   .navbar {
-    display: inline-block;
-
-    background-color: var(--color-surface);
     color: var(--color-text);
   }
 
@@ -46,8 +43,23 @@
   }
 
   .page-links {
-    display: flex;
+    display: grid;
+    margin: 0;
+    padding: 0;
+    grid-template-columns: repeat(auto-fit, minmax(max(22%, 120px), 1fr));
+    max-width: 100%;
+    align-items: center;
+    justify-content: center;
+
+    background-color: var(--color-surface);
     list-style: none;
+  }
+
+  .page-links li {
+    display: flex;
+    min-height: calc(1lh + 32px + var(--width-border) * 2);
+    align-items: center;
+    justify-content: center;
   }
 
   .page-link {
