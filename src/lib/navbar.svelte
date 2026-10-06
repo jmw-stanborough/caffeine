@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { slide } from "svelte/transition";
   import { page } from "$app/state";
+
+  let expanded = $state(false);
 
   const pageLinks = [
     { href: "/", label: "Dashboard" },
@@ -7,20 +10,32 @@
   ];
 </script>
 
-<nav>
-  <ul class="page-links">
-    {#each pageLinks as {href, label}}
-      {@const isActive = href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href)}
-      <li>
-        <a class="page-link" href={href} class:active={isActive} aria-current={isActive ? "page" : undefined}>
-          {label}
-        </a>
-      </li>
-    {/each}
-  </ul>
+<nav class="navbar">
+  {#if expanded}
+    <ul class="page-links" transition:slide={{ duration: 500 }}>
+      {#each pageLinks as {href, label}}
+        {@const isActive = href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href)}
+        <li>
+          <a class="page-link" href={href} class:active={isActive} aria-current={isActive ? "page" : undefined}>
+            {label}
+          </a>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
+  <button type="button" aria-expanded={expanded} aria-controls="nav-menu" onclick={() => (expanded = !expanded)}>
+    <span>Navigation</span>
+  </button>
 </nav>
 
 <style>
+  .navbar {
+    display: inline-block;
+
+    
+  }
+
   .page-links {
     display: flex;
     list-style: none;
@@ -29,7 +44,7 @@
   .page-link {
     display: inline-block;
     margin: 4px;
-    padding: 4px;
+    padding: 8px;
     border: solid var(--width-border) var(--color-border);
     border-radius: 8px;
 
@@ -39,7 +54,7 @@
   }
 
   .page-link:hover {
-    padding: 8px;
+    padding: 16px;
 
     font-weight: 800;
   }

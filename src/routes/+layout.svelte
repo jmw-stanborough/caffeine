@@ -4,7 +4,7 @@
   let { children } = $props();
 </script>
 
-<header><Navbar /></header>
+<header class="navigation-bar"><Navbar /></header>
 
 <main>
   {@render children()}
@@ -76,5 +76,10 @@
 
   :global(main a:visited) {
     color: var(--color-link-visited);
+  }
+
+  .navigation-bar {
+    position: sticky;
+    top: 0;
   }
 </style>
