@@ -18,6 +18,8 @@
 
   .card {
     padding: 16px;
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 8px;
 
     background-color: var(--color-surface);
   }

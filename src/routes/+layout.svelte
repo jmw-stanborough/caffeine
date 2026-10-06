@@ -15,6 +15,7 @@
 
   :global(:root) {
     --width-content: 800px;
+    --width-border: 2px;
 
     /* Yes, lightness and chroma values are in fractions of the powers of two */
     /* Yes, I have a problem */
@@ -26,11 +27,13 @@
 
     --color-base-l: calc(62 / 64);
     --color-surface-l: calc(54 / 64);
+    --color-border-l: calc(46 / 64);
     --color-text-l: calc(2 / 64);
     --color-text-muted-l: calc(16 / 64);
 
     --color-base: oklch(from var(--color-primary) var(--color-base-l) calc(c / 16) h);
     --color-surface: oklch(from var(--color-primary) var(--color-surface-l) calc(c / 4) h);
+    --color-border: oklch(from var(--color-primary) var(--color-border-l) calc(c / 4) h);
     --color-text: oklch(from var(--color-primary) var(--color-text-l) calc(c / 8) h);
     --color-text-muted: oklch(from var(--color-primary) var(--color-text-muted-l) calc(c / 4) h);
   }
@@ -40,6 +43,7 @@
       --color-primary-l: calc(12 / 16);
       --color-base-l: calc(1 / 8);
       --color-surface-l: calc(2 / 8);
+      --color-border-l: calc(4 / 8);
       --color-text-l: calc(6 / 8);
       --color-text-muted-l: calc(1 / 2);
     }
