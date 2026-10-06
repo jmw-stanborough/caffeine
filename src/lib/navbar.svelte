@@ -30,6 +30,8 @@
     display: inline-block;
     margin: 4px;
     padding: 4px;
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 8px;
 
     background-color: var(--color-surface);
     text-decoration: none;
