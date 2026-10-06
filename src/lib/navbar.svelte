@@ -24,7 +24,7 @@
     </ul>
   {/if}
 
-  <button type="button" aria-expanded={expanded} aria-controls="nav-menu" onclick={() => (expanded = !expanded)}>
+  <button class="toggle-expand-button" aria-expanded={expanded} aria-controls="nav-menu" onclick={() => (expanded = !expanded)}>
     <span>Navigation</span>
   </button>
 </nav>
@@ -33,7 +33,16 @@
   .navbar {
     display: inline-block;
 
-    
+    background-color: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .toggle-expand-button {
+    padding: 8px;
+
+    border: solid var(--width-border) var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text);
   }
 
   .page-links {
