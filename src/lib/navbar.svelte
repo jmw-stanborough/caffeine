@@ -25,19 +25,33 @@
   {/if}
 
   <button class="toggle-expand-button" aria-expanded={expanded} aria-controls="nav-menu" onclick={() => (expanded = !expanded)}>
-    <span>Navigation</span>
+    {#if expanded}
+      <span>Collapse</span>
+    {:else}
+      <span>Expand</span>
+    {/if}
   </button>
 </nav>
 
 <style>
   .navbar {
+    --link-margin: 4px;
+    --link-padding: 8px;
+    --link-hover-padding: calc(var(--link-padding) * 2);
+
     color: var(--color-text);
   }
 
   .toggle-expand-button {
+    display: block;
+    position: relative;
+    margin-top: calc(-1 * var(--width-border));
+    margin-inline: auto 4vw;
     padding: 8px;
 
     border: solid var(--width-border) var(--color-border);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
     background-color: var(--color-surface);
     color: var(--color-text);
   }
@@ -50,6 +64,7 @@
     max-width: 100%;
     align-items: center;
     justify-content: center;
+    border-bottom: solid var(--width-border) var(--color-border);
 
     background-color: var(--color-surface);
     list-style: none;
@@ -57,25 +72,28 @@
 
   .page-links li {
     display: flex;
-    min-height: calc(1lh + 32px + var(--width-border) * 2);
+    min-height: calc(1lh + (var(--link-margin) + var(--link-hover-padding) + var(--width-border)) * 2);
     align-items: center;
     justify-content: center;
+
+    line-height: var(--link-line-height);
   }
 
   .page-link {
     display: inline-block;
-    margin: 4px;
-    padding: 8px;
+    margin: var(--link-margin);
+    padding: var(--link-padding);
     border: solid var(--width-border) var(--color-border);
     border-radius: 8px;
 
     background-color: var(--color-surface);
+    line-height: inherit;
     text-decoration: none;
     transition: all 0.32s ease;
   }
 
   .page-link:hover {
-    padding: 16px;
+    padding: var(--link-hover-padding);
 
     font-weight: 800;
   }
