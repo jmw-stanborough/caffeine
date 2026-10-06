@@ -13,6 +13,7 @@
 <style>
   .cards {
     margin: 16px auto;
+    padding-inline: 16px;
     max-width: var(--width-content);
   }
 
