@@ -1,15 +1,17 @@
 <script>
+  import Navbar from "$lib/navbar.svelte";
+
   let { children } = $props();
 </script>
+
+<header><Navbar /></header>
 
 <main>
   {@render children()}
 </main>
 
 <style>
-  *,
-  *::before,
-  *::after {
+  :global(*, *::before, *::after) {
     box-sizing: border-box;
   }
 
@@ -30,12 +32,18 @@
     --color-border-l: calc(46 / 64);
     --color-text-l: calc(2 / 64);
     --color-text-muted-l: calc(16 / 64);
+    --color-link-l: calc(3 / 8);
+    --color-link-hover-l: calc(1 / 2);
+    --color-link-visited-l: calc(1 / 4);
 
     --color-base: oklch(from var(--color-primary) var(--color-base-l) calc(c / 16) h);
     --color-surface: oklch(from var(--color-primary) var(--color-surface-l) calc(c / 4) h);
     --color-border: oklch(from var(--color-primary) var(--color-border-l) calc(c / 4) h);
     --color-text: oklch(from var(--color-primary) var(--color-text-l) calc(c / 8) h);
     --color-text-muted: oklch(from var(--color-primary) var(--color-text-muted-l) calc(c / 4) h);
+    --color-link: oklch(from var(--color-primary) var(--color-link-l) calc(c / 2) h);
+    --color-link-hover: oklch(from var(--color-primary) var(--color-link-hover-l) c h);
+    --color-link-visited: oklch(from var(--color-primary) var(--color-link-visited-l) calc(c / 2) h);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -46,6 +54,9 @@
       --color-border-l: calc(4 / 8);
       --color-text-l: calc(6 / 8);
       --color-text-muted-l: calc(1 / 2);
+      --color-link-l: calc(8 / 16);
+      --color-link-hover-l: calc(12 / 16);
+      --color-link-visited-l: calc(8 / 16);
     }
   }
 
@@ -54,5 +65,18 @@
     min-height: 100vh;
 
     background-color: var(--color-base);
+    color: var(--color-text);
+  }
+
+  :global(a) {
+    color: var(--color-link);
+  }
+
+  :global(a:hover) {
+    color: var(--color-link-hover);
+  }
+
+  :global(main a:visited) {
+    color: var(--color-link-visited);
   }
 </style>
