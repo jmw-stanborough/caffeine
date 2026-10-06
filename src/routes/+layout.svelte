@@ -30,20 +30,20 @@
     --color-base-l: calc(62 / 64);
     --color-surface-l: calc(54 / 64);
     --color-border-l: calc(46 / 64);
-    --color-text-l: calc(2 / 64);
-    --color-text-muted-l: calc(16 / 64);
-    --color-link-l: calc(24 / 64);
-    --color-link-hover-l: calc(32 / 64);
-    --color-link-visited-l: calc(16 / 64);
+    --color-text-l: calc(16/ 64);
+    --color-text-muted-l: calc(32 / 64);
+    --color-link-l: calc(32/ 64);
+    --color-link-hover-l: calc(40 / 64);
+    --color-link-visited-l: calc(24 / 64);
 
     --color-base: oklch(from var(--color-primary) var(--color-base-l) calc(c / 16) h);
     --color-surface: oklch(from var(--color-primary) var(--color-surface-l) calc(c / 4) h);
     --color-border: oklch(from var(--color-primary) var(--color-border-l) calc(c / 4) h);
-    --color-text: oklch(from var(--color-primary) var(--color-text-l) calc(c / 8) h);
+    --color-text: oklch(from var(--color-primary) var(--color-text-l) calc(c / 4) h);
     --color-text-muted: oklch(from var(--color-primary) var(--color-text-muted-l) calc(c / 4) h);
-    --color-link: oklch(from var(--color-primary) var(--color-link-l) calc(c / 2) h);
+    --color-link: oklch(from var(--color-primary) var(--color-link-l) c h);
     --color-link-hover: oklch(from var(--color-primary) var(--color-link-hover-l) c h);
-    --color-link-visited: oklch(from var(--color-primary) var(--color-link-visited-l) calc(c / 2) h);
+    --color-link-visited: oklch(from var(--color-primary) var(--color-link-visited-l) c h);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -54,9 +54,6 @@
       --color-border-l: calc(32 / 64);
       --color-text-l: calc(48 / 64);
       --color-text-muted-l: calc(32 / 64);
-      --color-link-l: calc(32 / 64);
-      --color-link-hover-l: calc(48 / 64);
-      --color-link-visited-l: calc(32 / 64);
     }
   }
 
