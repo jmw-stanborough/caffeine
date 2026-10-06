@@ -24,7 +24,7 @@
     /* No, I won't change it */
     --color-primary-l: calc(32 / 64);
     --color-primary-c: calc(16 / 64);
-    --color-primary-h: 135;
+    --color-primary-h: 180;
     --color-primary: oklch(var(--color-primary-l) var(--color-primary-c) var(--color-primary-h));
     --color-secondary: oklch(from var(--color-primary) l c calc(h + 64));
 
