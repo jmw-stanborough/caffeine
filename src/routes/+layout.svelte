@@ -1,4 +1,5 @@
 <script>
+  import "@fontsource-variable/roboto";
   import Navbar from "$lib/navbar.svelte";
 
   let { children } = $props();
@@ -64,6 +65,7 @@
 
     background-color: var(--color-base);
     color: var(--color-text);
+    font-family: "Roboto Variable", sans-serif;
   }
 
   :global(a) {
