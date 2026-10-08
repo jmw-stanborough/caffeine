@@ -4,9 +4,9 @@
 
 <section class="cards">
   <div class="card">
-    <h1 class="card-header">This is the card header</h1>
-    <p class="card-body">This is the card body.</p>
-    <p class="card-footer">This is the card footer.</p>
+    <h1 class="card-header">Welcome to Caffeine!</h1>
+    <p class="card-body">This is the dashboard. Please use the navigation bar to access your desired function.</p>
+    <p class="card-footer">More to come soon!</p>
   </div>
 </section>
 
