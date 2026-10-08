@@ -96,5 +96,6 @@
     padding: var(--link-hover-padding);
 
     font-weight: 800;
+    text-shadow: var(--color-primary) 0 0 16px;
   }
 </style>
