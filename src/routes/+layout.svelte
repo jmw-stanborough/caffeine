@@ -27,7 +27,7 @@
     --color-primary-c: calc(16 / 64);
     --color-primary-h: 90;
     --color-primary: oklch(var(--color-primary-l) var(--color-primary-c) var(--color-primary-h));
-    --color-secondary: oklch(from var(--color-primary) l c calc(h + 32));
+    --color-secondary: oklch(from var(--color-primary) l c calc(h - 32));
 
     --color-base-l: calc(62 / 64);
     --color-surface-l: calc(60 / 64);
