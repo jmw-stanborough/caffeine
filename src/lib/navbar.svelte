@@ -53,7 +53,7 @@
     border-top: none;
     border-radius: 0 0 8px 8px;
     background-color: var(--color-surface);
-    color: var(--color-text);
+    color: var(--color-secondary);
   }
 
   .page-links {
