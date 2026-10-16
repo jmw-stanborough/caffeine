@@ -39,21 +39,24 @@
     --link-padding: 8px;
     --link-hover-padding: calc(var(--link-padding) * 2);
 
+    position: relative;
+
     color: var(--color-text);
   }
 
   .toggle-expand-button {
-    display: block;
-    position: relative;
-    margin-top: calc(-1 * var(--width-border));
-    margin-inline: auto 4vw;
-    padding: 8px;
+    position: absolute;
+    top: calc(100% - var(--width-border));
+    right: 4vw;
+    z-index: 10;
 
+    padding: 8px;
     border: solid var(--width-border) var(--color-border);
     border-top: none;
     border-radius: 0 0 8px 8px;
     background-color: var(--color-surface);
     color: var(--color-secondary);
+    cursor: pointer;
   }
 
   .page-links {

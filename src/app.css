@@ -75,7 +75,7 @@ main a:visited {
 }
 
 .page-header {
-  margin-block: 0 2rem;
+  margin-block: 1rem 2rem;
   margin-inline: auto;
   text-align: center;
 
