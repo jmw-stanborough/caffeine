@@ -5,8 +5,9 @@
 }
 
 :root {
-  --width-content: 800px;
   --width-border: 2px;
+  --width-content: 800px;
+  --width-prose: 75ch;
 
   --color-base: #fbf1c7;
   --color-surface: #ebdbb2;
@@ -59,4 +60,24 @@ a:hover {
 
 main a:visited {
   color: var(--color-link-visited);
+}
+
+.mx-center {
+  margin-inline: center;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-muted {
+  color: var(--color-text-muted);
+}
+
+.page-header {
+  margin-block: 0 2rem;
+  margin-inline: auto;
+  text-align: center;
+
+  color: var(--color-primary);
 }

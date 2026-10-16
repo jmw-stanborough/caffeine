@@ -10,7 +10,7 @@
   <Navbar />
 </header>
 
-<main>
+<main class="main-content">
   {@render children()}
 </main>
 
@@ -18,5 +18,9 @@
   .navigation-bar {
     position: sticky;
     top: 0;
+  }
+
+  .main-content {
+    margin-inline: 2vw;
   }
 </style>
