@@ -29,13 +29,6 @@
     justify-content: space-between;
   }
 
-  .page-title {
-    margin: 0;
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--color-text);
-  }
-
   .cards-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

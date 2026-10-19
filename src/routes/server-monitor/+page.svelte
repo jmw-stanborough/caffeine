@@ -2,7 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import ServerCard from "./server-card.svelte";
-  import AddServerModal from "./add-server-modal.svelte";
+  import ServerModal from "./server-modal.svelte";
 
   interface Agent {
     port: number;
@@ -19,7 +19,9 @@
   let servers = $state<Server[]>([]);
   let loading = $state(true);
   let errorMessage = $state<string | null>(null);
+
   let isModalOpen = $state(false);
+  let editingServer = $state<Server | undefined>(undefined);
 
   async function fetchServers() {
     loading = true;
@@ -33,9 +35,28 @@
     }
   }
 
-  async function handleSaveServer(newServer: Server) {
+  function openAddModal() {
+    editingServer = undefined;
+    isModalOpen = true;
+  }
+
+  function openEditModal(server: Server) {
+    editingServer = server;
+    isModalOpen = true;
+  }
+
+  async function handleSaveServer(savedServer: Server, originalHost?: string) {
     try {
-      servers = await invoke<Server[]>("save_server", { newServer });
+      if (originalHost) {
+        servers = await invoke<Server[]>("update_server", {
+          originalHost,
+          updatedServer: savedServer
+        });
+      } else {
+        servers = await invoke<Server[]>("save_server", {
+          newServer: savedServer
+        });
+      }
     } catch (err) {
       errorMessage = String(err);
     }
@@ -64,14 +85,13 @@
   {:else}
     <section class="server-grid">
       {#each servers as server (server.host)}
-        <ServerCard {server} />
+        <ServerCard {server} onclick={() => openEditModal(server)} />
       {/each}
 
-      <!-- Dynamic "Add Server" Grid Card -->
       <button 
         class="add-server-card" 
         type="button" 
-        onclick={() => (isModalOpen = true)}
+        onclick={openAddModal}
         aria-label="Add new server"
       >
         <span class="plus-icon" aria-hidden="true">+</span>
@@ -81,7 +101,11 @@
   {/if}
 </div>
 
-<AddServerModal bind:open={isModalOpen} onsave={handleSaveServer} />
+<ServerModal 
+  bind:open={isModalOpen} 
+  server={editingServer} 
+  onsave={handleSaveServer} 
+/>
 
 <style>
   .page-container {

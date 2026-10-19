@@ -60,3 +60,33 @@ pub fn save_server(app: AppHandle, new_server: Server) -> Result<Vec<Server>, St
 
     Ok(settings.servers)
 }
+
+#[tauri::command]
+pub fn update_server(
+    app: AppHandle,
+    original_host: String,
+    updated_server: Server,
+) -> Result<Vec<Server>, String> {
+    let path = get_settings_path(&app)?;
+    let contents =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read settings: {e}"))?;
+
+    let mut settings: ServerMonitorSettings =
+        serde_json::from_str(&contents).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+
+    if let Some(target) = settings
+        .servers
+        .iter_mut()
+        .find(|s| s.host == original_host)
+    {
+        *target = updated_server;
+    } else {
+        return Err(format!("Server with host '{original_host}' not found"));
+    }
+
+    let json = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+    fs::write(&path, json).map_err(|e| format!("Failed to write settings: {e}"))?;
+
+    Ok(settings.servers)
+}

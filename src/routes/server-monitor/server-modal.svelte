@@ -13,10 +13,12 @@
 
   let {
     open = $bindable(false),
+    server = undefined,
     onsave
   }: {
     open: boolean;
-    onsave: (server: Server) => Promise<void> | void;
+    server?: Server;
+    onsave: (server: Server, originalHost?: string) => Promise<void> | void;
   } = $props();
 
   let formLabel = $state("");
@@ -27,17 +29,27 @@
   let formAgentKey = $state("");
   let isSubmitting = $state(false);
 
-  function resetForm() {
-    formLabel = "";
-    formHost = "";
-    formDescription = "";
-    formHasAgent = false;
-    formAgentPort = 9100;
-    formAgentKey = "";
-  }
+  $effect(() => {
+    if (open) {
+      if (server) {
+        formLabel = server.label;
+        formHost = server.host;
+        formDescription = server.description ?? "";
+        formHasAgent = Boolean(server.agent);
+        formAgentPort = server.agent?.port ?? 9100;
+        formAgentKey = server.agent?.api_key ?? "";
+      } else {
+        formLabel = "";
+        formHost = "";
+        formDescription = "";
+        formHasAgent = false;
+        formAgentPort = 9100;
+        formAgentKey = "";
+      }
+    }
+  });
 
   function handleClose() {
-    resetForm();
     open = false;
   }
 
@@ -47,17 +59,20 @@
 
     isSubmitting = true;
     try {
-      await onsave({
-        label: formLabel.trim(),
-        host: formHost.trim(),
-        description: formDescription.trim() || undefined,
-        agent: formHasAgent
-          ? {
-              port: Number(formAgentPort),
-              api_key: formAgentKey.trim()
-            }
-          : undefined
-      });
+      await onsave(
+        {
+          label: formLabel.trim(),
+          host: formHost.trim(),
+          description: formDescription.trim() || undefined,
+          agent: formHasAgent
+            ? {
+                port: Number(formAgentPort),
+                api_key: formAgentKey.trim()
+              }
+            : undefined
+        },
+        server?.host
+      );
       handleClose();
     } finally {
       isSubmitting = false;
@@ -74,7 +89,7 @@
       aria-modal="true"
       aria-labelledby="modal-heading"
     >
-      <h2 id="modal-heading">Add New Server</h2>
+      <h2 id="modal-heading">{server ? "Configure Server" : "Add New Server"}</h2>
 
       <form class="modal-form" onsubmit={handleSubmit}>
         <label>
@@ -115,7 +130,7 @@
         <div class="modal-actions">
           <button type="button" class="btn-cancel" onclick={handleClose}>Cancel</button>
           <button type="submit" class="btn-submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : "Save Server"}
+            {isSubmitting ? "Saving..." : server ? "Apply Changes" : "Save Server"}
           </button>
         </div>
       </form>

@@ -11,10 +11,22 @@
     agent?: Agent;
   }
 
-  let { server }: { server: Server } = $props();
+  let { 
+    server, 
+    onclick 
+  }: { 
+    server: Server; 
+    onclick: () => void; 
+  } = $props();
 </script>
 
-<article class="server-card">
+<article 
+  class="server-card" 
+  {onclick}
+  role="button"
+  tabindex="0"
+  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') onclick(); }}
+>
   <div class="card-main">
     <div class="card-title-row">
       <span
@@ -46,6 +58,18 @@
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.5rem;
     background-color: var(--color-surface);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .server-card:hover {
+    border-color: var(--color-primary);
+  }
+
+  .server-card:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   .card-main {
