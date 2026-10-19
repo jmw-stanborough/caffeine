@@ -83,6 +83,24 @@
     }
   }
 
+  async function handleDeleteServer(hostToDelete: string) {
+    try {
+      items = items.filter((s) => s.host !== hostToDelete);
+
+      const updated = await invoke<Server[]>("delete_server", {
+        host: hostToDelete
+      });
+      items = updated.map((s) => ({ ...s, id: s.host }));
+
+      const nextStatus = { ...statusMap };
+      delete nextStatus[hostToDelete];
+      statusMap = nextStatus;
+    } catch (err) {
+      errorMessage = String(err);
+      await fetchServers();
+    }
+  }
+
   function handleDndConsider(e: CustomEvent<{ items: DndServer[] }>) {
     items = e.detail.items;
   }
@@ -170,6 +188,7 @@
   bind:open={isModalOpen}
   server={editingServer}
   onsave={handleSaveServer}
+  ondelete={handleDeleteServer}
 />
 
 <style>

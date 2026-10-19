@@ -14,125 +14,163 @@
   let {
     open = $bindable(false),
     server = undefined,
-    onsave
+    onsave,
+    ondelete
   }: {
     open: boolean;
     server?: Server;
-    onsave: (server: Server, originalHost?: string) => Promise<void> | void;
+    onsave: (savedServer: Server, originalHost?: string) => void;
+    ondelete: (host: string) => void;
   } = $props();
 
-  let formLabel = $state("");
-  let formHost = $state("");
-  let formDescription = $state("");
-  let formHasAgent = $state(false);
-  let formAgentPort = $state(9100);
-  let formAgentKey = $state("");
-  let isSubmitting = $state(false);
+  let host = $state("");
+  let label = $state("");
+  let description = $state("");
+  let hasAgent = $state(false);
+  let agentPort = $state<number>(8080);
+  let agentApiKey = $state("");
+  let confirmingDelete = $state(false);
 
   $effect(() => {
-    if (open) {
-      if (server) {
-        formLabel = server.label;
-        formHost = server.host;
-        formDescription = server.description ?? "";
-        formHasAgent = Boolean(server.agent);
-        formAgentPort = server.agent?.port ?? 9100;
-        formAgentKey = server.agent?.api_key ?? "";
-      } else {
-        formLabel = "";
-        formHost = "";
-        formDescription = "";
-        formHasAgent = false;
-        formAgentPort = 9100;
-        formAgentKey = "";
-      }
+    if (server) {
+      host = server.host;
+      label = server.label;
+      description = server.description ?? "";
+      hasAgent = !!server.agent;
+      agentPort = server.agent?.port ?? 8080;
+      agentApiKey = server.agent?.api_key ?? "";
+    } else {
+      host = "";
+      label = "";
+      description = "";
+      hasAgent = false;
+      agentPort = 8080;
+      agentApiKey = "";
     }
+    confirmingDelete = false;
   });
 
-  function handleClose() {
+  function close() {
     open = false;
+    confirmingDelete = false;
   }
 
-  async function handleSubmit(e: SubmitEvent) {
+  function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
-    if (!formLabel.trim() || !formHost.trim()) return;
+    if (!host.trim() || !label.trim()) return;
 
-    isSubmitting = true;
-    try {
-      await onsave(
-        {
-          label: formLabel.trim(),
-          host: formHost.trim(),
-          description: formDescription.trim() || undefined,
-          agent: formHasAgent
-            ? {
-                port: Number(formAgentPort),
-                api_key: formAgentKey.trim()
-              }
-            : undefined
-        },
-        server?.host
-      );
-      handleClose();
-    } finally {
-      isSubmitting = false;
+    const payload: Server = {
+      host: host.trim(),
+      label: label.trim(),
+      description: description.trim() || undefined,
+      agent: hasAgent
+        ? {
+            port: Number(agentPort),
+            api_key: agentApiKey.trim()
+          }
+        : undefined
+    };
+
+    onsave(payload, server?.host);
+    close();
+  }
+
+  function handleDelete() {
+    if (!server) return;
+    if (!confirmingDelete) {
+      confirmingDelete = true;
+      return;
     }
+    ondelete(server.host);
+    close();
   }
 </script>
 
 {#if open}
-  <div class="modal-backdrop" onclick={handleClose} role="presentation">
+  <div class="modal-backdrop" onclick={close} role="presentation">
     <div
-      class="modal-content"
+      class="modal-card"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-heading"
+      aria-labelledby="modal-title"
     >
-      <h2 id="modal-heading">{server ? "Configure Server" : "Add New Server"}</h2>
+      <header class="modal-header">
+        <h2 id="modal-title">{server ? "Edit Server" : "Add Server"}</h2>
+        <button type="button" class="btn-close" onclick={close} aria-label="Close modal">✕</button>
+      </header>
 
-      <form class="modal-form" onsubmit={handleSubmit}>
-        <label>
-          <span>Label *</span>
-          <input type="text" bind:value={formLabel} placeholder="VSVR-001" required />
-        </label>
-
-        <label>
-          <span>Host / IP *</span>
-          <input type="text" bind:value={formHost} placeholder="172.19.20.142" required />
-        </label>
-
-        <label>
-          <span>Description</span>
-          <input type="text" bind:value={formDescription} placeholder="Primary DHCP/DNS server" />
-        </label>
-
-        <fieldset class="agent-fieldset">
-          <label class="checkbox-row">
-            <input type="checkbox" bind:checked={formHasAgent} />
-            <span>Enable Monitoring Agent</span>
-          </label>
-
-          {#if formHasAgent}
-            <div class="agent-inputs">
-              <label>
-                <span>Agent Port</span>
-                <input type="number" bind:value={formAgentPort} />
-              </label>
-              <label>
-                <span>API Key</span>
-                <input type="password" bind:value={formAgentKey} />
-              </label>
-            </div>
-          {/if}
-        </fieldset>
-
-        <div class="modal-actions">
-          <button type="button" class="btn-cancel" onclick={handleClose}>Cancel</button>
-          <button type="submit" class="btn-submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : server ? "Apply Changes" : "Save Server"}
-          </button>
+      <form onsubmit={handleSubmit} class="modal-form">
+        <div class="field">
+          <label for="server-label">Label</label>
+          <input
+            id="server-label"
+            type="text"
+            required
+            placeholder="e.g. Primary DNS"
+            bind:value={label}
+          />
         </div>
+
+        <div class="field">
+          <label for="server-host">Host / IP</label>
+          <input
+            id="server-host"
+            type="text"
+            required
+            placeholder="e.g. 172.19.20.245"
+            bind:value={host}
+          />
+        </div>
+
+        <div class="field">
+          <label for="server-desc">Description (Optional)</label>
+          <input
+            id="server-desc"
+            type="text"
+            placeholder="e.g. Secondary DHCP/DNS server"
+            bind:value={description}
+          />
+        </div>
+
+        <div class="checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={hasAgent} />
+            <span>Enable Agent Integration</span>
+          </label>
+        </div>
+
+        {#if hasAgent}
+          <div class="agent-fields">
+            <div class="field">
+              <label for="agent-port">Agent Port</label>
+              <input id="agent-port" type="number" min="1" max="65535" bind:value={agentPort} />
+            </div>
+
+            <div class="field">
+              <label for="agent-key">API Key</label>
+              <input id="agent-key" type="password" bind:value={agentApiKey} />
+            </div>
+          </div>
+        {/if}
+
+        <footer class="modal-actions">
+          {#if server}
+            <button
+              type="button"
+              class="btn-delete"
+              class:confirming={confirmingDelete}
+              onclick={handleDelete}
+            >
+              {confirmingDelete ? "Click to Confirm Delete" : "Delete"}
+            </button>
+          {/if}
+
+          <div class="actions-right">
+            <button type="button" class="btn-cancel" onclick={close}>Cancel</button>
+            <button type="submit" class="btn-submit">Save</button>
+          </div>
+        </footer>
       </form>
     </div>
   </div>
@@ -142,103 +180,145 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 0.65);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
+    z-index: 1000;
   }
 
-  .modal-content {
+  .modal-card {
     background-color: var(--color-surface);
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.5rem;
-    padding: 1.5rem;
     width: 100%;
-    max-width: 24rem;
+    max-width: 28rem;
+    padding: 1.5rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
   }
 
-  .modal-content h2 {
-    margin: 0 0 1rem 0;
-    color: var(--color-primary);
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+  }
+
+  .modal-header h2 {
+    margin: 0;
     font-size: 1.25rem;
+    color: var(--color-text);
+  }
+
+  .btn-close {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 1rem;
+    cursor: pointer;
   }
 
   .modal-form {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 1rem;
   }
 
-  .modal-form label {
+  .field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.35rem;
+  }
+
+  .field label {
     font-size: 0.85rem;
     color: var(--color-text-muted);
   }
 
-  .modal-form input[type="text"],
-  .modal-form input[type="number"],
-  .modal-form input[type="password"] {
-    padding: 0.5rem;
+  .field input {
+    background-color: color-mix(in srgb, var(--color-surface) 70%, black);
     border: solid var(--width-border) var(--color-border);
-    border-radius: 0.25rem;
-    background-color: var(--color-base);
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.75rem;
     color: var(--color-text);
+    outline: none;
   }
 
-  .agent-fieldset {
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.25rem;
-    padding: 0.75rem;
-    margin: 0.25rem 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+  .field input:focus {
+    border-color: var(--color-primary);
   }
 
   .checkbox-row {
-    flex-direction: row !important;
-    align-items: center;
-    gap: 0.5rem;
+    margin-top: 0.25rem;
   }
 
-  .agent-inputs {
+  .checkbox-label {
     display: flex;
+    align-items: center;
     gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--color-text);
+    cursor: pointer;
+  }
+
+  .agent-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.375rem;
   }
 
   .modal-actions {
     display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
+    align-items: center;
+    justify-content: space-between;
     margin-top: 0.5rem;
+    padding-top: 1rem;
+    border-top: solid var(--width-border) var(--color-border);
   }
 
-  .btn-cancel,
-  .btn-submit {
+  .actions-right {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+
+  .btn-delete {
+    background-color: transparent;
+    color: #ef4444;
+    border: solid var(--width-border) #ef4444;
     padding: 0.5rem 0.75rem;
-    border-radius: 0.25rem;
+    border-radius: 0.375rem;
     font-size: 0.85rem;
+    font-weight: 600;
     cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .btn-delete:hover,
+  .btn-delete.confirming {
+    background-color: #ef4444;
+    color: #ffffff;
   }
 
   .btn-cancel {
     background: transparent;
     border: solid var(--width-border) var(--color-border);
-    color: var(--color-text);
+    color: var(--color-text-muted);
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
   }
 
   .btn-submit {
     background-color: var(--color-primary);
+    color: var(--color-background);
     border: none;
-    color: var(--color-base);
     font-weight: 600;
-  }
-
-  .btn-submit:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
   }
 </style>

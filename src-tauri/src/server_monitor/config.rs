@@ -1,6 +1,6 @@
 use super::types::{Server, ServerMonitorSettings};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -15,6 +15,21 @@ fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create settings directory: {e}"))?;
 
     Ok(settings_dir.join("settings.json"))
+}
+
+fn read_settings(path: &Path) -> Result<ServerMonitorSettings, String> {
+    if !path.exists() {
+        return Ok(ServerMonitorSettings::default());
+    }
+
+    let contents =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read settings file: {e}"))?;
+
+    if contents.trim().is_empty() {
+        return Ok(ServerMonitorSettings::default());
+    }
+
+    serde_json::from_str(&contents).map_err(|e| format!("Failed to parse settings JSON: {e}"))
 }
 
 #[tauri::command]
@@ -87,6 +102,21 @@ pub fn update_server(
     let json = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("Failed to serialize settings: {e}"))?;
     fs::write(&path, json).map_err(|e| format!("Failed to write settings: {e}"))?;
+
+    Ok(settings.servers)
+}
+
+#[tauri::command]
+pub fn delete_server(app: AppHandle, host: String) -> Result<Vec<Server>, String> {
+    let path = get_settings_path(&app)?;
+    let mut settings = read_settings(&path)?;
+
+    settings.servers.retain(|s| s.host != host);
+
+    let json = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+
+    fs::write(&path, json).map_err(|e| format!("Failed to write settings file: {e}"))?;
 
     Ok(settings.servers)
 }
