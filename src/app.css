@@ -1,16 +1,18 @@
-*,
+**,
 *::before,
 *::after {
   box-sizing: border-box;
 }
 
 :root {
-  --width-border: 2px;
-  --width-content: 800px;
+  --width-border: 1px;
+  --width-sidebar: 200px;
   --width-prose: 75ch;
 
   --color-base: #fbf1c7;
   --color-surface: #ebdbb2;
+  --color-surface-hover: #e0cf9d;
+  --color-surface-active: #d5c4a1;
   --color-border: #d5c4a1;
 
   --color-text: #3c3836;
@@ -21,13 +23,17 @@
 
   --color-link: #458588;
   --color-link-hover: #689d6a;
-  --color-link-visited: #b16286;
+
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --color-base: #282828;
     --color-surface: #3c3836;
+    --color-surface-hover: #504945;
+    --color-surface-active: #665c54;
     --color-border: #504945;
 
     --color-text: #ebdbb2;
@@ -38,13 +44,16 @@
 
     --color-link: #83a598;
     --color-link-hover: #8ec07c;
-    --color-link-visited: #d3869b;
   }
 }
 
+html,
 body {
   margin: 0;
-  min-height: 100vh;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
   background-color: var(--color-base);
   color: var(--color-text);
   font-family: "Roboto Variable", sans-serif;
@@ -52,32 +61,14 @@ body {
 
 a {
   color: var(--color-link);
+  text-decoration: none;
 }
 
-a:hover {
-  color: var(--color-link-hover);
-}
-
-main a:visited {
-  color: var(--color-link-visited);
-}
-
-.mx-center {
-  margin-inline: center;
-}
-
-.text-center {
-  text-align: center;
-}
-
-.text-muted {
-  color: var(--color-text-muted);
-}
-
-.page-header {
-  margin-block: 1rem 2rem;
-  margin-inline: auto;
-  text-align: center;
-
-  color: var(--color-primary);
+code,
+pre,
+input,
+textarea,
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
 }

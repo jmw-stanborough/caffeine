@@ -20,76 +20,182 @@
     {
       host: "VSVR-002.EDU.LAN",
       label: "VSVR-002",
-      description: "Primary DHCP/DNS server",
+      description: "Primary DHCP/DNS server"
     },
     {
       host: "VSVR-005.EDU.LAN",
       label: "VSVR-005",
-      description: "Shared data",
+      description: "Shared data file server"
     },
     {
       host: "VSVR-006.EDU.LAN",
       label: "VSVR-006",
-      description: "User data",
+      description: "User data file server"
     },
     {
       host: "VSVR-008.EDU.LAN",
       label: "VSVR-008",
-      description: "Application server",
+      description: "General-purpose application server"
+    },
+    {
+      host: "VSVR-009.EDU.LAN",
+      label: "VSVR-009",
+      description: "Salamander application server"
+    },
+    {
+      host: "VSVR-011.EDU.LAN",
+      label: "VSVR-011",
+      description: "MDT & WDS application server"
+    },
+    {
+      host: "VSVR-012.EDU.LAN",
+      label: "VSVR-012",
+      description: "Live Register application server"
+    },
+    {
+      host: "VSVR-014.EDU.LAN",
+      label: "VSVR-014",
+      description: "Print server"
     }
-  ]
+  ];
 </script>
 
-<h1 class="page-header text-center">Servers</h1>
-
-<section class="server-cards mx-center">
-  {#each servers as server}
-    <div class="server-card">
-      <h2 class="server-card-header text-center">{server.label}</h2>
-      <p class="server-card-description text-center">{server.description}</p>
-      <footer class="text-center server-card-footer">
-        <small class="text-muted">
-          {server.host}
-        </small>
-      </footer>
+<div class="page-container">
+  <header class="page-header">
+    <div class="header-titles">
+      <h1 class="page-title">Servers</h1>
+      <span class="server-count">{servers.length} configured</span>
     </div>
-  {/each}
-</section>
+  </header>
+
+  <section class="server-grid">
+    {#each servers as server}
+      <article class="server-card">
+        <div class="card-main">
+          <div class="card-title-row">
+            <span class="status-indicator" title="Agent status"></span>
+            <h2 class="server-label">{server.label}</h2>
+            {#if server.agent}
+              <span class="badge">Agent :{server.agent.port}</span>
+            {/if}
+          </div>
+
+          <p class="server-description">{server.description ?? "No description"}</p>
+        </div>
+
+        <footer class="card-footer">
+          <code class="server-host">{server.host}</code>
+        </footer>
+      </article>
+    {/each}
+  </section>
+</div>
 
 <style>
-  .server-cards {
+  .page-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 24px;
+  }
+
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-titles {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .page-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  .server-count {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+  }
+
+  .server-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-
-    max-width: var(--width-content);
-
-    margin-inline: auto;
-    padding: 4px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    width: 100%;
   }
 
   .server-card {
     display: flex;
     flex-direction: column;
-
-    min-height: 8rem;
-
-    padding: 4px;
-
-    background-color: var(--color-surface);
+    justify-content: space-between;
+    min-height: 140px;
+    padding: 16px;
     border: solid var(--width-border) var(--color-border);
     border-radius: 8px;
+    background-color: var(--color-surface);
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
-  .server-card-header {
+  .server-card:hover {
+    border-color: var(--color-primary);
+  }
+
+  .card-main {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--color-text-muted);
+  }
+
+  .server-label {
     margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--color-primary);
   }
 
-  .server-card-description {
-    margin-top: 8px;
+  .badge {
+    margin-left: auto;
+    padding: 2px 6px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    background-color: var(--color-base);
+    color: var(--color-text-muted);
   }
 
-  .server-card-footer {
-    margin-top: auto;
+  .server-description {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--color-text);
+    line-height: 1.4;
+  }
+
+  .card-footer {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: solid var(--width-border) var(--color-border);
+  }
+
+  .server-host {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
   }
 </style>

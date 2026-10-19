@@ -1,50 +1,32 @@
 <script>
   import "@fontsource-variable/roboto";
   import "../app.css";
-  import Navbar from "$lib/navbar.svelte";
   import Sidebar from "$lib/sidebar.svelte";
 
   let { children } = $props();
 </script>
 
-<header class="navigation-bar">
-  <Navbar />
-</header>
-
-<main class="main-content">
+<div class="app-shell">
   <Sidebar />
-  <section class="children-section">
+  <main class="content-area">
     {@render children()}
-  </section>
-</main>
+  </main>
+</div>
 
 <style>
-  :root {
-    --width-sidebar: 64px;
-  }
-
-  :global(html, body) {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    overflow: hidden;
-  }
-
-  .navigation-bar {
-    flex-shrink: 0;
-    z-index: 20;
-  }
-
-  .main-content {
+  .app-shell {
     display: flex;
-    flex: 1;
-    min-height: 0;
+    width: 100vw;
+    height: 100vh;
     overflow: hidden;
   }
 
-  .children-section {
+  .content-area {
     flex: 1;
     min-width: 0;
-    overflow: auto;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background-color: var(--color-base);
   }
 </style>
