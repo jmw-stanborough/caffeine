@@ -50,28 +50,33 @@
       <h1 class="page-title">Servers</h1>
       <span class="server-count">{servers.length} configured</span>
     </div>
-
-    <button class="add-button" type="button" onclick={() => (isModalOpen = true)}>
-      Add Server
-    </button>
   </header>
 
   {#if errorMessage}
     <div class="error-banner">
       <span>{errorMessage}</span>
-      <button type="button" onclick={fetchServers}>Retry</button>
+      <button type="button" class="btn-retry" onclick={fetchServers}>Retry</button>
     </div>
   {/if}
 
   {#if loading}
     <p class="status-message">Reading configuration...</p>
-  {:else if servers.length === 0}
-    <p class="status-message">No servers configured. Click "Add Server" to register one.</p>
   {:else}
     <section class="server-grid">
       {#each servers as server (server.host)}
         <ServerCard {server} />
       {/each}
+
+      <!-- Dynamic "Add Server" Grid Card -->
+      <button 
+        class="add-server-card" 
+        type="button" 
+        onclick={() => (isModalOpen = true)}
+        aria-label="Add new server"
+      >
+        <span class="plus-icon" aria-hidden="true">+</span>
+        <span class="add-title">Add server</span>
+      </button>
     </section>
   {/if}
 </div>
@@ -110,25 +115,10 @@
     color: var(--color-text-muted);
   }
 
-  .add-button {
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.375rem;
-    background-color: var(--color-surface);
-    color: var(--color-primary);
-    cursor: pointer;
-    transition: background-color 0.12s ease;
-  }
-
-  .add-button:hover {
-    background-color: var(--color-surface-hover);
-  }
-
   .error-banner {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     padding: 0.75rem 1rem;
     border-radius: 0.375rem;
     background-color: color-mix(in srgb, var(--color-secondary) 15%, transparent);
@@ -136,11 +126,62 @@
     border: solid var(--width-border) var(--color-secondary);
   }
 
+  .btn-retry {
+    background: transparent;
+    border: solid var(--width-border) var(--color-secondary);
+    color: var(--color-secondary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+  }
+
   .server-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
     gap: 1rem;
     width: 100%;
+  }
+
+  /* The "Add Server" Custom Card Button */
+  .add-server-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 8.5rem;
+    padding: 1rem;
+    
+    background-color: transparent;
+    border: 2px dashed var(--color-border);
+    border-radius: 0.5rem;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .add-server-card:hover {
+    background-color: color-mix(in srgb, var(--color-surface) 30%, transparent);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  /* Give focus outlines back for keyboard users on un-bordered elements */
+  .add-server-card:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .plus-icon {
+    font-size: 2rem;
+    font-weight: 300;
+    line-height: 1;
+  }
+
+  .add-title {
+    font-size: 1rem;
+    font-weight: 600;
   }
 
   .status-message {
