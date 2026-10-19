@@ -1,7 +1,12 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
+  import ServerCard from "./server-card.svelte";
+  import AddServerModal from "./add-server-modal.svelte";
+
   interface Agent {
     port: number;
-    apiKey: string;
+    api_key: string;
   }
 
   interface Server {
@@ -11,53 +16,32 @@
     agent?: Agent;
   }
 
-  const servers: Server[] = [
-    {
-      host: "VSVR-001.EDU.LAN",
-      label: "VSVR-001",
-      description: "Secondary DHCP/DNS server",
-    },
-    {
-      host: "VSVR-002.EDU.LAN",
-      label: "VSVR-002",
-      description: "Primary DHCP/DNS server"
-    },
-    {
-      host: "VSVR-005.EDU.LAN",
-      label: "VSVR-005",
-      description: "Shared data file server"
-    },
-    {
-      host: "VSVR-006.EDU.LAN",
-      label: "VSVR-006",
-      description: "User data file server"
-    },
-    {
-      host: "VSVR-008.EDU.LAN",
-      label: "VSVR-008",
-      description: "General-purpose application server"
-    },
-    {
-      host: "VSVR-009.EDU.LAN",
-      label: "VSVR-009",
-      description: "Salamander application server"
-    },
-    {
-      host: "VSVR-011.EDU.LAN",
-      label: "VSVR-011",
-      description: "MDT & WDS application server"
-    },
-    {
-      host: "VSVR-012.EDU.LAN",
-      label: "VSVR-012",
-      description: "Live Register application server"
-    },
-    {
-      host: "VSVR-014.EDU.LAN",
-      label: "VSVR-014",
-      description: "Print server"
+  let servers = $state<Server[]>([]);
+  let loading = $state(true);
+  let errorMessage = $state<string | null>(null);
+  let isModalOpen = $state(false);
+
+  async function fetchServers() {
+    loading = true;
+    errorMessage = null;
+    try {
+      servers = await invoke<Server[]>("load_servers");
+    } catch (err) {
+      errorMessage = String(err);
+    } finally {
+      loading = false;
     }
-  ];
+  }
+
+  async function handleSaveServer(newServer: Server) {
+    try {
+      servers = await invoke<Server[]>("save_server", { newServer });
+    } catch (err) {
+      errorMessage = String(err);
+    }
+  }
+
+  onMount(fetchServers);
 </script>
 
 <div class="page-container">
@@ -66,37 +50,40 @@
       <h1 class="page-title">Servers</h1>
       <span class="server-count">{servers.length} configured</span>
     </div>
+
+    <button class="add-button" type="button" onclick={() => (isModalOpen = true)}>
+      Add Server
+    </button>
   </header>
 
-  <section class="server-grid">
-    {#each servers as server}
-      <article class="server-card">
-        <div class="card-main">
-          <div class="card-title-row">
-            <span class="status-indicator" title="Agent status"></span>
-            <h2 class="server-label">{server.label}</h2>
-            {#if server.agent}
-              <span class="badge">Agent :{server.agent.port}</span>
-            {/if}
-          </div>
+  {#if errorMessage}
+    <div class="error-banner">
+      <span>{errorMessage}</span>
+      <button type="button" onclick={fetchServers}>Retry</button>
+    </div>
+  {/if}
 
-          <p class="server-description">{server.description ?? "No description"}</p>
-        </div>
-
-        <footer class="card-footer">
-          <code class="server-host">{server.host}</code>
-        </footer>
-      </article>
-    {/each}
-  </section>
+  {#if loading}
+    <p class="status-message">Reading configuration...</p>
+  {:else if servers.length === 0}
+    <p class="status-message">No servers configured. Click "Add Server" to register one.</p>
+  {:else}
+    <section class="server-grid">
+      {#each servers as server (server.host)}
+        <ServerCard {server} />
+      {/each}
+    </section>
+  {/if}
 </div>
+
+<AddServerModal bind:open={isModalOpen} onsave={handleSaveServer} />
 
 <style>
   .page-container {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    padding: 1rem;
+    padding: 1.5rem;
   }
 
   .page-header {
@@ -111,84 +98,53 @@
     gap: 1rem;
   }
 
+  .page-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
   .server-count {
-    font-size: 1rem;
+    font-size: 0.9rem;
     color: var(--color-text-muted);
+  }
+
+  .add-button {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.375rem;
+    background-color: var(--color-surface);
+    color: var(--color-primary);
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+  }
+
+  .add-button:hover {
+    background-color: var(--color-surface-hover);
+  }
+
+  .error-banner {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+    background-color: color-mix(in srgb, var(--color-secondary) 15%, transparent);
+    color: var(--color-secondary);
+    border: solid var(--width-border) var(--color-secondary);
   }
 
   .server-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(256px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
     gap: 1rem;
     width: 100%;
   }
 
-  .server-card {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    min-height: 128px;
-    padding: 1rem;
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.5rem;
-    background-color: var(--color-surface);
-    transition: border-color 0.15s ease, background-color 0.15s ease;
-  }
-
-  .server-card:hover {
-    border-color: var(--color-primary);
-  }
-
-  .card-main {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .card-title-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .status-indicator {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    background-color: var(--color-text-muted);
-  }
-
-  .server-label {
-    margin: 0;
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: var(--color-primary);
-  }
-
-  .badge {
-    margin-left: auto;
-    padding: 2px 6px;
-    font-size: 0.75rem;
-    border-radius: 4px;
-    background-color: var(--color-base);
+  .status-message {
     color: var(--color-text-muted);
-  }
-
-  .server-description {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--color-text);
-    line-height: 1.4;
-  }
-
-  .card-footer {
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: solid var(--width-border) var(--color-border);
-  }
-
-  .server-host {
-    font-size: 0.8rem;
-    color: var(--color-text-muted);
+    font-size: 0.95rem;
   }
 </style>
