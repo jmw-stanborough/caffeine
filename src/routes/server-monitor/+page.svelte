@@ -111,13 +111,6 @@
     gap: 12px;
   }
 
-  .page-title {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--color-text);
-  }
-
   .server-count {
     font-size: 0.85rem;
     color: var(--color-text-muted);
