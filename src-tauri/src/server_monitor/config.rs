@@ -90,3 +90,16 @@ pub fn update_server(
 
     Ok(settings.servers)
 }
+
+#[tauri::command]
+pub fn reorder_servers(app: AppHandle, servers: Vec<Server>) -> Result<(), String> {
+    let path = get_settings_path(&app)?;
+    let settings = ServerMonitorSettings { servers };
+
+    let json = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+
+    fs::write(&path, json).map_err(|e| format!("Failed to write settings file: {e}"))?;
+
+    Ok(())
+}

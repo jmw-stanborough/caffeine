@@ -6,7 +6,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             server_monitor::config::load_servers,
             server_monitor::config::save_server,
-            server_monitor::config::update_server
+            server_monitor::config::update_server,
+            server_monitor::config::reorder_servers
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

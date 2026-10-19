@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { dndzone } from "svelte-dnd-action";
+  import { flip } from "svelte/animate";
   import ServerCard from "./server-card.svelte";
   import ServerModal from "./server-modal.svelte";
 
@@ -16,7 +18,9 @@
     agent?: Agent;
   }
 
-  let servers = $state<Server[]>([]);
+  type DndServer = Server & { id: string };
+
+  let items = $state<DndServer[]>([]);
   let loading = $state(true);
   let errorMessage = $state<string | null>(null);
 
@@ -27,7 +31,8 @@
     loading = true;
     errorMessage = null;
     try {
-      servers = await invoke<Server[]>("load_servers");
+      const rawServers = await invoke<Server[]>("load_servers");
+      items = rawServers.map((s) => ({ ...s, id: s.host }));
     } catch (err) {
       errorMessage = String(err);
     } finally {
@@ -47,16 +52,34 @@
 
   async function handleSaveServer(savedServer: Server, originalHost?: string) {
     try {
+      let updated: Server[];
       if (originalHost) {
-        servers = await invoke<Server[]>("update_server", {
+        updated = await invoke<Server[]>("update_server", {
           originalHost,
           updatedServer: savedServer
         });
       } else {
-        servers = await invoke<Server[]>("save_server", {
+        updated = await invoke<Server[]>("save_server", {
           newServer: savedServer
         });
       }
+      items = updated.map((s) => ({ ...s, id: s.host }));
+    } catch (err) {
+      errorMessage = String(err);
+    }
+  }
+
+  function handleDndConsider(e: CustomEvent<{ items: DndServer[] }>) {
+    items = e.detail.items;
+  }
+
+  async function handleDndFinalize(e: CustomEvent<{ items: DndServer[] }>) {
+    items = e.detail.items;
+
+    const payload = items.map(({ id, ...rest }) => rest);
+
+    try {
+      await invoke("reorder_servers", { servers: payload });
     } catch (err) {
       errorMessage = String(err);
     }
@@ -69,7 +92,7 @@
   <header class="page-header">
     <div class="header-titles">
       <h1 class="page-title">Servers</h1>
-      <span class="server-count">{servers.length} configured</span>
+      <span class="server-count">{items.length} configured</span>
     </div>
   </header>
 
@@ -83,28 +106,37 @@
   {#if loading}
     <p class="status-message">Reading configuration...</p>
   {:else}
-    <section class="server-grid">
-      {#each servers as server (server.host)}
-        <ServerCard {server} onclick={() => openEditModal(server)} />
+    <section
+      class="server-grid"
+      use:dndzone={{ items, flipDurationMs: 200, dropTargetStyle: {} }}
+      onconsider={handleDndConsider}
+      onfinalize={handleDndFinalize}
+    >
+      {#each items as server (server.id)}
+        <div animate:flip={{ duration: 200 }} class="drag-wrapper">
+          <ServerCard {server} onclick={() => openEditModal(server)} />
+        </div>
       {/each}
 
-      <button 
-        class="add-server-card" 
-        type="button" 
-        onclick={openAddModal}
-        aria-label="Add new server"
-      >
-        <span class="plus-icon" aria-hidden="true">+</span>
-        <span class="add-title">Add server</span>
-      </button>
+      <div class="add-card-wrapper" aria-disabled="true">
+        <button
+          class="add-server-card"
+          type="button"
+          onclick={openAddModal}
+          aria-label="Add new server"
+        >
+          <span class="plus-icon" aria-hidden="true">+</span>
+          <span class="add-title">Add server</span>
+        </button>
+      </div>
     </section>
   {/if}
 </div>
 
-<ServerModal 
-  bind:open={isModalOpen} 
-  server={editingServer} 
-  onsave={handleSaveServer} 
+<ServerModal
+  bind:open={isModalOpen}
+  server={editingServer}
+  onsave={handleSaveServer}
 />
 
 <style>
@@ -164,9 +196,19 @@
     grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
     gap: 1rem;
     width: 100%;
+    outline: none;
   }
 
-  /* The "Add Server" Custom Card Button */
+  .drag-wrapper {
+    height: 100%;
+    outline: none;
+  }
+
+  .add-card-wrapper {
+    height: 100%;
+    outline: none;
+  }
+
   .add-server-card {
     display: flex;
     flex-direction: column;
@@ -174,14 +216,15 @@
     justify-content: center;
     gap: 0.5rem;
     min-height: 8.5rem;
+    height: 100%;
+    width: 100%;
+    margin: 0;
     padding: 1rem;
-    
     background-color: transparent;
     border: 2px dashed var(--color-border);
     border-radius: 0.5rem;
     color: var(--color-text-muted);
     cursor: pointer;
-    
     transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
 
@@ -191,7 +234,6 @@
     color: var(--color-primary);
   }
 
-  /* Give focus outlines back for keyboard users on un-bordered elements */
   .add-server-card:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
