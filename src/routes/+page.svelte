@@ -9,14 +9,8 @@
   <section class="cards-grid">
     <div class="card">
       <h2 class="card-header">Welcome to Caffeine</h2>
-      <p class="card-body">Select a module from the sidebar to view metrics or configure settings.</p>
-      <span class="card-footer">System status: Normal</span>
-    </div>
-
-    <div class="card">
-      <h2 class="card-header">Quick Summary</h2>
-      <p class="card-body">No servers currently configured for monitoring.</p>
-      <span class="card-footer">0 active instances</span>
+      <p class="card-body">Select a module from the sidebar to begin.</p>
+      <span class="card-footer">More features to come...</span>
     </div>
   </section>
 </div>
@@ -25,8 +19,8 @@
   .dashboard-container {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    padding: 24px;
+    gap: 16px;
+    padding: 16px;
   }
 
   .dashboard-header {
@@ -37,7 +31,7 @@
 
   .page-title {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 2rem;
     font-weight: 700;
     color: var(--color-text);
   }
