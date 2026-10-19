@@ -11,28 +11,33 @@
     agent?: Agent;
   }
 
-  let { 
-    server, 
-    onclick 
-  }: { 
-    server: Server; 
-    onclick: () => void; 
+  let {
+    server,
+    status = "checking",
+    latencyMs = undefined,
+    onclick
+  }: {
+    server: Server;
+    status?: "online" | "offline" | "degraded" | "checking";
+    latencyMs?: number;
+    onclick: () => void;
   } = $props();
 </script>
 
-<article 
-  class="server-card" 
+<article
+  class="server-card"
   {onclick}
   role="button"
   tabindex="0"
-  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') onclick(); }}
+  onkeydown={(e) => {
+    if (e.key === "Enter" || e.key === " ") onclick();
+  }}
 >
   <div class="card-main">
     <div class="card-title-row">
       <span
-        class="status-indicator"
-        class:has-agent={Boolean(server.agent)}
-        title={server.agent ? "Agent active" : "Unmonitored"}
+        class="status-indicator {status}"
+        title="Status: {status} {latencyMs ? `(${latencyMs}ms)` : ''}"
       ></span>
       <h2 class="server-label">{server.label}</h2>
       {#if server.agent}
@@ -45,6 +50,9 @@
 
   <footer class="card-footer">
     <code class="server-host">{server.host}</code>
+    {#if latencyMs !== undefined}
+      <span class="latency-label">{latencyMs} ms</span>
+    {/if}
   </footer>
 </article>
 
@@ -88,18 +96,30 @@
     width: 0.625rem;
     height: 0.625rem;
     border-radius: 50%;
+    transition: background-color 0.25s ease;
+  }
+
+  .status-indicator.checking {
     background-color: var(--color-text-muted);
   }
 
-  .status-indicator.has-agent {
+  .status-indicator.online {
     background-color: var(--color-primary);
+  }
+
+  .status-indicator.degraded {
+    background-color: var(--color-secondary);
+  }
+
+  .status-indicator.offline {
+    background-color: #ef4444;
   }
 
   .server-label {
     margin: 0;
     font-size: 1.15rem;
     font-weight: 600;
-    color: var(--color-primary);
+    color: var(--color-text);
   }
 
   .badge-agent {
@@ -116,11 +136,14 @@
   .server-description {
     margin: 0;
     font-size: 0.95rem;
-    color: var(--color-text);
+    color: var(--color-text-muted);
     line-height: 1.4;
   }
 
   .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     margin-top: 1rem;
     padding-top: 0.75rem;
     border-top: solid var(--width-border) var(--color-border);
@@ -128,6 +151,11 @@
 
   .server-host {
     font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .latency-label {
+    font-size: 0.75rem;
     color: var(--color-text-muted);
   }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
@@ -20,12 +21,25 @@
 
   type DndServer = Server & { id: string };
 
+  interface ServerStatusTick {
+    host: string;
+    status: "online" | "offline" | "degraded";
+    latency_ms?: number;
+  }
+
+  interface HostState {
+    status: "online" | "offline" | "degraded" | "checking";
+    latencyMs?: number;
+  }
+
   let items = $state<DndServer[]>([]);
   let loading = $state(true);
   let errorMessage = $state<string | null>(null);
 
   let isModalOpen = $state(false);
   let editingServer = $state<Server | undefined>(undefined);
+
+  let statusMap = $state<Record<string, HostState>>({});
 
   async function fetchServers() {
     loading = true;
@@ -85,7 +99,21 @@
     }
   }
 
-  onMount(fetchServers);
+  onMount(() => {
+    fetchServers();
+
+    const unlistenPromise = listen<ServerStatusTick>("server-status-tick", (event) => {
+      const { host, status, latency_ms } = event.payload;
+      statusMap[host] = {
+        status,
+        latencyMs: latency_ms
+      };
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  });
 </script>
 
 <div class="page-container">
@@ -114,7 +142,12 @@
     >
       {#each items as server (server.id)}
         <div animate:flip={{ duration: 200 }} class="drag-wrapper">
-          <ServerCard {server} onclick={() => openEditModal(server)} />
+          <ServerCard
+            {server}
+            status={statusMap[server.host]?.status ?? "checking"}
+            latencyMs={statusMap[server.host]?.latencyMs}
+            onclick={() => openEditModal(server)}
+          />
         </div>
       {/each}
 
