@@ -95,8 +95,8 @@
   .page-container {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    padding: 24px;
+    gap: 1rem;
+    padding: 1rem;
   }
 
   .page-header {
@@ -108,18 +108,18 @@
   .header-titles {
     display: flex;
     align-items: baseline;
-    gap: 12px;
+    gap: 1rem;
   }
 
   .server-count {
-    font-size: 0.85rem;
+    font-size: 1rem;
     color: var(--color-text-muted);
   }
 
   .server-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(256px, 1fr));
+    gap: 1rem;
     width: 100%;
   }
 
@@ -127,10 +127,10 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    min-height: 140px;
-    padding: 16px;
+    min-height: 128px;
+    padding: 1rem;
     border: solid var(--width-border) var(--color-border);
-    border-radius: 8px;
+    border-radius: 0.5rem;
     background-color: var(--color-surface);
     transition: border-color 0.15s ease, background-color 0.15s ease;
   }
@@ -142,25 +142,25 @@
   .card-main {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0.5rem;
   }
 
   .card-title-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 0.5rem;
   }
 
   .status-indicator {
-    width: 8px;
-    height: 8px;
+    width: 0.5rem;
+    height: 0.5rem;
     border-radius: 50%;
     background-color: var(--color-text-muted);
   }
 
   .server-label {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1.2rem;
     font-weight: 600;
     color: var(--color-primary);
   }
@@ -176,7 +176,7 @@
 
   .server-description {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 1rem;
     color: var(--color-text);
     line-height: 1.4;
   }
