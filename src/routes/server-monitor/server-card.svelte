@@ -1,89 +1,129 @@
 <script lang="ts">
-  interface Agent {
-    port: number;
-    api_key: string;
-  }
-
-  interface Server {
-    host: string;
-    label: string;
-    description?: string;
-    agent?: Agent;
-  }
+  import type { HostState, Server } from "./types";
 
   let {
     server,
     status = "checking",
     latencyMs = undefined,
-    onclick
+    nocMode = false,
+    onclick,
   }: {
     server: Server;
-    status?: "online" | "offline" | "degraded" | "checking";
+    status?: HostState["status"];
     latencyMs?: number;
-    onclick: () => void;
+    nocMode?: boolean;
+    onclick?: () => void;
   } = $props();
 </script>
 
-<article
-  class="server-card"
+<button
+  type="button"
+  class="server-card {status}"
+  class:noc={nocMode}
   {onclick}
-  role="button"
-  tabindex="0"
-  onkeydown={(e) => {
-    if (e.key === "Enter" || e.key === " ") onclick();
-  }}
 >
   <div class="card-main">
     <div class="card-title-row">
-      <span
-        class="status-indicator {status}"
-        title="Status: {status} {latencyMs ? `(${latencyMs}ms)` : ''}"
-      ></span>
-      <h2 class="server-label">{server.label}</h2>
-      {#if server.agent}
-        <span class="badge-agent">Agent :{server.agent.port}</span>
+      <span class="status-dot" aria-hidden="true"></span>
+      <h2 class="card-label">{server.label}</h2>
+      {#if server.agent && !nocMode}
+        <span class="badge-agent">Agent on port {server.agent.port}</span>
       {/if}
     </div>
 
-    <p class="server-description">{server.description ?? "No description"}</p>
+    {#if !nocMode}
+      <p class="card-description">{server.description ?? "No description provided."}</p>
+    {/if}
   </div>
 
-  <footer class="card-footer">
-    <code class="server-host">{server.host}</code>
-    {#if latencyMs !== undefined}
-      <span class="latency-label">{latencyMs} ms</span>
-    {/if}
-  </footer>
-</article>
+  <div class="card-footer">
+    <span class="card-host">{server.host}</span>
+    <span class="card-latency">
+      {#if latencyMs !== undefined}
+        {latencyMs} ms
+      {:else if status === "checking"}
+        ...
+      {:else}
+        —
+      {/if}
+    </span>
+  </div>
+</button>
 
 <style>
-  .server-card {
+  button.server-card {
+    appearance: none;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+    border: solid var(--width-border) var(--status-color, var(--color-border));
+    border-radius: 0.5rem;
+    padding: 1rem;
+    min-height: var(--card-min-height, 8.5rem);
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    min-height: 8.5rem;
-    padding: 1rem;
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.5rem;
-    background-color: var(--color-surface);
+    gap: 0.75rem;
     cursor: pointer;
-    text-align: left;
     transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
-  .server-card:hover {
-    border-color: var(--color-primary);
-  }
-
-  .server-card:focus-visible {
+  button.server-card:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+  }
+
+  button.server-card.noc {
+    cursor: default;
+    min-height: var(--card-min-height, 8.5rem);
+    padding: 1rem;
+  }
+
+  button.server-card.online {
+    --status-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
+  }
+
+  button.server-card.online:hover {
+    background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
+  }
+
+  button.server-card.degraded {
+    --status-color: var(--color-secondary);
+    background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
+  }
+
+  button.server-card.degraded:hover {
+    background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
+  }
+
+  button.server-card.offline {
+    --status-color: var(--color-error);
+    background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
+  }
+
+  button.server-card.offline:hover {
+    background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
+  }
+
+  button.server-card.checking {
+    --status-color: var(--color-text-muted);
+    background-color: color-mix(in srgb, var(--color-surface) 60%, transparent);
+    border-color: var(--color-border);
+  }
+
+  button.server-card.checking:hover {
+    background-color: color-mix(in srgb, var(--color-surface) 85%, transparent);
+    border-color: var(--color-text-muted);
   }
 
   .card-main {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.35rem;
   }
 
   .card-title-row {
@@ -92,70 +132,58 @@
     gap: 0.5rem;
   }
 
-  .status-indicator {
-    width: 0.625rem;
-    height: 0.625rem;
+  .status-dot {
+    width: 0.55rem;
+    height: 0.55rem;
     border-radius: 50%;
-    transition: background-color 0.25s ease;
+    background-color: var(--status-color, var(--color-border));
+    flex-shrink: 0;
   }
 
-  .status-indicator.checking {
-    background-color: var(--color-text-muted);
-  }
-
-  .status-indicator.online {
-    background-color: var(--color-primary);
-  }
-
-  .status-indicator.degraded {
-    background-color: var(--color-secondary);
-  }
-
-  .status-indicator.offline {
-    background-color: #ef4444;
-  }
-
-  .server-label {
+  .card-label {
     margin: 0;
-    font-size: 1.15rem;
+    font-size: calc(1rem * var(--card-font-scale, 1));
     font-weight: 600;
     color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .badge-agent {
-    margin-left: auto;
-    padding: 0.15rem 0.4rem;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: calc(0.7rem * var(--card-font-scale, 1));
+    padding: 0.15rem 0.35rem;
     border-radius: 0.25rem;
-    background-color: color-mix(in srgb, var(--color-secondary) 15%, transparent);
-    color: var(--color-secondary);
-    border: solid var(--width-border) color-mix(in srgb, var(--color-secondary) 40%, transparent);
+    background-color: color-mix(in srgb, var(--status-color, var(--color-primary)) 20%, transparent);
+    color: var(--status-color, var(--color-primary));
+    border: solid var(--width-border) color-mix(in srgb, var(--status-color, var(--color-primary)) 40%, transparent);
+    margin-left: auto;
   }
 
-  .server-description {
+  .card-description {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: calc(0.8rem * var(--card-font-scale, 1));
     color: var(--color-text-muted);
-    line-height: 1.4;
+    overflow: hidden;
+    line-clamp: 2;
+    display: box;
+    box-orient: vertical;
   }
 
   .card-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
-    border-top: solid var(--width-border) var(--color-border);
+    font-size: calc(0.75rem * var(--card-font-scale, 1));
+    color: var(--color-text-muted);
+    margin-top: auto;
   }
 
-  .server-host {
-    font-size: 0.8rem;
-    color: var(--color-text-muted);
+  .card-host {
+    font-family: monospace;
   }
 
-  .latency-label {
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
+  .card-latency {
+    font-variant-numeric: tabular-nums;
   }
 </style>

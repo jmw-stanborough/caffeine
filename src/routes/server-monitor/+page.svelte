@@ -1,185 +1,142 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
   import ServerCard from "./server-card.svelte";
   import ServerModal from "./server-modal.svelte";
+  import { ServerStore } from "./servers.svelte";
+  import type { Server } from "./types";
 
-  interface Agent {
-    port: number;
-    api_key: string;
-  }
-
-  interface Server {
-    host: string;
-    label: string;
-    description?: string;
-    agent?: Agent;
-  }
-
-  type DndServer = Server & { id: string };
-
-  interface ServerStatusTick {
-    host: string;
-    status: "online" | "offline" | "degraded";
-    latency_ms?: number;
-  }
-
-  interface HostState {
-    status: "online" | "offline" | "degraded" | "checking";
-    latencyMs?: number;
-  }
-
-  let items = $state<DndServer[]>([]);
-  let loading = $state(true);
-  let errorMessage = $state<string | null>(null);
+  const appWindow = getCurrentWindow();
+  const store = new ServerStore();
 
   let isModalOpen = $state(false);
   let editingServer = $state<Server | undefined>(undefined);
+  let isNocMode = $state(false);
+  let cardScale = $state(1);
 
-  let statusMap = $state<Record<string, HostState>>({});
+  function adjustScale(delta: number) {
+    cardScale = Math.min(1.6, Math.max(0.7, +(cardScale + delta).toFixed(2)));
+  }
 
-  async function fetchServers() {
-    loading = true;
-    errorMessage = null;
+  async function setNocMode(active: boolean) {
+    isNocMode = active;
     try {
-      const rawServers = await invoke<Server[]>("load_servers");
-      items = rawServers.map((s) => ({ ...s, id: s.host }));
+      await appWindow.setFullscreen(active);
     } catch (err) {
-      errorMessage = String(err);
-    } finally {
-      loading = false;
+      console.error("Failed to set fullscreen:", err);
     }
   }
 
-  function openAddModal() {
-    editingServer = undefined;
-    isModalOpen = true;
-  }
-
   function openEditModal(server: Server) {
+    if (isNocMode) return;
     editingServer = server;
     isModalOpen = true;
   }
 
-  async function handleSaveServer(savedServer: Server, originalHost?: string) {
-    try {
-      let updated: Server[];
-      if (originalHost) {
-        updated = await invoke<Server[]>("update_server", {
-          originalHost,
-          updatedServer: savedServer
-        });
-      } else {
-        updated = await invoke<Server[]>("save_server", {
-          newServer: savedServer
-        });
-      }
-      items = updated.map((s) => ({ ...s, id: s.host }));
-    } catch (err) {
-      errorMessage = String(err);
-    }
-  }
-
-  async function handleDeleteServer(hostToDelete: string) {
-    try {
-      items = items.filter((s) => s.host !== hostToDelete);
-
-      const updated = await invoke<Server[]>("delete_server", {
-        host: hostToDelete
-      });
-      items = updated.map((s) => ({ ...s, id: s.host }));
-
-      const nextStatus = { ...statusMap };
-      delete nextStatus[hostToDelete];
-      statusMap = nextStatus;
-    } catch (err) {
-      errorMessage = String(err);
-      await fetchServers();
-    }
-  }
-
-  function handleDndConsider(e: CustomEvent<{ items: DndServer[] }>) {
-    items = e.detail.items;
-  }
-
-  async function handleDndFinalize(e: CustomEvent<{ items: DndServer[] }>) {
-    items = e.detail.items;
-
-    const payload = items.map(({ id, ...rest }) => rest);
-
-    try {
-      await invoke("reorder_servers", { servers: payload });
-    } catch (err) {
-      errorMessage = String(err);
-    }
-  }
-
   onMount(() => {
-    fetchServers();
+    store.init();
 
-    const unlistenPromise = listen<ServerStatusTick>("server-status-tick", (event) => {
-      const { host, status, latency_ms } = event.payload;
-      statusMap[host] = {
-        status,
-        latencyMs: latency_ms
-      };
-    });
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isNocMode) setNocMode(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      unlistenPromise.then((unlisten) => unlisten());
+      store.destroy();
+      window.removeEventListener("keydown", handleKeyDown);
+      appWindow.setFullscreen(false).catch(() => {});
     };
   });
 </script>
 
-<div class="page-container">
+<div
+  class="page-container"
+  class:noc-layout={isNocMode}
+  style:--card-min-width="{18 * cardScale}rem"
+  style:--noc-min-width="{16 * cardScale}rem"
+  style:--card-min-height="{8.5 * cardScale}rem"
+  style:--card-font-scale={cardScale}
+>
   <header class="page-header">
     <div class="header-titles">
-      <h1 class="page-title">Servers</h1>
-      <span class="server-count">{items.length} configured</span>
+      <h1 class="page-title">{isNocMode ? "NOC Monitor" : "Servers"}</h1>
+      <span class="server-count">{store.items.length} configured</span>
+    </div>
+    <div class="header-actions">
+      <div class="zoom-controls">
+        <button
+          type="button"
+          class="btn-zoom"
+          onclick={() => adjustScale(-0.1)}
+          aria-label="Decrease card size"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          class="btn-zoom"
+          onclick={() => adjustScale(0.1)}
+          aria-label="Increase card size"
+        >
+          +
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="btn-noc"
+        onclick={() => setNocMode(!isNocMode)}
+      >
+        {isNocMode ? "Exit NOC (Esc)" : "NOC Mode"}
+      </button>
     </div>
   </header>
 
-  {#if errorMessage}
+  {#if store.errorMessage}
     <div class="error-banner">
-      <span>{errorMessage}</span>
-      <button type="button" class="btn-retry" onclick={fetchServers}>Retry</button>
+      <span>{store.errorMessage}</span>
+      <button type="button" class="btn-retry" onclick={store.fetchServers}>Retry</button>
     </div>
   {/if}
 
-  {#if loading}
+  {#if store.loading}
     <p class="status-message">Reading configuration...</p>
   {:else}
     <section
       class="server-grid"
-      use:dndzone={{ items, flipDurationMs: 200, dropTargetStyle: {} }}
-      onconsider={handleDndConsider}
-      onfinalize={handleDndFinalize}
+      class:noc-grid={isNocMode}
+      use:dndzone={{ items: store.items, flipDurationMs: 200, dragDisabled: isNocMode, dropTargetStyle: {} }}
+      onconsider={(e) => (store.items = e.detail.items)}
+      onfinalize={(e) => store.reorderServers(e.detail.items)}
     >
-      {#each items as server (server.id)}
+      {#each store.items as server (server.id)}
         <div animate:flip={{ duration: 200 }} class="drag-wrapper">
           <ServerCard
             {server}
-            status={statusMap[server.host]?.status ?? "checking"}
-            latencyMs={statusMap[server.host]?.latencyMs}
+            nocMode={isNocMode}
+            status={store.statusMap[server.host]?.status ?? "checking"}
+            latencyMs={store.statusMap[server.host]?.latencyMs}
             onclick={() => openEditModal(server)}
           />
         </div>
       {/each}
 
-      <div class="add-card-wrapper" aria-disabled="true">
-        <button
-          class="add-server-card"
-          type="button"
-          onclick={openAddModal}
-          aria-label="Add new server"
-        >
-          <span class="plus-icon" aria-hidden="true">+</span>
-          <span class="add-title">Add server</span>
-        </button>
-      </div>
+      {#if !isNocMode}
+        <div class="add-card-wrapper" aria-disabled="true">
+          <button
+            class="add-server-card"
+            type="button"
+            onclick={() => { editingServer = undefined; isModalOpen = true; }}
+            aria-label="Add new server"
+          >
+            <span class="plus-icon" aria-hidden="true">+</span>
+            <span class="add-title">Add server</span>
+          </button>
+        </div>
+      {/if}
     </section>
   {/if}
 </div>
@@ -187,8 +144,8 @@
 <ServerModal
   bind:open={isModalOpen}
   server={editingServer}
-  onsave={handleSaveServer}
-  ondelete={handleDeleteServer}
+  onsave={(saved, orig) => store.saveServer(saved, orig)}
+  ondelete={(host) => store.deleteServer(host)}
 />
 
 <style>
@@ -197,6 +154,16 @@
     flex-direction: column;
     gap: 1rem;
     padding: 1.5rem;
+  }
+
+  .page-container.noc-layout {
+    position: fixed;
+    inset: 0;
+    box-sizing: border-box;
+    background-color: var(--color-base);
+    padding: 2rem 2.5rem;
+    overflow-y: auto;
+    z-index: 50;
   }
 
   .page-header {
@@ -211,6 +178,12 @@
     gap: 1rem;
   }
 
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
   .page-title {
     margin: 0;
     font-size: 1.5rem;
@@ -223,42 +196,89 @@
     color: var(--color-text-muted);
   }
 
+  .zoom-controls {
+    display: flex;
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.375rem;
+    overflow: hidden;
+  }
+
+  .btn-zoom {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    padding: 0.35rem 0.65rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .btn-zoom:first-child {
+    border-right: solid var(--width-border) var(--color-border);
+  }
+
+  .btn-zoom:hover {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .btn-noc {
+    background-color: transparent;
+    border: solid var(--width-border) var(--color-border);
+    color: var(--color-text-muted);
+    padding: 0.35rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-noc:hover {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    border-color: var(--color-text-muted);
+  }
+
+  .server-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width, 18rem), 1fr));
+    gap: 1rem;
+    width: 100%;
+    outline: none;
+  }
+
+  .server-grid.noc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--noc-min-width, 16rem), 1fr));
+    gap: 1.25rem;
+  }
+
+  .drag-wrapper,
+  .add-card-wrapper {
+    height: 100%;
+    outline: none;
+  }
+
   .error-banner {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
     border-radius: 0.375rem;
-    background-color: color-mix(in srgb, var(--color-secondary) 15%, transparent);
-    color: var(--color-secondary);
-    border: solid var(--width-border) var(--color-secondary);
+    background-color: color-mix(in srgb, var(--color-error) 15%, transparent);
+    color: var(--color-error);
+    border: solid var(--width-border) var(--color-error);
   }
 
   .btn-retry {
     background: transparent;
-    border: solid var(--width-border) var(--color-secondary);
-    color: var(--color-secondary);
+    border: solid var(--width-border) var(--color-error);
+    color: var(--color-error);
     padding: 0.25rem 0.5rem;
     border-radius: 0.25rem;
     cursor: pointer;
-  }
-
-  .server-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-    gap: 1rem;
-    width: 100%;
-    outline: none;
-  }
-
-  .drag-wrapper {
-    height: 100%;
-    outline: none;
-  }
-
-  .add-card-wrapper {
-    height: 100%;
-    outline: none;
   }
 
   .add-server-card {
@@ -267,7 +287,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    min-height: 8.5rem;
+    min-height: var(--card-min-height, 8.5rem);
     height: 100%;
     width: 100%;
     margin: 0;
@@ -292,13 +312,13 @@
   }
 
   .plus-icon {
-    font-size: 2rem;
+    font-size: calc(2rem * var(--card-font-scale, 1));
     font-weight: 300;
     line-height: 1;
   }
 
   .add-title {
-    font-size: 1rem;
+    font-size: calc(1rem * var(--card-font-scale, 1));
     font-weight: 600;
   }
 
