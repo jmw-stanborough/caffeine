@@ -68,7 +68,7 @@ pub fn save_server(app: AppHandle, new_server: Server) -> Result<Vec<Server>, St
 
     let mut server = new_server;
     if server.id.is_empty() {
-        server.id = format!("srv-{}", uuid::Uuid::new_v4());
+        server.id = uuid::Uuid::new_v4().to_string();
     }
 
     settings.servers.push(server);
@@ -109,8 +109,9 @@ pub fn delete_server(app: AppHandle, id: String) -> Result<Vec<Server>, String> 
 }
 
 #[tauri::command]
-pub fn reorder_servers(app: AppHandle, servers: Vec<Server>) -> Result<(), String> {
+pub fn reorder_servers(app: AppHandle, servers: Vec<Server>) -> Result<Vec<Server>, String> {
     let path = get_settings_path(&app)?;
     let settings = ServerMonitorSettings { servers };
-    write_settings(&path, &settings)
+    write_settings(&path, &settings)?;
+    Ok(settings.servers)
 }

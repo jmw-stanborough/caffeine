@@ -100,12 +100,26 @@ export class ServerStore {
     }
   }
 
-  async reorderServers(items: Server[]) {
-    this.items = items;
+  async reorderServers(newItems: Server[]) {
+    const previous = this.items;
+
+    const sanitized: Server[] = newItems.map((item) => ({
+      id: item.id,
+      host: item.host,
+      label: item.label,
+      description: item.description,
+      agent: item.agent
+        ? { port: item.agent.port, api_key: item.agent.api_key }
+        : undefined,
+    }));
+
+    this.items = sanitized;
+
     try {
-      await invoke("reorder_servers", { servers: items });
+      await invoke("reorder_servers", { servers: sanitized });
     } catch (err) {
       this.errorMessage = String(err);
+      this.items = previous;
     }
   }
 }
