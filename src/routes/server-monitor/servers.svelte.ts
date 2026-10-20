@@ -7,43 +7,67 @@ export class ServerStore {
   statusMap = $state<Record<string, HostState>>({});
   loading = $state(true);
   errorMessage = $state<string | null>(null);
+  now = $state(Date.now());
 
   private unlistenStatus: UnlistenFn | null = null;
-  private soundDown = typeof Audio !== "undefined" ? new Audio("/sound-files/server-monitor/down.mp3") : null;
-  private soundUp = typeof Audio !== "undefined" ? new Audio("/sound-files/server-monitor/up.mp3") : null;
+  private timer: number | null = null;
+  private soundDown =
+    typeof Audio !== "undefined"
+      ? new Audio("/sound-files/server-monitor/down.mp3")
+      : null;
+  private soundUp =
+    typeof Audio !== "undefined"
+      ? new Audio("/sound-files/server-monitor/up.mp3")
+      : null;
 
   async init() {
     await this.fetchServers();
 
-    this.unlistenStatus = await listen<ServerStatusTick>("server-status-tick", (event) => {
-      const { host, status, latency_ms, last_event, last_event_at } = event.payload;
-      const previousState = this.statusMap[host];
+    this.timer = window.setInterval(() => {
+      this.now = Date.now();
+    }, 10_000);
 
-      if (previousState && previousState.status !== "checking") {
-        if (previousState.status === "online" && status === "offline") {
-          if (this.soundDown) {
-            this.soundDown.currentTime = 0;
-            this.soundDown.play().catch(() => {});
-          }
-        } else if (previousState.status === "offline" && status === "online") {
-          if (this.soundUp) {
-            this.soundUp.currentTime = 0;
-            this.soundUp.play().catch(() => {});
+    this.unlistenStatus = await listen<ServerStatusTick>(
+      "server-status-tick",
+      (event) => {
+        const { host, status, latency_ms, last_event, last_event_at } =
+          event.payload;
+        const previousState = this.statusMap[host];
+
+        if (previousState && previousState.status !== "checking") {
+          if (previousState.status === "online" && status === "offline") {
+            if (this.soundDown) {
+              this.soundDown.currentTime = 0;
+              this.soundDown.play().catch(() => {});
+            }
+          } else if (
+            previousState.status === "offline" &&
+            status === "online"
+          ) {
+            if (this.soundUp) {
+              this.soundUp.currentTime = 0;
+              this.soundUp.play().catch(() => {});
+            }
           }
         }
-      }
 
-      this.statusMap[host] = {
-        status,
-        latencyMs: latency_ms,
-        lastEvent: (last_event as "connected" | "disconnected") ?? previousState?.lastEvent,
-        lastEventAt: last_event_at ?? previousState?.lastEventAt,
-      };
-    });
+        this.statusMap[host] = {
+          status,
+          latencyMs: latency_ms,
+          lastEvent:
+            (last_event as "connected" | "disconnected") ??
+            previousState?.lastEvent,
+          lastEventAt: last_event_at ?? previousState?.lastEventAt,
+        };
+      },
+    );
   }
 
   destroy() {
     this.unlistenStatus?.();
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+    }
   }
 
   fetchServers = async () => {
@@ -101,7 +125,9 @@ export class ServerStore {
       host: item.host,
       label: item.label,
       description: item.description,
-      agent: item.agent ? { port: item.agent.port, api_key: item.agent.api_key } : undefined,
+      agent: item.agent
+        ? { port: item.agent.port, api_key: item.agent.api_key }
+        : undefined,
     }));
 
     this.items = sanitized;

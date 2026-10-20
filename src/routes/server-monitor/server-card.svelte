@@ -7,6 +7,7 @@
     latencyMs = undefined,
     lastEvent = undefined,
     lastEventAt = undefined,
+    now = Date.now(),
     nocMode = false,
     onclick,
   }: {
@@ -15,21 +16,24 @@
     latencyMs?: number;
     lastEvent?: HostState["lastEvent"];
     lastEventAt?: string;
+    now?: number;
     nocMode?: boolean;
     onclick?: () => void;
   } = $props();
 
-  function formatRelativeTime(dateString?: string): string {
+  function formatRelativeTime(dateString?: string, currentTime: number = Date.now()): string {
     if (!dateString) return "";
     const parsed = new Date(dateString);
     if (isNaN(parsed.getTime())) return "";
 
-    const diffSec = Math.floor((Date.now() - parsed.getTime()) / 1000);
+    const diffSec = Math.floor((currentTime - parsed.getTime()) / 1000);
     if (diffSec < 60) return "just now";
     if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
     if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
     return `${Math.floor(diffSec / 86400)}d ago`;
   }
+
+  let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
 
   function handleKeyDown(e: KeyboardEvent) {
     if ((e.key === "Enter" || e.key === " ") && onclick) {
@@ -66,7 +70,7 @@
       <span class="card-host">{server.host}</span>
       {#if lastEvent && lastEventAt}
         <span class="card-since">
-          {lastEvent === "connected" ? "Connected" : "Disconnected"} {formatRelativeTime(lastEventAt)}
+          {lastEvent === "connected" ? "Connected" : "Disconnected"} {relativeTime}
         </span>
       {/if}
     </div>

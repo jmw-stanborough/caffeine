@@ -28,3 +28,11 @@ export interface HostState {
   lastEvent?: "connected" | "disconnected";
   lastEventAt?: string;
 }
+
+export interface ServerLog {
+  id: number;
+  server_id: string;
+  event_type: string;
+  latency_ms?: number;
+  timestamp: string;
+}

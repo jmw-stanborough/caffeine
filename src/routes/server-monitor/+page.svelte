@@ -126,6 +126,7 @@
             latencyMs={store.statusMap[server.host]?.latencyMs}
             lastEvent={store.statusMap[server.host]?.lastEvent}
             lastEventAt={store.statusMap[server.host]?.lastEventAt}
+            now={store.now}
             onclick={() => openEditModal(server)}
           />
         </div>
