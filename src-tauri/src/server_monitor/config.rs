@@ -32,23 +32,31 @@ fn read_settings(path: &Path) -> Result<ServerMonitorSettings, String> {
     serde_json::from_str(&contents).map_err(|e| format!("Failed to parse settings JSON: {e}"))
 }
 
+fn write_settings(path: &Path, settings: &ServerMonitorSettings) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(settings)
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+    fs::write(path, json).map_err(|e| format!("Failed to write settings file: {e}"))
+}
+
 #[tauri::command]
 pub fn load_servers(app: AppHandle) -> Result<Vec<Server>, String> {
     let path = get_settings_path(&app)?;
 
     if !path.exists() {
         let initial_settings = ServerMonitorSettings::default();
-        let json = serde_json::to_string_pretty(&initial_settings)
-            .map_err(|e| format!("Failed to serialize default settings: {e}"))?;
-        fs::write(&path, json).map_err(|e| format!("Failed to write default settings: {e}"))?;
+        write_settings(&path, &initial_settings)?;
         return Ok(initial_settings.servers);
     }
 
     let contents =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read settings file: {e}"))?;
 
     let settings: ServerMonitorSettings = serde_json::from_str(&contents)
-        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+        .map_err(|e| format!("Failed to parse settings JSON: {e}"))?;
+
+    if !contents.contains("\"id\"") {
+        let _ = write_settings(&path, &settings);
+    }
 
     Ok(settings.servers)
 }
@@ -56,22 +64,15 @@ pub fn load_servers(app: AppHandle) -> Result<Vec<Server>, String> {
 #[tauri::command]
 pub fn save_server(app: AppHandle, new_server: Server) -> Result<Vec<Server>, String> {
     let path = get_settings_path(&app)?;
+    let mut settings = read_settings(&path)?;
 
-    let mut settings = if path.exists() {
-        let contents =
-            fs::read_to_string(&path).map_err(|e| format!("Failed to read settings file: {e}"))?;
-        serde_json::from_str::<ServerMonitorSettings>(&contents)
-            .map_err(|e| format!("Failed to parse settings JSON: {e}"))?
-    } else {
-        ServerMonitorSettings::default()
-    };
+    let mut server = new_server;
+    if server.id.is_empty() {
+        server.id = format!("srv-{}", uuid::Uuid::new_v4());
+    }
 
-    settings.servers.push(new_server);
-
-    let json = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
-
-    fs::write(&path, json).map_err(|e| format!("Failed to write settings file: {e}"))?;
+    settings.servers.push(server);
+    write_settings(&path, &settings)?;
 
     Ok(settings.servers)
 }
@@ -79,45 +80,31 @@ pub fn save_server(app: AppHandle, new_server: Server) -> Result<Vec<Server>, St
 #[tauri::command]
 pub fn update_server(
     app: AppHandle,
-    original_host: String,
+    id: String,
     updated_server: Server,
 ) -> Result<Vec<Server>, String> {
     let path = get_settings_path(&app)?;
-    let contents =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read settings: {e}"))?;
+    let mut settings = read_settings(&path)?;
 
-    let mut settings: ServerMonitorSettings =
-        serde_json::from_str(&contents).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-
-    if let Some(target) = settings
-        .servers
-        .iter_mut()
-        .find(|s| s.host == original_host)
-    {
+    if let Some(target) = settings.servers.iter_mut().find(|s| s.id == id) {
         *target = updated_server;
+        target.id = id;
     } else {
-        return Err(format!("Server with host '{original_host}' not found"));
+        return Err(format!("Server with id '{id}' not found"));
     }
 
-    let json = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
-    fs::write(&path, json).map_err(|e| format!("Failed to write settings: {e}"))?;
-
+    write_settings(&path, &settings)?;
     Ok(settings.servers)
 }
 
 #[tauri::command]
-pub fn delete_server(app: AppHandle, host: String) -> Result<Vec<Server>, String> {
+pub fn delete_server(app: AppHandle, id: String) -> Result<Vec<Server>, String> {
     let path = get_settings_path(&app)?;
     let mut settings = read_settings(&path)?;
 
-    settings.servers.retain(|s| s.host != host);
+    settings.servers.retain(|s| s.id != id);
 
-    let json = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
-
-    fs::write(&path, json).map_err(|e| format!("Failed to write settings file: {e}"))?;
-
+    write_settings(&path, &settings)?;
     Ok(settings.servers)
 }
 
@@ -125,11 +112,5 @@ pub fn delete_server(app: AppHandle, host: String) -> Result<Vec<Server>, String
 pub fn reorder_servers(app: AppHandle, servers: Vec<Server>) -> Result<(), String> {
     let path = get_settings_path(&app)?;
     let settings = ServerMonitorSettings { servers };
-
-    let json = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
-
-    fs::write(&path, json).map_err(|e| format!("Failed to write settings file: {e}"))?;
-
-    Ok(())
+    write_settings(&path, &settings)
 }

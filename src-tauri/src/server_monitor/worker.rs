@@ -101,6 +101,7 @@ async fn check_server(server: &Server) -> ServerStatusEvent {
 
 pub fn start_ping_worker(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
         loop {
             let servers = load_servers(app.clone()).unwrap_or_default();
 

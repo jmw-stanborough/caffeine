@@ -8,10 +8,16 @@ pub struct Agent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Server {
+    #[serde(default = "new_id")]
+    pub id: String,
     pub host: String,
     pub label: String,
     pub description: Option<String>,
     pub agent: Option<Agent>,
+}
+
+fn new_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
