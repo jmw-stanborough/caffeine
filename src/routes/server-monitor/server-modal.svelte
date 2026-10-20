@@ -72,11 +72,28 @@
     }
     open = false;
   }
+
+  function handleBackdropKeyDown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      open = false;
+    }
+  }
 </script>
 
 {#if open}
-  <div class="modal-backdrop" onclick={() => (open = false)} role="presentation">
-    <div class="modal-card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+  <div
+    class="modal-backdrop"
+    onclick={() => (open = false)}
+    onkeydown={handleBackdropKeyDown}
+    role="presentation"
+  >
+    <div
+      class="modal-card"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+    >
       <div class="modal-header">
         <h2 class="modal-title">{server ? "Edit Server" : "Add Server"}</h2>
         <button type="button" class="btn-close" onclick={() => (open = false)}>✕</button>
@@ -164,6 +181,7 @@
     flex-direction: column;
     gap: 1.25rem;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    outline: none;
   }
 
   .modal-header {
