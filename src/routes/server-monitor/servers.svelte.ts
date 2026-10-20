@@ -1,14 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DndServer, HostState, Server, ServerStatusTick } from "./types";
+import type { HostState, Server, ServerStatusTick } from "./types";
 
 export class ServerStore {
-  items = $state<DndServer[]>([]);
+  items = $state<Server[]>([]);
   statusMap = $state<Record<string, HostState>>({});
   loading = $state(true);
   errorMessage = $state<string | null>(null);
 
   private unlistenStatus: UnlistenFn | null = null;
+  private soundDown =
+    typeof Audio !== "undefined"
+      ? new Audio("/sound-files/server-monitor/down.mp3")
+      : null;
+  private soundUp =
+    typeof Audio !== "undefined"
+      ? new Audio("/sound-files/server-monitor/up.mp3")
+      : null;
 
   async init() {
     await this.fetchServers();
@@ -17,6 +25,25 @@ export class ServerStore {
       "server-status-tick",
       (event) => {
         const { host, status, latency_ms } = event.payload;
+        const previousState = this.statusMap[host];
+
+        if (previousState && previousState.status !== "checking") {
+          if (previousState.status === "online" && status === "offline") {
+            if (this.soundDown) {
+              this.soundDown.currentTime = 0;
+              this.soundDown.play().catch(() => {});
+            }
+          } else if (
+            previousState.status === "offline" &&
+            status === "online"
+          ) {
+            if (this.soundUp) {
+              this.soundUp.currentTime = 0;
+              this.soundUp.play().catch(() => {});
+            }
+          }
+        }
+
         this.statusMap[host] = { status, latencyMs: latency_ms };
       },
     );
@@ -30,8 +57,7 @@ export class ServerStore {
     this.loading = true;
     this.errorMessage = null;
     try {
-      const raw = await invoke<Server[]>("load_servers");
-      this.items = raw.map((s) => ({ ...s, id: s.host }));
+      this.items = await invoke<Server[]>("load_servers");
     } catch (err) {
       this.errorMessage = String(err);
     } finally {
@@ -39,44 +65,45 @@ export class ServerStore {
     }
   };
 
-  async saveServer(savedServer: Server, originalHost?: string) {
+  async saveServer(savedServer: Server, existingId?: string) {
     try {
-      const cmd = originalHost ? "update_server" : "save_server";
-      const payload = originalHost
-        ? { originalHost, updatedServer: savedServer }
-        : { newServer: savedServer };
-
-      const updated = await invoke<Server[]>(cmd, payload);
-      this.items = updated.map((s) => ({ ...s, id: s.host }));
+      if (existingId) {
+        this.items = await invoke<Server[]>("update_server", {
+          id: existingId,
+          updatedServer: savedServer,
+        });
+      } else {
+        this.items = await invoke<Server[]>("save_server", {
+          newServer: savedServer,
+        });
+      }
     } catch (err) {
       this.errorMessage = String(err);
     }
   }
 
-  async deleteServer(hostToDelete: string) {
+  async deleteServer(idToDelete: string) {
+    const target = this.items.find((s) => s.id === idToDelete);
     const backup = this.items;
-    this.items = this.items.filter((s) => s.host !== hostToDelete);
+    this.items = this.items.filter((s) => s.id !== idToDelete);
 
     try {
-      const updated = await invoke<Server[]>("delete_server", {
-        host: hostToDelete,
-      });
-      this.items = updated.map((s) => ({ ...s, id: s.host }));
-
-      const nextStatus = { ...this.statusMap };
-      delete nextStatus[hostToDelete];
-      this.statusMap = nextStatus;
+      this.items = await invoke<Server[]>("delete_server", { id: idToDelete });
+      if (target && !this.items.some((s) => s.host === target.host)) {
+        const nextStatus = { ...this.statusMap };
+        delete nextStatus[target.host];
+        this.statusMap = nextStatus;
+      }
     } catch (err) {
       this.errorMessage = String(err);
       this.items = backup;
     }
   }
 
-  async reorderServers(items: DndServer[]) {
+  async reorderServers(items: Server[]) {
     this.items = items;
-    const payload = items.map(({ id, ...rest }) => rest);
     try {
-      await invoke("reorder_servers", { servers: payload });
+      await invoke("reorder_servers", { servers: items });
     } catch (err) {
       this.errorMessage = String(err);
     }

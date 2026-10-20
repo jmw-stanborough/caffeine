@@ -4,13 +4,12 @@ export interface Agent {
 }
 
 export interface Server {
+  id: string;
   host: string;
   label: string;
   description?: string;
   agent?: Agent;
 }
-
-export type DndServer = Server & { id: string };
 
 export type StatusKind = "online" | "offline" | "degraded" | "checking";
 

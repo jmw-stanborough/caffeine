@@ -14,20 +14,29 @@
     nocMode?: boolean;
     onclick?: () => void;
   } = $props();
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if ((e.key === "Enter" || e.key === " ") && onclick) {
+      e.preventDefault();
+      onclick();
+    }
+  }
 </script>
 
-<button
-  type="button"
+<div
   class="server-card {status}"
   class:noc={nocMode}
+  role="button"
+  tabindex="0"
   {onclick}
+  onkeydown={handleKeyDown}
 >
   <div class="card-main">
     <div class="card-title-row">
       <span class="status-dot" aria-hidden="true"></span>
       <h2 class="card-label">{server.label}</h2>
       {#if server.agent && !nocMode}
-        <span class="badge-agent">Agent on port {server.agent.port}</span>
+        <span class="badge-agent">Agent :{server.agent.port}</span>
       {/if}
     </div>
 
@@ -48,14 +57,10 @@
       {/if}
     </span>
   </div>
-</button>
+</div>
 
 <style>
-  button.server-card {
-    appearance: none;
-    font: inherit;
-    color: inherit;
-    text-align: inherit;
+  .server-card {
     border: solid var(--width-border) var(--status-color, var(--color-border));
     border-radius: 0.5rem;
     padding: 1rem;
@@ -68,54 +73,55 @@
     justify-content: space-between;
     gap: 0.75rem;
     cursor: pointer;
+    user-select: none;
     transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
-  button.server-card:focus-visible {
+  .server-card:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
 
-  button.server-card.noc {
+  .server-card.noc {
     cursor: default;
     min-height: var(--card-min-height, 8.5rem);
     padding: 1rem;
   }
 
-  button.server-card.online {
+  .server-card.online {
     --status-color: var(--color-primary);
     background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
   }
 
-  button.server-card.online:hover {
+  .server-card.online:hover {
     background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
   }
 
-  button.server-card.degraded {
+  .server-card.degraded {
     --status-color: var(--color-secondary);
     background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
   }
 
-  button.server-card.degraded:hover {
+  .server-card.degraded:hover {
     background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
   }
 
-  button.server-card.offline {
+  .server-card.offline {
     --status-color: var(--color-error);
     background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
   }
 
-  button.server-card.offline:hover {
+  .server-card.offline:hover {
     background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
   }
 
-  button.server-card.checking {
+  .server-card.checking {
     --status-color: var(--color-text-muted);
     background-color: color-mix(in srgb, var(--color-surface) 60%, transparent);
     border-color: var(--color-border);
   }
 
-  button.server-card.checking:hover {
+  .server-card.checking:hover {
     background-color: color-mix(in srgb, var(--color-surface) 85%, transparent);
     border-color: var(--color-text-muted);
   }

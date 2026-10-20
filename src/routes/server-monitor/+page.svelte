@@ -108,7 +108,12 @@
     <section
       class="server-grid"
       class:noc-grid={isNocMode}
-      use:dndzone={{ items: store.items, flipDurationMs: 200, dragDisabled: isNocMode, dropTargetStyle: {} }}
+      use:dndzone={{
+        items: store.items,
+        flipDurationMs: 200,
+        dragDisabled: isNocMode,
+        dropTargetStyle: {}
+      }}
       onconsider={(e) => (store.items = e.detail.items)}
       onfinalize={(e) => store.reorderServers(e.detail.items)}
     >
@@ -144,8 +149,8 @@
 <ServerModal
   bind:open={isModalOpen}
   server={editingServer}
-  onsave={(saved, orig) => store.saveServer(saved, orig)}
-  ondelete={(host) => store.deleteServer(host)}
+  onsave={(saved, id) => store.saveServer(saved, id)}
+  ondelete={(id) => store.deleteServer(id)}
 />
 
 <style>
@@ -258,6 +263,7 @@
   .drag-wrapper,
   .add-card-wrapper {
     height: 100%;
+    min-height: var(--card-min-height, 8.5rem);
     outline: none;
   }
 
@@ -290,6 +296,7 @@
     min-height: var(--card-min-height, 8.5rem);
     height: 100%;
     width: 100%;
+    box-sizing: border-box;
     margin: 0;
     padding: 1rem;
     background-color: transparent;
