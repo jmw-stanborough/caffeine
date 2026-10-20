@@ -1,8 +1,11 @@
-use super::config::load_servers;
+use super::db::{DbState, add_log_entry, get_servers};
 use super::types::{Agent, HealthStatus, Server, ServerStatusEvent};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::TcpStream;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::timeout;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(1000);
@@ -100,18 +103,50 @@ async fn check_server(server: &Server) -> ServerStatusEvent {
 }
 
 pub fn start_ping_worker(app: AppHandle) {
+    let last_statuses = Arc::new(AsyncMutex::new(HashMap::<String, HealthStatus>::new()));
+
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(500)).await;
+
         loop {
-            let servers = load_servers(app.clone()).unwrap_or_default();
+            let servers = {
+                let db = app.state::<DbState>();
+                if let Ok(conn) = db.0.lock() {
+                    get_servers(&conn).unwrap_or_default()
+                } else {
+                    Vec::new()
+                }
+            };
 
             let mut tasks = Vec::new();
             for server in servers {
-                tasks.push(tokio::spawn(async move { check_server(&server).await }));
+                let s = server.clone();
+                tasks.push(tokio::spawn(async move {
+                    let event = check_server(&s).await;
+                    (s.id, event)
+                }));
             }
 
             for task in tasks {
-                if let Ok(status_event) = task.await {
+                if let Ok((server_id, status_event)) = task.await {
+                    let mut history = last_statuses.lock().await;
+                    let prev = history.get(&server_id).cloned();
+
+                    if let Some(ref old_status) = prev {
+                        if old_status != &status_event.status {
+                            let db = app.state::<DbState>();
+                            if let Ok(conn) = db.0.lock() {
+                                let _ = add_log_entry(
+                                    &conn,
+                                    &server_id,
+                                    status_event.status.as_str(),
+                                    status_event.latency_ms,
+                                );
+                            }
+                        }
+                    }
+
+                    history.insert(server_id, status_event.status.clone());
                     let _ = app.emit("server-status-tick", status_event);
                 }
             }

@@ -1,117 +1,57 @@
-use super::types::{Server, ServerMonitorSettings};
-use std::fs;
-use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use super::db::{
+    DbState, delete_server_entry, get_servers, insert_server, query_logs, update_server_entry,
+    update_sort_order,
+};
+use super::types::{Server, ServerLog};
+use tauri::State;
 
-fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let config_dir = app
-        .path()
-        .config_dir()
-        .map_err(|e| format!("Failed to resolve config dir: {e}"))?;
-
-    let settings_dir = config_dir.join("caffeine").join("server-monitor");
-
-    fs::create_dir_all(&settings_dir)
-        .map_err(|e| format!("Failed to create settings directory: {e}"))?;
-
-    Ok(settings_dir.join("settings.json"))
-}
-
-fn read_settings(path: &Path) -> Result<ServerMonitorSettings, String> {
-    if !path.exists() {
-        return Ok(ServerMonitorSettings::default());
-    }
-
-    let contents =
-        fs::read_to_string(path).map_err(|e| format!("Failed to read settings file: {e}"))?;
-
-    if contents.trim().is_empty() {
-        return Ok(ServerMonitorSettings::default());
-    }
-
-    serde_json::from_str(&contents).map_err(|e| format!("Failed to parse settings JSON: {e}"))
-}
-
-fn write_settings(path: &Path, settings: &ServerMonitorSettings) -> Result<(), String> {
-    let json = serde_json::to_string_pretty(settings)
-        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
-    fs::write(path, json).map_err(|e| format!("Failed to write settings file: {e}"))
+#[tauri::command]
+pub fn load_servers(db: State<'_, DbState>) -> Result<Vec<Server>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    get_servers(&conn)
 }
 
 #[tauri::command]
-pub fn load_servers(app: AppHandle) -> Result<Vec<Server>, String> {
-    let path = get_settings_path(&app)?;
-
-    if !path.exists() {
-        let initial_settings = ServerMonitorSettings::default();
-        write_settings(&path, &initial_settings)?;
-        return Ok(initial_settings.servers);
-    }
-
-    let contents =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read settings file: {e}"))?;
-
-    let settings: ServerMonitorSettings = serde_json::from_str(&contents)
-        .map_err(|e| format!("Failed to parse settings JSON: {e}"))?;
-
-    if !contents.contains("\"id\"") {
-        let _ = write_settings(&path, &settings);
-    }
-
-    Ok(settings.servers)
-}
-
-#[tauri::command]
-pub fn save_server(app: AppHandle, new_server: Server) -> Result<Vec<Server>, String> {
-    let path = get_settings_path(&app)?;
-    let mut settings = read_settings(&path)?;
-
-    let mut server = new_server;
-    if server.id.is_empty() {
-        server.id = uuid::Uuid::new_v4().to_string();
-    }
-
-    settings.servers.push(server);
-    write_settings(&path, &settings)?;
-
-    Ok(settings.servers)
+pub fn save_server(db: State<'_, DbState>, new_server: Server) -> Result<Vec<Server>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    insert_server(&conn, &new_server)?;
+    get_servers(&conn)
 }
 
 #[tauri::command]
 pub fn update_server(
-    app: AppHandle,
+    db: State<'_, DbState>,
     id: String,
     updated_server: Server,
 ) -> Result<Vec<Server>, String> {
-    let path = get_settings_path(&app)?;
-    let mut settings = read_settings(&path)?;
-
-    if let Some(target) = settings.servers.iter_mut().find(|s| s.id == id) {
-        *target = updated_server;
-        target.id = id;
-    } else {
-        return Err(format!("Server with id '{id}' not found"));
-    }
-
-    write_settings(&path, &settings)?;
-    Ok(settings.servers)
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    update_server_entry(&conn, &id, &updated_server)?;
+    get_servers(&conn)
 }
 
 #[tauri::command]
-pub fn delete_server(app: AppHandle, id: String) -> Result<Vec<Server>, String> {
-    let path = get_settings_path(&app)?;
-    let mut settings = read_settings(&path)?;
-
-    settings.servers.retain(|s| s.id != id);
-
-    write_settings(&path, &settings)?;
-    Ok(settings.servers)
+pub fn delete_server(db: State<'_, DbState>, id: String) -> Result<Vec<Server>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    delete_server_entry(&conn, &id)?;
+    get_servers(&conn)
 }
 
 #[tauri::command]
-pub fn reorder_servers(app: AppHandle, servers: Vec<Server>) -> Result<Vec<Server>, String> {
-    let path = get_settings_path(&app)?;
-    let settings = ServerMonitorSettings { servers };
-    write_settings(&path, &settings)?;
-    Ok(settings.servers)
+pub fn reorder_servers(
+    db: State<'_, DbState>,
+    servers: Vec<Server>,
+) -> Result<Vec<Server>, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    update_sort_order(&mut conn, &servers)?;
+    get_servers(&conn)
+}
+
+#[tauri::command]
+pub fn get_server_logs(
+    db: State<'_, DbState>,
+    server_id: String,
+    limit: Option<i64>,
+) -> Result<Vec<ServerLog>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    query_logs(&conn, &server_id, limit.unwrap_or(50))
 }
