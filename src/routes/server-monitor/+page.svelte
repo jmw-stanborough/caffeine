@@ -124,6 +124,8 @@
             nocMode={isNocMode}
             status={store.statusMap[server.host]?.status ?? "checking"}
             latencyMs={store.statusMap[server.host]?.latencyMs}
+            lastEvent={store.statusMap[server.host]?.lastEvent}
+            lastEventAt={store.statusMap[server.host]?.lastEventAt}
             onclick={() => openEditModal(server)}
           />
         </div>

@@ -234,14 +234,45 @@ pub fn add_log_entry(
     server_id: &str,
     event_type: &str,
     latency_ms: Option<u64>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     conn.execute(
         "INSERT INTO server_logs (server_id, event_type, latency_ms) VALUES (?1, ?2, ?3)",
         params![server_id, event_type, latency_ms.map(|l| l as i64)],
     )
     .map_err(|e| e.to_string())?;
 
-    Ok(())
+    let timestamp: String = conn
+        .query_row(
+            "SELECT timestamp FROM server_logs WHERE id = last_insert_rowid()",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(timestamp)
+}
+
+pub fn get_latest_log(
+    conn: &Connection,
+    server_id: &str,
+) -> Result<Option<(String, String)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT event_type, timestamp FROM server_logs
+             WHERE server_id = ?1
+             ORDER BY id DESC LIMIT 1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut rows = stmt
+        .query_map(params![server_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?;
+
+    if let Some(res) = rows.next() {
+        Ok(Some(res.map_err(|e| e.to_string())?))
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn query_logs(

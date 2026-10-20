@@ -28,30 +28,14 @@ pub enum HealthStatus {
     Degraded,
 }
 
-impl HealthStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            HealthStatus::Online => "online",
-            HealthStatus::Offline => "offline",
-            HealthStatus::Degraded => "degraded",
-        }
-    }
-
-    pub fn from_str(val: &str) -> Option<Self> {
-        match val {
-            "online" => Some(HealthStatus::Online),
-            "offline" => Some(HealthStatus::Offline),
-            "degraded" => Some(HealthStatus::Degraded),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStatusEvent {
     pub host: String,
+    pub server_id: String,
     pub status: HealthStatus,
     pub latency_ms: Option<u64>,
+    pub last_event: Option<String>,
+    pub last_event_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

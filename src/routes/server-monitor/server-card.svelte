@@ -5,15 +5,31 @@
     server,
     status = "checking",
     latencyMs = undefined,
+    lastEvent = undefined,
+    lastEventAt = undefined,
     nocMode = false,
     onclick,
   }: {
     server: Server;
     status?: HostState["status"];
     latencyMs?: number;
+    lastEvent?: HostState["lastEvent"];
+    lastEventAt?: string;
     nocMode?: boolean;
     onclick?: () => void;
   } = $props();
+
+  function formatRelativeTime(dateString?: string): string {
+    if (!dateString) return "";
+    const parsed = new Date(dateString);
+    if (isNaN(parsed.getTime())) return "";
+
+    const diffSec = Math.floor((Date.now() - parsed.getTime()) / 1000);
+    if (diffSec < 60) return "just now";
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  }
 
   function handleKeyDown(e: KeyboardEvent) {
     if ((e.key === "Enter" || e.key === " ") && onclick) {
@@ -46,7 +62,15 @@
   </div>
 
   <div class="card-footer">
-    <span class="card-host">{server.host}</span>
+    <div class="footer-left">
+      <span class="card-host">{server.host}</span>
+      {#if lastEvent && lastEventAt}
+        <span class="card-since">
+          {lastEvent === "connected" ? "Connected" : "Disconnected"} {formatRelativeTime(lastEventAt)}
+        </span>
+      {/if}
+    </div>
+
     <span class="card-latency">
       {#if latencyMs !== undefined}
         {latencyMs} ms
@@ -178,15 +202,27 @@
 
   .card-footer {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: space-between;
     font-size: calc(0.75rem * var(--card-font-scale, 1));
     color: var(--color-text-muted);
     margin-top: auto;
   }
 
+  .footer-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
   .card-host {
     font-family: monospace;
+  }
+
+  .card-since {
+    font-size: calc(0.7rem * var(--card-font-scale, 1));
+    color: var(--color-text-muted);
+    opacity: 0.85;
   }
 
   .card-latency {
