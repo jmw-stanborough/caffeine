@@ -53,7 +53,9 @@
 >
   <div class="card-main">
     <div class="card-title-row">
-      <span class="status-dot" aria-hidden="true"></span>
+      {#if !nocMode}
+        <span class="status-dot" aria-hidden="true"></span>
+      {/if}
       <h2 class="card-label">{server.label}</h2>
       {#if server.agent && !nocMode}
         <span class="badge-agent">Agent :{server.agent.port}</span>
@@ -114,6 +116,24 @@
     cursor: default;
     min-height: var(--card-min-height, 8.5rem);
     padding: 1rem;
+  }
+
+  .server-card.noc .card-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .server-card.noc .card-title-row {
+    justify-content: center;
+  }
+
+  .server-card.noc .card-label {
+    font-size: calc(1.75rem * var(--card-font-scale, 1));
+    font-weight: 700;
+    text-align: center;
   }
 
   .server-card.online {
