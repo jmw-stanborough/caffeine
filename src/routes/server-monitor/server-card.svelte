@@ -122,7 +122,7 @@
   }
 
   .server-card.online:hover {
-    background-color: color-mix(in srgb, var(--status-color) 64%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--status-color) 42%, var(--color-surface));
   }
 
   .server-card.degraded {
@@ -131,7 +131,7 @@
   }
 
   .server-card.degraded:hover {
-    background-color: color-mix(in srgb, var(--status-color) 64%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--status-color) 42%, var(--color-surface));
   }
 
   .server-card.offline {
@@ -140,7 +140,7 @@
   }
 
   .server-card.offline:hover {
-    background-color: color-mix(in srgb, var(--status-color) 64%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--status-color) 42%, var(--color-surface));
   }
 
   .server-card.checking {
