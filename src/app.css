@@ -21,9 +21,9 @@
   --color-primary: #98971a;
   --color-secondary: #af3a03;
 
-  --color-success: #77ff77;
-  --color-warning: #ffff77;
-  --color-failure: #ff7777;
+  --color-success: #66ee66;
+  --color-warning: #eeee66;
+  --color-failure: #ee6666;
 
   --color-link: #458588;
   --color-link-hover: #689d6a;
@@ -45,9 +45,9 @@
     --color-primary: #b8bb26;
     --color-secondary: #fe8019;
 
-    --color-success: #77ff77;
-    --color-warning: #ffff77;
-    --color-failure: #ff7777;
+    --color-success: #55aa55;
+    --color-warning: #aaaa55;
+    --color-failure: #aa5555;
 
     --color-link: #83a598;
     --color-link-hover: #8ec07c;
