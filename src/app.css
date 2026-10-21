@@ -20,7 +20,10 @@
 
   --color-primary: #98971a;
   --color-secondary: #af3a03;
-  --color-error: #cc241d;
+
+  --color-success: #689d6a;
+  --color-warning: #d79921;
+  --color-failure: #cc241d;
 
   --color-link: #458588;
   --color-link-hover: #689d6a;
@@ -41,7 +44,10 @@
 
     --color-primary: #b8bb26;
     --color-secondary: #fe8019;
-    --color-error: #fb4934;
+
+    --color-success: #77ff77;
+    --color-warning: #ffff77;
+    --color-failure: #ff7777;
 
     --color-link: #83a598;
     --color-link-hover: #8ec07c;

@@ -117,30 +117,30 @@
   }
 
   .server-card.online {
-    --status-color: var(--color-primary);
-    background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
+    --status-color: var(--color-success);
+    background-color: color-mix(in srgb, var(--status-color) 16%, var(--color-surface));
   }
 
   .server-card.online:hover {
-    background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--status-color) 32%, var(--color-surface));
   }
 
   .server-card.degraded {
-    --status-color: var(--color-secondary);
-    background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
+    --status-color: var(--color-warning);
+    background-color: color-mix(in srgb, var(--status-color) 16%, var(--color-surface));
   }
 
   .server-card.degraded:hover {
-    background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--status-color) 32%, var(--color-surface));
   }
 
   .server-card.offline {
     --status-color: var(--color-error);
-    background-color: color-mix(in srgb, var(--status-color) 18%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--status-color) 16%, var(--color-surface));
   }
 
   .server-card.offline:hover {
-    background-color: color-mix(in srgb, var(--status-color) 28%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--status-color) 32%, var(--color-surface));
   }
 
   .server-card.checking {
