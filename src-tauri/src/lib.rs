@@ -1,16 +1,19 @@
 use tauri::Manager;
 
+mod printer_dashboard;
 mod server_monitor;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let db_state = server_monitor::db::init_db(app.handle())
                 .expect("failed to initialize sqlite database");
             app.manage(db_state);
 
             server_monitor::worker::start_ping_worker(app.handle().clone());
+            printer_dashboard::worker::start_printer_worker(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -20,6 +23,17 @@ pub fn run() {
             server_monitor::config::delete_server,
             server_monitor::config::reorder_servers,
             server_monitor::config::get_server_logs,
+            printer_dashboard::config::load_printers,
+            printer_dashboard::config::save_printer,
+            printer_dashboard::config::update_printer,
+            printer_dashboard::config::delete_printer,
+            printer_dashboard::config::reorder_printers,
+            printer_dashboard::config::get_printer_logs,
+            printer_dashboard::webview::open_printer_webview,
+            printer_dashboard::webview::resize_printer_webview,
+            printer_dashboard::webview::navigate_printer_webview,
+            printer_dashboard::webview::reload_printer_webview,
+            printer_dashboard::webview::close_printer_webview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

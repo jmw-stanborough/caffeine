@@ -3,7 +3,8 @@
 
   const navigationItems = [
     { href: "/", label: "Dashboard" },
-    { href: "/server-monitor", label: "Server Monitor" }
+    { href: "/server-monitor", label: "Server Monitor" },
+    { href: "/printers", label: "Printers" }
   ];
 </script>
 

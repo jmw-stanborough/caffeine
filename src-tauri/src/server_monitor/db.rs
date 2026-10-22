@@ -49,6 +49,29 @@ pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
 
         CREATE INDEX IF NOT EXISTS idx_server_logs_lookup
         ON server_logs(server_id, timestamp DESC);
+
+        CREATE TABLE IF NOT EXISTS printers (
+            id TEXT PRIMARY KEY,
+            host TEXT NOT NULL,
+            label TEXT NOT NULL,
+            description TEXT,
+            model TEXT,
+            location TEXT,
+            snmp_community TEXT NOT NULL DEFAULT 'public',
+            web_url TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS printer_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            printer_id TEXT NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+            event_type TEXT NOT NULL,
+            latency_ms INTEGER,
+            timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_printer_logs_lookup
+        ON printer_logs(printer_id, timestamp DESC);
         ",
     )
     .map_err(|e| format!("Failed to run schema migrations: {e}"))?;
