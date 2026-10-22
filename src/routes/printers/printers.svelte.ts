@@ -12,14 +12,6 @@ export class PrinterStore {
   private unlistenStatus: UnlistenFn | null = null;
   private timer: number | null = null;
   private destroyed = false;
-  private soundDown =
-    typeof Audio !== "undefined"
-      ? new Audio("/sound-files/server-monitor/down.mp3")
-      : null;
-  private soundUp =
-    typeof Audio !== "undefined"
-      ? new Audio("/sound-files/server-monitor/up.mp3")
-      : null;
 
   async init() {
     this.destroyed = false;
@@ -47,23 +39,6 @@ export class PrinterStore {
           status_message,
         } = event.payload;
         const previousState = this.statusMap[printer_id];
-
-        if (previousState && previousState.status !== "checking") {
-          if (previousState.status === "online" && status === "offline") {
-            if (this.soundDown) {
-              this.soundDown.currentTime = 0;
-              this.soundDown.play().catch(() => {});
-            }
-          } else if (
-            previousState.status === "offline" &&
-            status === "online"
-          ) {
-            if (this.soundUp) {
-              this.soundUp.currentTime = 0;
-              this.soundUp.play().catch(() => {});
-            }
-          }
-        }
 
         this.statusMap[printer_id] = {
           status,
