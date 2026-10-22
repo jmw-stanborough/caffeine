@@ -1,4 +1,13 @@
 <script lang="ts">
+  import DashboardHeader from "$lib/components/dashboard-header.svelte";
+  import {
+    DEFAULT_CARD_SCALE,
+    DND_FLIP_DURATION_MS,
+    SERVER_CARD_MIN_HEIGHT_REM,
+    SERVER_CARD_MIN_WIDTH_REM,
+    SERVER_NOC_MIN_WIDTH_REM,
+  } from "$lib/constants";
+  import { clampCardScale } from "$lib/format";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
@@ -14,10 +23,10 @@
   let isModalOpen = $state(false);
   let editingServer = $state<Server | undefined>(undefined);
   let isNocMode = $state(false);
-  let cardScale = $state(1);
+  let cardScale = $state(DEFAULT_CARD_SCALE);
 
   function adjustScale(delta: number) {
-    cardScale = Math.min(1.6, Math.max(0.7, +(cardScale + delta).toFixed(2)));
+    cardScale = clampCardScale(cardScale, delta);
   }
 
   async function setNocMode(active: boolean) {
@@ -55,52 +64,20 @@
 <div
   class="page-container"
   class:noc-layout={isNocMode}
-  style:--card-min-width="{18 * cardScale}rem"
-  style:--noc-min-width="{16 * cardScale}rem"
-  style:--card-min-height="{8.5 * cardScale}rem"
+  style:--card-min-width="{SERVER_CARD_MIN_WIDTH_REM * cardScale}rem"
+  style:--noc-min-width="{SERVER_NOC_MIN_WIDTH_REM * cardScale}rem"
+  style:--card-min-height="{SERVER_CARD_MIN_HEIGHT_REM * cardScale}rem"
   style:--card-font-scale={cardScale}
 >
-  <header class="page-header">
-    <div class="header-titles">
-      <h1 class="page-title">{isNocMode ? "NOC Monitor" : "Servers"}</h1>
-      <span class="server-count">{store.items.length} configured</span>
-    </div>
-    <div class="header-actions">
-      <div class="zoom-controls">
-        <button
-          type="button"
-          class="btn-zoom"
-          onclick={() => adjustScale(-0.1)}
-          aria-label="Decrease card size"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          class="btn-zoom"
-          onclick={() => adjustScale(0.1)}
-          aria-label="Increase card size"
-        >
-          +
-        </button>
-      </div>
-
-      <button
-        type="button"
-        class="btn-noc"
-        onclick={() => setNocMode(!isNocMode)}
-      >
-        {isNocMode ? "Exit NOC (Esc)" : "NOC Mode"}
-      </button>
-    </div>
-  </header>
-
-  {#if store.errorMessage}
-    <div class="error-banner">
-      <span>{store.errorMessage}</span>
-      <button type="button" class="btn-retry" onclick={store.fetchServers}>Retry</button>
-    </div>
-  {/if}
+  <DashboardHeader
+    title={isNocMode ? "NOC Monitor" : "Servers"}
+    countText="{store.items.length} configured"
+    {isNocMode}
+    errorMessage={store.errorMessage}
+    onAdjustScale={adjustScale}
+    onToggleNoc={() => setNocMode(!isNocMode)}
+    onRetry={store.fetchServers}
+  />
 
   {#if store.loading}
     <p class="status-message">Reading configuration...</p>
@@ -110,16 +87,16 @@
       class:noc-grid={isNocMode}
       use:dndzone={{
         items: store.items,
-        flipDurationMs: 200,
+        flipDurationMs: DND_FLIP_DURATION_MS,
         dragDisabled: isNocMode,
-        dropTargetStyle: {}
+        dropTargetStyle: {},
       }}
       onconsider={(e) => (store.items = e.detail.items)}
       onfinalize={(e) => store.reorderServers(e.detail.items)}
     >
       {#each store.items as server (server.id)}
         {@const hostState = store.statusMap[server.id]}
-        <div animate:flip={{ duration: 200 }} class="drag-wrapper">
+        <div animate:flip={{ duration: DND_FLIP_DURATION_MS }} class="drag-wrapper">
           <ServerCard
             {server}
             nocMode={isNocMode}
@@ -138,7 +115,10 @@
           <button
             class="add-server-card"
             type="button"
-            onclick={() => { editingServer = undefined; isModalOpen = true; }}
+            onclick={() => {
+              editingServer = undefined;
+              isModalOpen = true;
+            }}
             aria-label="Add new server"
           >
             <span class="plus-icon" aria-hidden="true">+</span>
@@ -158,110 +138,6 @@
 />
 
 <style>
-  .page-container {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.5rem;
-  }
-
-  .page-container.noc-layout {
-    position: fixed;
-    inset: 0;
-    box-sizing: border-box;
-    background-color: var(--color-base);
-    padding: 2rem 2.5rem;
-    overflow-y: auto;
-    z-index: 50;
-  }
-
-  .page-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem 1rem;
-  }
-
-  .header-titles {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.25rem 0.75rem;
-    min-width: 0;
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .page-title {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--color-text);
-    white-space: nowrap;
-  }
-
-  .server-count {
-    font-size: 0.9rem;
-    color: var(--color-text-muted);
-    white-space: nowrap;
-  }
-
-  .zoom-controls {
-    display: flex;
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.375rem;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .btn-zoom {
-    background: transparent;
-    border: none;
-    color: var(--color-text-muted);
-    padding: 0.35rem 0.65rem;
-    font-size: 0.95rem;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background-color 0.15s ease, color 0.15s ease;
-  }
-
-  .btn-zoom:first-child {
-    border-right: solid var(--width-border) var(--color-border);
-  }
-
-  .btn-zoom:hover {
-    background-color: var(--color-surface);
-    color: var(--color-text);
-  }
-
-  .btn-noc {
-    background-color: transparent;
-    border: solid var(--width-border) var(--color-border);
-    color: var(--color-text-muted);
-    padding: 0.35rem 0.75rem;
-    border-radius: 0.375rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-    transition: all 0.15s ease;
-  }
-
-  .btn-noc:hover {
-    background-color: var(--color-surface);
-    color: var(--color-text);
-    border-color: var(--color-text-muted);
-  }
-
   .server-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-width, 18rem)), 1fr));
@@ -280,26 +156,6 @@
     height: 100%;
     min-height: var(--card-min-height, 8.5rem);
     outline: none;
-  }
-
-  .error-banner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    border-radius: 0.375rem;
-    background-color: color-mix(in srgb, var(--color-failure) 15%, transparent);
-    color: var(--color-failure);
-    border: solid var(--width-border) var(--color-failure);
-  }
-
-  .btn-retry {
-    background: transparent;
-    border: solid var(--width-border) var(--color-failure);
-    color: var(--color-failure);
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    cursor: pointer;
   }
 
   .add-server-card {
@@ -342,10 +198,5 @@
   .add-title {
     font-size: calc(1rem * var(--card-font-scale, 1));
     font-weight: 600;
-  }
-
-  .status-message {
-    color: var(--color-text-muted);
-    font-size: 0.95rem;
   }
 </style>

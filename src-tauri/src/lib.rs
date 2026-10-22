@@ -1,15 +1,17 @@
 use tauri::Manager;
 
-mod printer_dashboard;
-mod server_monitor;
+pub mod db;
+pub mod net;
+pub mod printer_dashboard;
+pub mod server_monitor;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let db_state = server_monitor::db::init_db(app.handle())
-                .expect("failed to initialize sqlite database");
+            let db_state =
+                db::init_db(app.handle()).expect("failed to initialize sqlite database");
             app.manage(db_state);
 
             server_monitor::worker::start_ping_worker(app.handle().clone());

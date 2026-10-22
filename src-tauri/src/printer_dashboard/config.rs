@@ -4,7 +4,7 @@ use super::db::{
     update_printer_sort_order,
 };
 use super::types::{Printer, PrinterFilterConfig, PrinterLog};
-use crate::server_monitor::db::DbState;
+use crate::db::{DEFAULT_LOG_LIMIT, DbState};
 use tauri::State;
 
 #[tauri::command]
@@ -55,7 +55,7 @@ pub fn get_printer_logs(
     limit: Option<i64>,
 ) -> Result<Vec<PrinterLog>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    query_printer_logs(&conn, &printer_id, limit.unwrap_or(50))
+    query_printer_logs(&conn, &printer_id, limit.unwrap_or(DEFAULT_LOG_LIMIT))
 }
 
 #[tauri::command]

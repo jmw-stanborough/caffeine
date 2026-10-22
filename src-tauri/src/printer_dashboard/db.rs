@@ -1,5 +1,17 @@
-use super::types::{Printer, PrinterFilterConfig, PrinterLog};
-use rusqlite::{Connection, OptionalExtension, params};
+use super::types::{
+    DEFAULT_SNMP_COMMUNITY, Printer, PrinterFilterConfig, PrinterLog, normalize_snmp_community,
+};
+use crate::db::{
+    delete_by_id, ensure_entity_id, get_latest_log_entry, insert_log_entry, next_sort_order,
+    query_log_entries, update_table_sort_order,
+};
+use rusqlite::{Connection, params};
+
+pub const PRINTER_LOGS_TABLE: &str = "printer_logs";
+pub const PRINTER_ID_COLUMN: &str = "printer_id";
+const PRINTERS_TABLE: &str = "printers";
+const FILTER_MODE_ALL: &str = "all";
+const FILTER_MODE_ANY: &str = "any";
 
 pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
     let mut stmt = conn
@@ -12,6 +24,12 @@ pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
     let rows = stmt
         .query_map([], |row| {
             let community: Option<String> = row.get(6)?;
+            let snmp_community = community
+                .as_deref()
+                .map(normalize_snmp_community)
+                .unwrap_or(DEFAULT_SNMP_COMMUNITY)
+                .to_string();
+
             Ok(Printer {
                 id: row.get(0)?,
                 host: row.get(1)?,
@@ -19,9 +37,7 @@ pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
                 description: row.get(3)?,
                 model: row.get(4)?,
                 location: row.get(5)?,
-                snmp_community: community
-                    .filter(|s| !s.trim().is_empty())
-                    .unwrap_or_else(|| "public".to_string()),
+                snmp_community,
                 web_url: row.get(7)?,
             })
         })
@@ -32,25 +48,9 @@ pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
 }
 
 pub fn insert_printer(conn: &Connection, printer: &Printer) -> Result<(), String> {
-    let id = if printer.id.is_empty() {
-        uuid::Uuid::new_v4().to_string()
-    } else {
-        printer.id.clone()
-    };
-
-    let next_order: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM printers",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-
-    let community = if printer.snmp_community.trim().is_empty() {
-        "public"
-    } else {
-        printer.snmp_community.trim()
-    };
+    let id = ensure_entity_id(&printer.id);
+    let next_order = next_sort_order(conn, PRINTERS_TABLE);
+    let community = normalize_snmp_community(&printer.snmp_community);
 
     conn.execute(
         "INSERT INTO printers (id, host, label, description, model, location, snmp_community, web_url, sort_order)
@@ -73,11 +73,7 @@ pub fn insert_printer(conn: &Connection, printer: &Printer) -> Result<(), String
 }
 
 pub fn update_printer_entry(conn: &Connection, id: &str, printer: &Printer) -> Result<(), String> {
-    let community = if printer.snmp_community.trim().is_empty() {
-        "public"
-    } else {
-        printer.snmp_community.trim()
-    };
+    let community = normalize_snmp_community(&printer.snmp_community);
 
     conn.execute(
         "UPDATE printers
@@ -100,25 +96,11 @@ pub fn update_printer_entry(conn: &Connection, id: &str, printer: &Printer) -> R
 }
 
 pub fn delete_printer_entry(conn: &Connection, id: &str) -> Result<(), String> {
-    conn.execute("DELETE FROM printers WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    delete_by_id(conn, PRINTERS_TABLE, id)
 }
 
 pub fn update_printer_sort_order(conn: &mut Connection, printers: &[Printer]) -> Result<(), String> {
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-    {
-        let mut stmt = tx
-            .prepare("UPDATE printers SET sort_order = ?1 WHERE id = ?2")
-            .map_err(|e| e.to_string())?;
-
-        for (idx, printer) in printers.iter().enumerate() {
-            stmt.execute(params![idx as i64, printer.id])
-                .map_err(|e| e.to_string())?;
-        }
-    }
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(())
+    update_table_sort_order(conn, PRINTERS_TABLE, printers, |p| p.id.as_str())
 }
 
 pub fn add_printer_log_entry(
@@ -127,33 +109,21 @@ pub fn add_printer_log_entry(
     event_type: &str,
     latency_ms: Option<u64>,
 ) -> Result<String, String> {
-    conn.execute(
-        "INSERT INTO printer_logs (printer_id, event_type, latency_ms) VALUES (?1, ?2, ?3)",
-        params![printer_id, event_type, latency_ms.map(|l| l as i64)],
+    insert_log_entry(
+        conn,
+        PRINTER_LOGS_TABLE,
+        PRINTER_ID_COLUMN,
+        printer_id,
+        event_type,
+        latency_ms,
     )
-    .map_err(|e| e.to_string())?;
-
-    conn.query_row(
-        "SELECT timestamp FROM printer_logs WHERE id = last_insert_rowid()",
-        [],
-        |r| r.get(0),
-    )
-    .map_err(|e| e.to_string())
 }
 
 pub fn get_latest_printer_log(
     conn: &Connection,
     printer_id: &str,
 ) -> Result<Option<(String, String)>, String> {
-    conn.query_row(
-        "SELECT event_type, timestamp FROM printer_logs
-         WHERE printer_id = ?1
-         ORDER BY id DESC LIMIT 1",
-        params![printer_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )
-    .optional()
-    .map_err(|e| e.to_string())
+    get_latest_log_entry(conn, PRINTER_LOGS_TABLE, PRINTER_ID_COLUMN, printer_id)
 }
 
 pub fn query_printer_logs(
@@ -161,33 +131,23 @@ pub fn query_printer_logs(
     printer_id: &str,
     limit: i64,
 ) -> Result<Vec<PrinterLog>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, printer_id, event_type, latency_ms, timestamp
-             FROM printer_logs
-             WHERE printer_id = ?1
-             ORDER BY id DESC
-             LIMIT ?2",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map(params![printer_id, limit], |row| {
-            let lat: Option<i64> = row.get(3)?;
-            Ok(PrinterLog {
-                id: row.get(0)?,
-                printer_id: row.get(1)?,
-                event_type: row.get(2)?,
-                latency_ms: lat.map(|l| l as u64),
-                timestamp: row.get(4)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+    query_log_entries(
+        conn,
+        PRINTER_LOGS_TABLE,
+        PRINTER_ID_COLUMN,
+        printer_id,
+        limit,
+        |id, printer_id, event_type, latency_ms, timestamp| PrinterLog {
+            id,
+            printer_id,
+            event_type,
+            latency_ms,
+            timestamp,
+        },
+    )
 }
 
+/// Persists the SNMP-detected model string only if the user has not manually configured a model.
 pub fn update_printer_detected_model(
     conn: &Connection,
     id: &str,
@@ -219,7 +179,7 @@ pub fn get_printer_filter_tags(conn: &Connection) -> Result<PrinterFilterConfig,
     let mut config = PrinterFilterConfig::default();
     for row in rows {
         let (tag, mode) = row.map_err(|e| e.to_string())?;
-        if mode == "any" {
+        if mode == FILTER_MODE_ANY {
             config.any_tags.push(tag);
         } else {
             config.all_tags.push(tag);
@@ -244,22 +204,144 @@ pub fn save_printer_filter_tags_entries(
             )
             .map_err(|e| e.to_string())?;
 
-        for (idx, tag) in config.all_tags.iter().enumerate() {
-            let cleaned = tag.trim();
-            if !cleaned.is_empty() {
-                stmt.execute(params![cleaned, "all", idx as i64])
-                    .map_err(|e| e.to_string())?;
-            }
-        }
-
-        for (idx, tag) in config.any_tags.iter().enumerate() {
-            let cleaned = tag.trim();
-            if !cleaned.is_empty() {
-                stmt.execute(params![cleaned, "any", idx as i64])
-                    .map_err(|e| e.to_string())?;
+        for (mode, tags) in [
+            (FILTER_MODE_ALL, &config.all_tags),
+            (FILTER_MODE_ANY, &config.any_tags),
+        ] {
+            for (idx, tag) in tags.iter().enumerate() {
+                let cleaned = tag.trim();
+                if !cleaned.is_empty() {
+                    stmt.execute(params![cleaned, mode, idx as i64])
+                        .map_err(|e| e.to_string())?;
+                }
             }
         }
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_printer_db_crud_and_logs() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+            CREATE TABLE printers (
+                id TEXT PRIMARY KEY,
+                host TEXT NOT NULL,
+                label TEXT NOT NULL,
+                description TEXT,
+                model TEXT,
+                location TEXT,
+                snmp_community TEXT NOT NULL DEFAULT 'public',
+                web_url TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE printer_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                printer_id TEXT NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL,
+                latency_ms INTEGER,
+                timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            CREATE TABLE printer_filter_tags (
+                tag TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'all',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (tag, mode)
+            );
+            ",
+        )
+        .unwrap();
+
+        let p1 = Printer {
+            id: "p1".to_string(),
+            host: "192.168.1.50".to_string(),
+            label: "Reception Printer".to_string(),
+            description: Some("Main floor".to_string()),
+            model: Some("HP LaserJet".to_string()),
+            location: Some("Lobby".to_string()),
+            snmp_community: "public".to_string(),
+            web_url: None,
+        };
+        insert_printer(&conn, &p1).unwrap();
+
+        let p2 = Printer {
+            id: "p2".to_string(),
+            host: "192.168.1.51".to_string(),
+            label: "Accounting Printer".to_string(),
+            description: None,
+            model: None,
+            location: Some("Room 302".to_string()),
+            snmp_community: "public".to_string(),
+            web_url: Some("https://192.168.1.51:8443".to_string()),
+        };
+        insert_printer(&conn, &p2).unwrap();
+
+        let list = get_printers(&conn).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].id, "p1");
+        assert_eq!(list[1].id, "p2");
+
+        update_printer_sort_order(&mut conn, &[p2.clone(), p1.clone()]).unwrap();
+        let reordered = get_printers(&conn).unwrap();
+        assert_eq!(reordered[0].id, "p2");
+        assert_eq!(reordered[1].id, "p1");
+
+        let mut p1_updated = p1.clone();
+        p1_updated.label = "Updated Reception".to_string();
+        update_printer_entry(&conn, "p1", &p1_updated).unwrap();
+        let after_update = get_printers(&conn).unwrap();
+        assert_eq!(after_update[1].label, "Updated Reception");
+
+        add_printer_log_entry(&conn, "p1", "connected", Some(12)).unwrap();
+        let latest = get_latest_printer_log(&conn, "p1").unwrap();
+        assert!(latest.is_some());
+        assert_eq!(latest.unwrap().0, "connected");
+
+        let logs = query_printer_logs(&conn, "p1", 10).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].latency_ms, Some(12));
+
+        delete_printer_entry(&conn, "p1").unwrap();
+        let remaining = get_printers(&conn).unwrap();
+        assert_eq!(remaining.len(), 1);
+        let logs_after = query_printer_logs(&conn, "p1", 10).unwrap();
+        assert!(logs_after.is_empty());
+
+        update_printer_detected_model(&conn, "p2", "SHARP BP-50C26").unwrap();
+        let after_detect = get_printers(&conn).unwrap();
+        assert_eq!(after_detect[0].model.as_deref(), Some("SHARP BP-50C26"));
+
+        let initial_filters = get_printer_filter_tags(&conn).unwrap();
+        assert!(initial_filters.all_tags.is_empty());
+        assert!(initial_filters.any_tags.is_empty());
+
+        let filter_config = PrinterFilterConfig {
+            all_tags: vec!["SHARP".to_string(), "Toner Low".to_string()],
+            any_tags: vec!["Printing".to_string(), "Idle".to_string()],
+        };
+        save_printer_filter_tags_entries(&mut conn, &filter_config).unwrap();
+        let loaded_filters = get_printer_filter_tags(&conn).unwrap();
+        assert_eq!(loaded_filters, filter_config);
+
+        let updated_config = PrinterFilterConfig {
+            all_tags: vec!["SHARP".to_string()],
+            any_tags: vec!["Idle".to_string()],
+        };
+        save_printer_filter_tags_entries(&mut conn, &updated_config).unwrap();
+        assert_eq!(get_printer_filter_tags(&conn).unwrap(), updated_config);
+
+        let dual_config = PrinterFilterConfig {
+            all_tags: vec!["SHARP".to_string()],
+            any_tags: vec!["SHARP".to_string(), "Brother".to_string()],
+        };
+        save_printer_filter_tags_entries(&mut conn, &dual_config).unwrap();
+        assert_eq!(get_printer_filter_tags(&conn).unwrap(), dual_config);
+    }
 }

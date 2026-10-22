@@ -1,8 +1,9 @@
 use super::db::{
-    DbState, delete_server_entry, get_servers, insert_server, query_logs, update_server_entry,
+    delete_server_entry, get_servers, insert_server, query_logs, update_server_entry,
     update_sort_order,
 };
 use super::types::{Server, ServerLog};
+use crate::db::{DEFAULT_LOG_LIMIT, DbState};
 use tauri::State;
 
 #[tauri::command]
@@ -53,5 +54,5 @@ pub fn get_server_logs(
     limit: Option<i64>,
 ) -> Result<Vec<ServerLog>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    query_logs(&conn, &server_id, limit.unwrap_or(50))
+    query_logs(&conn, &server_id, limit.unwrap_or(DEFAULT_LOG_LIMIT))
 }

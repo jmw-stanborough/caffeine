@@ -1,7 +1,12 @@
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Rect, WebviewUrl};
+use std::time::Duration;
 use tauri::webview::WebviewBuilder;
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, Rect, WebviewUrl};
 
 const CHILD_WEBVIEW_LABEL: &str = "printer-webui";
+const MAIN_WINDOW_LABEL: &str = "main";
+const WEBVIEW_CLOSE_SETTLE_DELAY: Duration = Duration::from_millis(60);
+const MIN_INITIAL_WEBVIEW_DIMENSION: f64 = 100.0;
+const MIN_RESIZED_WEBVIEW_DIMENSION: f64 = 50.0;
 
 fn normalize_printer_url(raw: &str) -> Result<url::Url, String> {
     let trimmed = raw.trim();
@@ -32,15 +37,17 @@ pub async fn open_printer_webview(
 
     if let Some(existing) = app.get_webview(CHILD_WEBVIEW_LABEL) {
         let _ = existing.close();
-        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        // Allow Tauri's window manager to finish unregistering the existing webview handle
+        // before creating a replacement with the same label.
+        tokio::time::sleep(WEBVIEW_CLOSE_SETTLE_DELAY).await;
     }
 
     let window = app
-        .get_window("main")
+        .get_window(MAIN_WINDOW_LABEL)
         .ok_or_else(|| "Main window not found".to_string())?;
 
-    let w = width.max(100.0);
-    let h = height.max(100.0);
+    let w = width.max(MIN_INITIAL_WEBVIEW_DIMENSION);
+    let h = height.max(MIN_INITIAL_WEBVIEW_DIMENSION);
 
     let builder = WebviewBuilder::new(CHILD_WEBVIEW_LABEL, WebviewUrl::External(parsed_url));
 
@@ -66,8 +73,8 @@ pub async fn resize_printer_webview(
     height: f64,
 ) -> Result<(), String> {
     if let Some(webview) = app.get_webview(CHILD_WEBVIEW_LABEL) {
-        let w = width.max(50.0);
-        let h = height.max(50.0);
+        let w = width.max(MIN_RESIZED_WEBVIEW_DIMENSION);
+        let h = height.max(MIN_RESIZED_WEBVIEW_DIMENSION);
         webview
             .set_bounds(Rect {
                 position: LogicalPosition::new(x, y).into(),

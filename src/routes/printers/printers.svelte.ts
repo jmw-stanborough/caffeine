@@ -1,105 +1,71 @@
+import { DEFAULT_SNMP_COMMUNITY } from "$lib/constants";
+import { MonitorStore } from "$lib/monitor-store.svelte";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   PREMADE_TAGS,
   getPrinterTags,
   normalizeTagLabel,
 } from "./tags";
 import type {
+  FilterMode,
   Printer,
   PrinterFilterConfig,
   PrinterState,
   PrinterStatusTick,
 } from "./types";
 
-export class PrinterStore {
-  items = $state<Printer[]>([]);
-  statusMap = $state<Record<string, PrinterState>>({});
+const PRINTER_STATUS_EVENT = "printer-status-tick";
+
+export class PrinterStore extends MonitorStore<
+  Printer,
+  PrinterState,
+  PrinterStatusTick
+> {
   filterAllTags = $state<string[]>([]);
   filterAnyTags = $state<string[]>([]);
-  loading = $state(true);
-  errorMessage = $state<string | null>(null);
-  now = $state(Date.now());
-
-  private unlistenStatus: UnlistenFn | null = null;
-  private timer: number | null = null;
-  private destroyed = false;
 
   async init() {
     this.destroyed = false;
     await Promise.all([this.fetchPrinters(), this.fetchFilterTags()]);
-    if (this.destroyed) return;
+    await this.startTickSubscription(PRINTER_STATUS_EVENT, (payload) => {
+      const {
+        printer_id,
+        status,
+        latency_ms,
+        last_event,
+        last_event_at,
+        toners,
+        detected_make,
+        detected_model,
+        serial_number,
+        page_count,
+        printer_state,
+        status_message,
+        paper_jam,
+        out_of_paper,
+      } = payload;
+      const previousState = this.statusMap[printer_id];
 
-    this.timer = window.setInterval(() => {
-      this.now = Date.now();
-    }, 10_000);
-
-    const unlisten = await listen<PrinterStatusTick>(
-      "printer-status-tick",
-      (event) => {
-        const {
-          printer_id,
-          status,
-          latency_ms,
-          last_event,
-          last_event_at,
-          toners,
-          detected_make,
-          detected_model,
-          serial_number,
-          page_count,
-          printer_state,
-          status_message,
-          paper_jam,
-          out_of_paper,
-        } = event.payload;
-        const previousState = this.statusMap[printer_id];
-
-        this.statusMap[printer_id] = {
-          status,
-          latencyMs: latency_ms,
-          lastEvent: last_event ?? previousState?.lastEvent,
-          lastEventAt: last_event_at ?? previousState?.lastEventAt,
-          toners: toners ?? previousState?.toners ?? [],
-          detectedMake: detected_make ?? previousState?.detectedMake,
-          detectedModel: detected_model ?? previousState?.detectedModel,
-          serialNumber: serial_number ?? previousState?.serialNumber,
-          pageCount: page_count ?? previousState?.pageCount,
-          printerState: printer_state ?? previousState?.printerState,
-          statusMessage: status_message,
-          paperJam: paper_jam ?? false,
-          outOfPaper: out_of_paper ?? false,
-        };
-      },
-    );
-
-    if (this.destroyed) {
-      unlisten();
-    } else {
-      this.unlistenStatus = unlisten;
-    }
-  }
-
-  destroy() {
-    this.destroyed = true;
-    this.unlistenStatus?.();
-    this.unlistenStatus = null;
-    if (this.timer !== null) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+      this.statusMap[printer_id] = {
+        status,
+        latencyMs: latency_ms,
+        lastEvent: last_event ?? previousState?.lastEvent,
+        lastEventAt: last_event_at ?? previousState?.lastEventAt,
+        toners: toners ?? previousState?.toners ?? [],
+        detectedMake: detected_make ?? previousState?.detectedMake,
+        detectedModel: detected_model ?? previousState?.detectedModel,
+        serialNumber: serial_number ?? previousState?.serialNumber,
+        pageCount: page_count ?? previousState?.pageCount,
+        printerState: printer_state ?? previousState?.printerState,
+        statusMessage: status_message,
+        paperJam: paper_jam ?? false,
+        outOfPaper: out_of_paper ?? false,
+      };
+    });
   }
 
   fetchPrinters = async () => {
-    this.loading = true;
-    this.errorMessage = null;
-    try {
-      this.items = await invoke<Printer[]>("load_printers");
-    } catch (err) {
-      this.errorMessage = String(err);
-    } finally {
-      this.loading = false;
-    }
+    await this.loadItems("load_printers");
   };
 
   fetchFilterTags = async () => {
@@ -114,14 +80,24 @@ export class PrinterStore {
 
   private async persistFilterTags() {
     try {
-      const allTags = [...this.filterAllTags];
-      const anyTags = [...this.filterAnyTags];
       await invoke<PrinterFilterConfig>("save_printer_filter_tags", {
-        allTags,
-        anyTags,
+        allTags: [...this.filterAllTags],
+        anyTags: [...this.filterAnyTags],
       });
     } catch (err) {
       console.error("Failed to save printer filter tags:", err);
+    }
+  }
+
+  getTagsByMode(mode: FilterMode): string[] {
+    return mode === "all" ? this.filterAllTags : this.filterAnyTags;
+  }
+
+  private setTagsByMode(mode: FilterMode, next: string[]) {
+    if (mode === "all") {
+      this.filterAllTags = next;
+    } else {
+      this.filterAnyTags = next;
     }
   }
 
@@ -136,50 +112,26 @@ export class PrinterStore {
     return Array.from(known);
   }
 
-  getSuggestedTags(): readonly string[] {
-    return PREMADE_TAGS;
-  }
-
-  hasFilterAllTag(tag: string): boolean {
+  hasFilterTag(mode: FilterMode, tag: string): boolean {
     const lower = tag.trim().toLowerCase();
-    return this.filterAllTags.some((t) => t.toLowerCase() === lower);
+    return this.getTagsByMode(mode).some((t) => t.toLowerCase() === lower);
   }
 
-  hasFilterAnyTag(tag: string): boolean {
-    const lower = tag.trim().toLowerCase();
-    return this.filterAnyTags.some((t) => t.toLowerCase() === lower);
-  }
-
-  async addFilterAllTag(rawTag: string): Promise<boolean> {
+  async addFilterTag(mode: FilterMode, rawTag: string): Promise<boolean> {
     const normalized = normalizeTagLabel(rawTag, this.getAllKnownTags());
-    if (!normalized) return false;
-
-    if (this.hasFilterAllTag(normalized)) {
+    if (!normalized || this.hasFilterTag(mode, normalized)) {
       return false;
     }
 
-    this.filterAllTags = [...this.filterAllTags, normalized];
-    await this.persistFilterTags();
-    return true;
-  }
-
-  async addFilterAnyTag(rawTag: string): Promise<boolean> {
-    const normalized = normalizeTagLabel(rawTag, this.getAllKnownTags());
-    if (!normalized) return false;
-
-    if (this.hasFilterAnyTag(normalized)) {
-      return false;
-    }
-
-    this.filterAnyTags = [...this.filterAnyTags, normalized];
+    this.setTagsByMode(mode, [...this.getTagsByMode(mode), normalized]);
     await this.persistFilterTags();
     return true;
   }
 
   async moveFilterTag(
     rawTag: string,
-    target: "all" | "any",
-    source?: "suggested" | "all" | "any",
+    target: FilterMode,
+    source?: "suggested" | FilterMode,
   ): Promise<boolean> {
     const normalized = normalizeTagLabel(rawTag, this.getAllKnownTags());
     if (!normalized) return false;
@@ -187,29 +139,19 @@ export class PrinterStore {
 
     let changed = false;
 
-    if (source === "any" && target === "all") {
-      const nextAny = this.filterAnyTags.filter(
+    if ((source === "all" || source === "any") && source !== target) {
+      const currentSourceTags = this.getTagsByMode(source);
+      const nextSourceTags = currentSourceTags.filter(
         (t) => t.toLowerCase() !== lower,
       );
-      if (nextAny.length !== this.filterAnyTags.length) {
-        this.filterAnyTags = nextAny;
-        changed = true;
-      }
-    } else if (source === "all" && target === "any") {
-      const nextAll = this.filterAllTags.filter(
-        (t) => t.toLowerCase() !== lower,
-      );
-      if (nextAll.length !== this.filterAllTags.length) {
-        this.filterAllTags = nextAll;
+      if (nextSourceTags.length !== currentSourceTags.length) {
+        this.setTagsByMode(source, nextSourceTags);
         changed = true;
       }
     }
 
-    if (target === "all" && !this.hasFilterAllTag(normalized)) {
-      this.filterAllTags = [...this.filterAllTags, normalized];
-      changed = true;
-    } else if (target === "any" && !this.hasFilterAnyTag(normalized)) {
-      this.filterAnyTags = [...this.filterAnyTags, normalized];
+    if (!this.hasFilterTag(target, normalized)) {
+      this.setTagsByMode(target, [...this.getTagsByMode(target), normalized]);
       changed = true;
     }
 
@@ -219,45 +161,26 @@ export class PrinterStore {
     return changed;
   }
 
-  async removeFilterAllTag(tagToRemove: string) {
+  async removeFilterTag(mode: FilterMode, tagToRemove: string) {
     const lower = tagToRemove.trim().toLowerCase();
-    const next = this.filterAllTags.filter((t) => t.toLowerCase() !== lower);
-    if (next.length !== this.filterAllTags.length) {
-      this.filterAllTags = next;
+    const current = this.getTagsByMode(mode);
+    const next = current.filter((t) => t.toLowerCase() !== lower);
+    if (next.length !== current.length) {
+      this.setTagsByMode(mode, next);
       await this.persistFilterTags();
     }
   }
 
-  async removeFilterAnyTag(tagToRemove: string) {
-    const lower = tagToRemove.trim().toLowerCase();
-    const next = this.filterAnyTags.filter((t) => t.toLowerCase() !== lower);
-    if (next.length !== this.filterAnyTags.length) {
-      this.filterAnyTags = next;
-      await this.persistFilterTags();
-    }
-  }
-
-  async removeLastFilterAllTag() {
-    if (this.filterAllTags.length === 0) return;
-    this.filterAllTags = this.filterAllTags.slice(0, -1);
+  async removeLastFilterTag(mode: FilterMode) {
+    const current = this.getTagsByMode(mode);
+    if (current.length === 0) return;
+    this.setTagsByMode(mode, current.slice(0, -1));
     await this.persistFilterTags();
   }
 
-  async removeLastFilterAnyTag() {
-    if (this.filterAnyTags.length === 0) return;
-    this.filterAnyTags = this.filterAnyTags.slice(0, -1);
-    await this.persistFilterTags();
-  }
-
-  async clearFilterAllTags() {
-    if (this.filterAllTags.length === 0) return;
-    this.filterAllTags = [];
-    await this.persistFilterTags();
-  }
-
-  async clearFilterAnyTags() {
-    if (this.filterAnyTags.length === 0) return;
-    this.filterAnyTags = [];
+  async clearFilterModeTags(mode: FilterMode) {
+    if (this.getTagsByMode(mode).length === 0) return;
+    this.setTagsByMode(mode, []);
     await this.persistFilterTags();
   }
 
@@ -271,40 +194,24 @@ export class PrinterStore {
   }
 
   async savePrinter(savedPrinter: Printer, existingId?: string) {
-    try {
-      if (existingId) {
-        this.items = await invoke<Printer[]>("update_printer", {
-          id: existingId,
-          updatedPrinter: savedPrinter,
-        });
-      } else {
-        this.items = await invoke<Printer[]>("save_printer", {
-          newPrinter: savedPrinter,
-        });
-      }
-    } catch (err) {
-      this.errorMessage = String(err);
-    }
+    await this.saveEntity(
+      {
+        createCmd: "save_printer",
+        createArgKey: "newPrinter",
+        updateCmd: "update_printer",
+        updateArgKey: "updatedPrinter",
+      },
+      savedPrinter,
+      existingId,
+    );
   }
 
   async deletePrinter(idToDelete: string) {
-    const backup = this.items;
-    this.items = this.items.filter((p) => p.id !== idToDelete);
-
-    try {
-      this.items = await invoke<Printer[]>("delete_printer", {
-        id: idToDelete,
-      });
-      delete this.statusMap[idToDelete];
-    } catch (err) {
-      this.errorMessage = String(err);
-      this.items = backup;
-    }
+    await this.deleteEntity("delete_printer", idToDelete);
   }
 
   async reorderPrinters(newItems: Printer[]) {
-    const previous = this.items;
-
+    // Strip transient properties injected by svelte-dnd-action before invoking Tauri.
     const sanitized: Printer[] = newItems.map((item) => ({
       id: item.id,
       host: item.host,
@@ -312,19 +219,10 @@ export class PrinterStore {
       description: item.description,
       model: item.model,
       location: item.location,
-      snmp_community: item.snmp_community || "public",
+      snmp_community: item.snmp_community || DEFAULT_SNMP_COMMUNITY,
       web_url: item.web_url,
     }));
 
-    this.items = sanitized;
-
-    try {
-      this.items = await invoke<Printer[]>("reorder_printers", {
-        printers: sanitized,
-      });
-    } catch (err) {
-      this.errorMessage = String(err);
-      this.items = previous;
-    }
+    await this.reorderEntities("reorder_printers", "printers", sanitized);
   }
 }

@@ -10,6 +10,7 @@ export interface Printer {
 }
 
 export type StatusKind = "online" | "offline" | "degraded" | "checking";
+export type FilterMode = "all" | "any";
 
 export interface TonerSupply {
   name: string;

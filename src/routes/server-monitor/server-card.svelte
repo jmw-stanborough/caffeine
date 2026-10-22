@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activateOnEnterOrSpace, formatRelativeTime } from "$lib/format";
   import type { HostState, Server } from "./types";
 
   let {
@@ -21,26 +22,7 @@
     onclick?: () => void;
   } = $props();
 
-  function formatRelativeTime(dateString?: string, currentTime: number = Date.now()): string {
-    if (!dateString) return "";
-    const parsed = new Date(dateString);
-    if (isNaN(parsed.getTime())) return "";
-
-    const diffSec = Math.floor((currentTime - parsed.getTime()) / 1000);
-    if (diffSec < 60) return "just now";
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-    return `${Math.floor(diffSec / 86400)}d ago`;
-  }
-
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if ((e.key === "Enter" || e.key === " ") && onclick) {
-      e.preventDefault();
-      onclick();
-    }
-  }
 </script>
 
 <div
@@ -49,7 +31,7 @@
   role="button"
   tabindex="0"
   {onclick}
-  onkeydown={handleKeyDown}
+  onkeydown={(e) => activateOnEnterOrSpace(e, onclick)}
 >
   <div class="card-main">
     <div class="card-title-row">

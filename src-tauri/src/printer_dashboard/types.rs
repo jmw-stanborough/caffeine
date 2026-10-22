@@ -1,5 +1,16 @@
-use serde::{Deserialize, Serialize};
 use crate::server_monitor::types::HealthStatus;
+use serde::{Deserialize, Serialize};
+
+pub const DEFAULT_SNMP_COMMUNITY: &str = "public";
+
+pub fn normalize_snmp_community(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        DEFAULT_SNMP_COMMUNITY
+    } else {
+        trimmed
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Printer {
@@ -20,7 +31,7 @@ fn new_id() -> String {
 }
 
 fn default_community() -> String {
-    "public".to_string()
+    DEFAULT_SNMP_COMMUNITY.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

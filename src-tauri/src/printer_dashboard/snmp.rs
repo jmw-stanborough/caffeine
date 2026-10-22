@@ -1,13 +1,78 @@
-use super::types::TonerSupply;
+pub mod ber;
+pub mod ipp;
+pub mod parsers;
+
+pub use parsers::{
+    clean_vendor_name, extract_printer_make, infer_supply_color, is_out_of_paper_text,
+    is_paper_jam_text, is_primary_toner_or_ink, parse_brother_maintenance_bytes,
+    parse_hr_error_state,
+};
+
+use super::types::{TonerSupply, normalize_snmp_community};
+use ber::{PDU_GET_NEXT_REQUEST, PDU_GET_REQUEST, snmp_request, snmp_walk_columns};
+use ipp::poll_ipp;
+use parsers::{
+    DEFAULT_MAX_CAPACITY, HR_PRINTER_STATUS_PRINTING, SUPPLY_LEVEL_UNKNOWN, compute_percent,
+    supply_type_label,
+};
 use std::collections::BTreeMap;
 use std::net::ToSocketAddrs;
-use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, UdpSocket};
-use tokio::time::timeout;
+use tokio::net::UdpSocket;
 
-const SNMP_TIMEOUT: Duration = Duration::from_millis(750);
-const IPP_TIMEOUT: Duration = Duration::from_millis(1200);
+const SNMP_PORT: u16 = 161;
+const INITIAL_SNMP_REQUEST_ID: i32 = 100;
+const MAX_SUPPLY_WALK_STEPS: usize = 16;
+const MAX_COLORANT_WALK_STEPS: usize = 8;
+const MAX_ALERT_WALK_STEPS: usize = 8;
+
+const OID_SYS_DESCR: &[u32] = &[1, 3, 6, 1, 2, 1, 1, 1, 0];
+const OID_HR_DEVICE_DESCR: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1];
+const OID_HR_DEVICE_STATUS: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 5, 1];
+const OID_HR_PRINTER_STATUS: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 1, 1];
+const OID_HR_PRINTER_ERROR_STATE: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 2, 1];
+const OID_PRT_GENERAL_PRINTER_NAME: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1];
+const OID_PRT_GENERAL_SERIAL_NUMBER: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 17, 1];
+const OID_PRT_INPUT_VENDOR_NAME: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 8, 2, 1, 14, 1, 1];
+const OID_PRT_MARKER_LIFE_COUNT: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 4, 1, 1];
+const OID_PRT_CONSOLE_LINE_1: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1];
+const OID_PRT_CONSOLE_LINE_2: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 2];
+const OID_ENT_PHYSICAL_MFG_NAME: &[u32] = &[1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 12, 1];
+const OID_BROTHER_MAINTENANCE: &[u32] = &[1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0];
+
+const OID_PRT_MARKER_SUPPLIES_ENTRY: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 11, 1, 1];
+const SUPPLY_COL_COLORANT_INDEX: u32 = 3;
+const SUPPLY_COL_TYPE: u32 = 5;
+const SUPPLY_COL_DESCRIPTION: u32 = 6;
+const SUPPLY_COL_MAX_CAPACITY: u32 = 8;
+const SUPPLY_COL_LEVEL: u32 = 9;
+const SUPPLY_WALK_COLUMNS: &[u32] = &[
+    SUPPLY_COL_COLORANT_INDEX,
+    SUPPLY_COL_TYPE,
+    SUPPLY_COL_DESCRIPTION,
+    SUPPLY_COL_MAX_CAPACITY,
+    SUPPLY_COL_LEVEL,
+];
+
+const OID_PRT_MARKER_COLORANT_VALUE: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 12, 1, 1, 4];
+
+const OID_PRT_ALERT_ENTRY: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 18, 1, 1];
+const ALERT_COL_SEVERITY: u32 = 2;
+const ALERT_COL_GROUP: u32 = 5;
+const ALERT_COL_CODE: u32 = 7;
+const ALERT_COL_DESCRIPTION: u32 = 8;
+const ALERT_WALK_COLUMNS: &[u32] = &[
+    ALERT_COL_SEVERITY,
+    ALERT_COL_GROUP,
+    ALERT_COL_CODE,
+    ALERT_COL_DESCRIPTION,
+];
+
+const ALERT_CODE_JAM: i64 = 8;
+const ALERT_CODE_SUBUNIT_EMPTY: i64 = 13;
+const ALERT_CODE_INPUT_MEDIA_EMPTY: i64 = 808;
+const ALERT_CODE_INPUT_MANUAL_REQUEST: i64 = 810;
+const ALERT_GROUP_INPUT: i64 = 8;
+const ALERT_SEVERITY_WARNING: i64 = 4;
 
 #[derive(Debug, Default, Clone)]
 pub struct PrinterPollDetails {
@@ -22,656 +87,55 @@ pub struct PrinterPollDetails {
     pub out_of_paper: bool,
 }
 
-#[derive(Debug, Clone)]
-enum SnmpVal {
-    Int(i64),
-    Bytes(Vec<u8>),
-}
-
-impl SnmpVal {
-    fn as_i64(&self) -> Option<i64> {
-        match self {
-            SnmpVal::Int(v) => Some(*v),
-            SnmpVal::Bytes(b) => std::str::from_utf8(b).ok()?.trim().parse::<i64>().ok(),
+impl PrinterPollDetails {
+    fn merge_ipp_fallback(&mut self, ipp_data: PrinterPollDetails) {
+        if self.toners.is_empty() {
+            self.toners = ipp_data.toners;
         }
-    }
-
-    fn as_str(&self) -> Option<String> {
-        match self {
-            SnmpVal::Bytes(b) => Some(clean_octet_string(b)),
-            SnmpVal::Int(_) => None,
+        if self.detected_make.is_none() {
+            self.detected_make = ipp_data.detected_make;
         }
-    }
-
-    fn as_bytes(&self) -> Option<&[u8]> {
-        match self {
-            SnmpVal::Bytes(b) => Some(b.as_slice()),
-            SnmpVal::Int(_) => None,
+        if self.detected_model.is_none() {
+            self.detected_model = ipp_data.detected_model;
         }
-    }
-}
-
-fn encode_length(len: usize) -> Vec<u8> {
-    if len < 128 {
-        vec![len as u8]
-    } else if len <= 0xFF {
-        vec![0x81, len as u8]
-    } else {
-        vec![0x82, (len >> 8) as u8, (len & 0xFF) as u8]
-    }
-}
-
-fn encode_tlv(tag: u8, payload: &[u8]) -> Vec<u8> {
-    let mut out = vec![tag];
-    out.extend(encode_length(payload.len()));
-    out.extend_from_slice(payload);
-    out
-}
-
-fn encode_integer(val: i32) -> Vec<u8> {
-    let bytes = val.to_be_bytes();
-    let mut start = 0;
-    while start < 3 {
-        if (bytes[start] == 0x00 && (bytes[start + 1] & 0x80) == 0)
-            || (bytes[start] == 0xFF && (bytes[start + 1] & 0x80) != 0)
-        {
-            start += 1;
-        } else {
-            break;
+        if self.printer_state.is_none() {
+            self.printer_state = ipp_data.printer_state;
         }
-    }
-    encode_tlv(0x02, &bytes[start..])
-}
-
-fn encode_oid(oid: &[u32]) -> Vec<u8> {
-    if oid.len() < 2 {
-        return encode_tlv(0x06, &[43]);
-    }
-    let mut body = vec![(oid[0] * 40 + oid[1]) as u8];
-    for &sub in &oid[2..] {
-        if sub == 0 {
-            body.push(0);
-        } else {
-            let mut temp = Vec::new();
-            let mut v = sub;
-            while v > 0 {
-                temp.push((v & 0x7F) as u8);
-                v >>= 7;
-            }
-            temp.reverse();
-            for i in 0..temp.len() - 1 {
-                temp[i] |= 0x80;
-            }
-            body.extend(temp);
+        if self.status_message.is_none() {
+            self.status_message = ipp_data.status_message;
         }
+        self.paper_jam |= ipp_data.paper_jam;
+        self.out_of_paper |= ipp_data.out_of_paper;
     }
-    encode_tlv(0x06, &body)
 }
 
-fn build_snmp_packet(community: &str, request_id: i32, pdu_tag: u8, oids: &[Vec<u32>]) -> Vec<u8> {
-    let mut varbinds_inner = Vec::new();
-    for oid in oids {
-        let mut vb = encode_oid(oid);
-        vb.extend_from_slice(&[0x05, 0x00]); // NULL
-        varbinds_inner.extend(encode_tlv(0x30, &vb));
-    }
-    let varbind_list = encode_tlv(0x30, &varbinds_inner);
-
-    let mut pdu_inner = Vec::new();
-    pdu_inner.extend(encode_integer(request_id));
-    pdu_inner.extend(encode_integer(0)); // error-status
-    pdu_inner.extend(encode_integer(0)); // error-index
-    pdu_inner.extend(varbind_list);
-
-    let pdu = encode_tlv(pdu_tag, &pdu_inner);
-
-    let mut msg_inner = Vec::new();
-    msg_inner.extend(encode_integer(1)); // version = 1 (SNMPv2c)
-    msg_inner.extend(encode_tlv(0x04, community.as_bytes()));
-    msg_inner.extend(pdu);
-
-    encode_tlv(0x30, &msg_inner)
-}
-
-fn parse_ber_tlv(data: &[u8], pos: &mut usize) -> Option<(u8, usize, usize)> {
-    if *pos >= data.len() {
-        return None;
-    }
-    let tag = data[*pos];
-    *pos += 1;
-    if *pos >= data.len() {
-        return None;
-    }
-    let first_len = data[*pos];
-    *pos += 1;
-    let len = if (first_len & 0x80) == 0 {
-        first_len as usize
-    } else {
-        let num_bytes = (first_len & 0x7F) as usize;
-        if num_bytes == 0 || num_bytes > 4 || *pos + num_bytes > data.len() {
-            return None;
-        }
-        let mut l = 0usize;
-        for _ in 0..num_bytes {
-            l = (l << 8) | (data[*pos] as usize);
-            *pos += 1;
-        }
-        l
-    };
-    if *pos + len > data.len() {
-        return None;
-    }
-    let val_start = *pos;
-    *pos += len;
-    Some((tag, val_start, len))
-}
-
-fn decode_oid(bytes: &[u8]) -> Vec<u32> {
-    if bytes.is_empty() {
-        return Vec::new();
-    }
-    let mut oid = vec![(bytes[0] / 40) as u32, (bytes[0] % 40) as u32];
-    let mut acc = 0u32;
-    for &b in &bytes[1..] {
-        acc = (acc << 7) | ((b & 0x7F) as u32);
-        if (b & 0x80) == 0 {
-            oid.push(acc);
-            acc = 0;
-        }
-    }
-    oid
-}
-
-fn decode_signed_int(bytes: &[u8]) -> i64 {
-    if bytes.is_empty() {
-        return 0;
-    }
-    let mut val = if (bytes[0] & 0x80) != 0 { -1i64 } else { 0i64 };
-    for &b in bytes {
-        val = (val << 8) | (b as i64);
-    }
-    val
-}
-
-fn decode_unsigned_int(bytes: &[u8]) -> i64 {
-    let mut val = 0i64;
-    for &b in bytes {
-        val = (val << 8) | (b as i64);
-    }
-    val
-}
-
-fn clean_octet_string(bytes: &[u8]) -> String {
-    let trimmed: Vec<u8> = bytes
-        .iter()
-        .copied()
-        .take_while(|&b| b != 0)
-        .filter(|&b| b >= 0x20 || b == b'\t')
-        .collect();
-    String::from_utf8_lossy(&trimmed).trim().to_string()
-}
-
-fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>> {
-    let mut pos = 0;
-    let (seq_tag, seq_start, seq_len) = parse_ber_tlv(packet, &mut pos)?;
-    if seq_tag != 0x30 {
-        return None;
-    }
-
-    let mut inner = seq_start;
-    let seq_end = seq_start + seq_len;
-
-    // version
-    let _ = parse_ber_tlv(packet, &mut inner)?;
-    // community
-    let _ = parse_ber_tlv(packet, &mut inner)?;
-    // PDU (GetResponse = 0xA2)
-    let (pdu_tag, pdu_start, pdu_len) = parse_ber_tlv(packet, &mut inner)?;
-    if pdu_tag != 0xA2 || inner > seq_end {
-        return None;
-    }
-
-    let mut pdu_pos = pdu_start;
-    // request-id
-    let _ = parse_ber_tlv(packet, &mut pdu_pos)?;
-    // error-status
-    let (_, err_start, err_len) = parse_ber_tlv(packet, &mut pdu_pos)?;
-    let err_status = decode_signed_int(&packet[err_start..err_start + err_len]);
-    if err_status != 0 {
-        return None;
-    }
-    // error-index
-    let _ = parse_ber_tlv(packet, &mut pdu_pos)?;
-    // varbind-list
-    let (vbl_tag, vbl_start, vbl_len) = parse_ber_tlv(packet, &mut pdu_pos)?;
-    if vbl_tag != 0x30 || pdu_pos > pdu_start + pdu_len {
-        return None;
-    }
-
-    let mut vbl_pos = vbl_start;
-    let vbl_end = vbl_start + vbl_len;
-    let mut results = Vec::new();
-
-    while vbl_pos < vbl_end {
-        let (vb_tag, vb_start, vb_len) = parse_ber_tlv(packet, &mut vbl_pos)?;
-        if vb_tag != 0x30 {
-            break;
-        }
-        let mut vb_pos = vb_start;
-        let (oid_tag, oid_start, oid_len) = parse_ber_tlv(packet, &mut vb_pos)?;
-        if oid_tag != 0x06 {
-            continue;
-        }
-        let oid = decode_oid(&packet[oid_start..oid_start + oid_len]);
-
-        let (val_tag, val_start, val_len) = parse_ber_tlv(packet, &mut vb_pos)?;
-        if vb_pos > vb_start + vb_len {
-            continue;
-        }
-        let val_slice = &packet[val_start..val_start + val_len];
-
-        let val = match val_tag {
-            0x02 => Some(SnmpVal::Int(decode_signed_int(val_slice))),
-            0x41 | 0x42 | 0x43 => Some(SnmpVal::Int(decode_unsigned_int(val_slice))),
-            0x04 => Some(SnmpVal::Bytes(val_slice.to_vec())),
-            // 0x80 = NoSuchObject, 0x81 = NoSuchInstance, 0x82 = EndOfMibView, 0x05 = Null
-            _ => None,
-        };
-
-        results.push((oid, val));
-    }
-
-    Some(results)
-}
-
-async fn snmp_request(
+async fn poll_general_info(
     sock: &UdpSocket,
     community: &str,
-    req_id: i32,
-    pdu_tag: u8,
-    oids: &[Vec<u32>],
-) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>> {
-    let pkt = build_snmp_packet(community, req_id, pdu_tag, oids);
-    sock.send(&pkt).await.ok()?;
-    let mut buf = [0u8; 4096];
-    let n = timeout(SNMP_TIMEOUT, sock.recv(&mut buf)).await.ok()?.ok()?;
-    parse_snmp_response(&buf[..n])
-}
+    req_id: &mut i32,
+    details: &mut PrinterPollDetails,
+) -> Option<BTreeMap<String, u8>> {
+    let general_oids: Vec<Vec<u32>> = [
+        OID_HR_DEVICE_DESCR,
+        OID_HR_DEVICE_STATUS,
+        OID_PRT_GENERAL_PRINTER_NAME,
+        OID_PRT_GENERAL_SERIAL_NUMBER,
+        OID_PRT_MARKER_LIFE_COUNT,
+        OID_HR_PRINTER_STATUS,
+        OID_HR_PRINTER_ERROR_STATE,
+        OID_PRT_CONSOLE_LINE_1,
+        OID_PRT_CONSOLE_LINE_2,
+        OID_SYS_DESCR,
+        OID_BROTHER_MAINTENANCE,
+        OID_PRT_INPUT_VENDOR_NAME,
+        OID_ENT_PHYSICAL_MFG_NAME,
+    ]
+    .into_iter()
+    .map(|oid| oid.to_vec())
+    .collect();
 
-pub fn infer_supply_color(description: &str, colorant: Option<&str>) -> String {
-    let combined = format!(
-        "{} {}",
-        colorant.unwrap_or(""),
-        description
-    )
-    .to_lowercase();
-
-    if combined.contains("cyan") {
-        "cyan".to_string()
-    } else if combined.contains("magenta") {
-        "magenta".to_string()
-    } else if combined.contains("yellow") {
-        "yellow".to_string()
-    } else if combined.contains("black") || combined.contains("noir") || combined.contains("schwarz") || combined.contains("bk") {
-        "black".to_string()
-    } else if combined.contains("waste") {
-        "waste".to_string()
-    } else if combined.contains("drum") || combined.contains("imaging") || combined.contains("photoconductor") || combined.contains("opc") {
-        "drum".to_string()
-    } else if combined.contains("fuser") || combined.contains("transfer") || combined.contains("belt") || combined.contains("kit") {
-        "maintenance".to_string()
-    } else {
-        "black".to_string()
-    }
-}
-
-fn supply_type_label(type_code: Option<i64>, description: &str) -> String {
-    let desc_lower = description.to_lowercase();
-    match type_code {
-        Some(3) | Some(21) => "toner".to_string(),
-        Some(4) => "waste_toner".to_string(),
-        Some(5) | Some(6) => "ink".to_string(),
-        Some(8) => "waste_ink".to_string(),
-        Some(9) => "drum".to_string(),
-        Some(15) | Some(18) | Some(20) => "maintenance".to_string(),
-        _ => {
-            if desc_lower.contains("waste") {
-                "waste_toner".to_string()
-            } else if desc_lower.contains("drum") || desc_lower.contains("imaging") || desc_lower.contains("opc") {
-                "drum".to_string()
-            } else if desc_lower.contains("fuser") || desc_lower.contains("belt") || desc_lower.contains("kit") || desc_lower.contains("transfer") {
-                "maintenance".to_string()
-            } else if desc_lower.contains("ink") {
-                "ink".to_string()
-            } else {
-                "toner".to_string()
-            }
-        }
-    }
-}
-
-pub fn is_primary_toner_or_ink(supply_type: &str, description: &str) -> bool {
-    let desc = description.to_lowercase();
-    if desc.contains("waste")
-        || desc.contains("drum")
-        || desc.contains("belt")
-        || desc.contains("fuser")
-        || desc.contains("transfer")
-        || desc.contains("collector")
-        || desc.contains("maintenance")
-        || desc.contains("cleaner")
-        || desc.contains("roller")
-    {
-        return false;
-    }
-    matches!(supply_type, "toner" | "ink" | "toner-cartridge" | "ink-cartridge")
-}
-
-pub fn parse_brother_maintenance_bytes(data: &[u8]) -> BTreeMap<String, u8> {
-    let mut exact_pct = BTreeMap::new();
-    let mut scaled_pct = BTreeMap::new();
-
-    let mut i = 0;
-    while i + 7 <= data.len() {
-        let tag = data[i];
-        if data[i + 1] == 0x01 && data[i + 2] == 0x04 {
-            let raw = u32::from_be_bytes([data[i + 3], data[i + 4], data[i + 5], data[i + 6]]);
-            match tag {
-                0x81 | 0x82 | 0x83 | 0x84 => {
-                    let color = match tag {
-                        0x81 => "black",
-                        0x82 => "cyan",
-                        0x83 => "magenta",
-                        _ => "yellow",
-                    };
-                    if raw <= 100 {
-                        exact_pct.insert(color.to_string(), raw as u8);
-                    }
-                }
-                0x6F | 0x70 | 0x71 | 0x72 => {
-                    let color = match tag {
-                        0x6F => "black",
-                        0x70 => "cyan",
-                        0x71 => "magenta",
-                        _ => "yellow",
-                    };
-                    let pct = (raw / 100).min(100) as u8;
-                    scaled_pct.insert(color.to_string(), pct);
-                }
-                _ => {}
-            }
-            i += 7;
-        } else {
-            i += 1;
-        }
-    }
-
-    for (color, pct) in scaled_pct {
-        exact_pct.entry(color).or_insert(pct);
-    }
-
-    exact_pct
-}
-
-fn compute_percent(level: i32, max_capacity: i32) -> Option<u8> {
-    if level >= 0 && max_capacity > 0 {
-        let pct = ((level as f64 / max_capacity as f64) * 100.0).round();
-        Some(pct.clamp(0.0, 100.0) as u8)
-    } else if (0..=100).contains(&level) && max_capacity <= 0 {
-        Some(level as u8)
-    } else if level == -3 {
-        // RFC 3805: -3 means "some remaining" (often used on non-genuine or basic sensors)
-        None
-    } else {
-        None
-    }
-}
-
-pub fn is_paper_jam_text(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    if lower.contains("paper jam")
-        || lower.contains("media jam")
-        || lower.contains("document jam")
-        || lower.contains("jammed")
-        || lower.contains("misfeed")
-        || lower.contains("clear jam")
-    {
-        return true;
-    }
-    lower
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|word| matches!(word, "jam" | "jams" | "jammed" | "misfeed"))
-}
-
-pub fn is_out_of_paper_text(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    if lower.contains("toner")
-        || lower.contains("ink")
-        || lower.contains("waste")
-        || lower.contains("output")
-        || lower.contains("bin")
-    {
-        return false;
-    }
-
-    if lower.contains("out of paper")
-        || lower.contains("no paper")
-        || lower.contains("paper out")
-        || lower.contains("paper empty")
-        || lower.contains("media empty")
-        || lower.contains("media needed")
-        || lower.contains("media out")
-        || lower.contains("load paper")
-        || lower.contains("add paper")
-        || lower.contains("insert paper")
-        || lower.contains("refill paper")
-    {
-        return true;
-    }
-
-    if lower.contains("empty")
-        && (lower.contains("tray")
-            || lower.contains("cassette")
-            || lower.contains("drawer")
-            || lower.contains("feeder")
-            || lower.contains("paper")
-            || lower.contains("media"))
-    {
-        return true;
-    }
-
-    false
-}
-
-/// Parses RFC 2790 `hrPrinterDetectedErrorState` bitmask (`1.3.6.1.2.1.25.3.5.1.2.1`).
-/// Returns `(paper_jam, out_of_paper)`.
-pub fn parse_hr_error_state(
-    bytes: &[u8],
-    hr_device_status: Option<i64>,
-    hr_printer_status: Option<i64>,
-) -> (bool, bool) {
-    let Some(&b0) = bytes.first() else {
-        return (false, false);
-    };
-
-    // Byte 0 bit 5 (0x04) = jammed, bit 1 (0x40) = noPaper
-    let paper_jam = (b0 & 0x04) != 0;
-    let mut out_of_paper = (b0 & 0x40) != 0;
-
-    // Byte 1 bit 13 (0x04 in second byte) = inputTrayEmpty
-    if !out_of_paper
-        && let Some(&b1) = bytes.get(1)
-        && (b1 & 0x04) != 0
-        && (hr_device_status == Some(5) || hr_printer_status == Some(1))
-    {
-        out_of_paper = true;
-    }
-
-    (paper_jam, out_of_paper)
-}
-
-fn is_generic_printer_word(word_lower: &str) -> bool {
-    matches!(
-        word_lower,
-        "printer"
-            | "printers"
-            | "series"
-            | "color"
-            | "colour"
-            | "laser"
-            | "inkjet"
-            | "thermal"
-            | "network"
-            | "mfp"
-            | "mono"
-            | "monochrome"
-            | "duplex"
-            | "generic"
-            | "unknown"
-            | "office"
-            | "copy"
-            | "copier"
-            | "scanner"
-            | "ethernet"
-    )
-}
-
-pub fn clean_vendor_name(raw: &str) -> Option<String> {
-    let primary = raw
-        .split([',', ';', '\n', '/'])
-        .next()
-        .unwrap_or(raw)
-        .trim();
-    if primary.is_empty() {
-        return None;
-    }
-
-    let mut words: Vec<&str> = primary.split_whitespace().collect();
-    while words.len() > 1 {
-        let last_clean = words
-            .last()
-            .unwrap()
-            .trim_matches(|c: char| !c.is_ascii_alphanumeric())
-            .to_lowercase();
-        if matches!(
-            last_clean.as_str(),
-            "corporation"
-                | "corp"
-                | "inc"
-                | "ltd"
-                | "co"
-                | "industries"
-                | "company"
-                | "international"
-                | "electronics"
-                | "group"
-                | "systems"
-        ) {
-            words.pop();
-        } else {
-            break;
-        }
-    }
-
-    let cleaned = words.join(" ");
-    let trimmed = cleaned.trim_matches(|c: char| !c.is_ascii_alphanumeric());
-    if trimmed.len() >= 2
-        && trimmed.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-        && !is_generic_printer_word(&trimmed.to_lowercase())
-    {
-        Some(trimmed.to_string())
-    } else {
-        None
-    }
-}
-
-pub fn extract_printer_make(text: &str) -> Option<String> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    // 1. Check IEEE 1284 / structured key-value segments (MFG:, MANUFACTURER:, PID:)
-    for part in trimmed.split([';', ',', '\n']) {
-        let seg = part.trim();
-        if let Some((k, v)) = seg.split_once(':') {
-            let key = k.trim().to_ascii_lowercase();
-            let val = v.trim();
-            if key == "mfg" || key == "manufacturer" {
-                if let Some(vendor) = clean_vendor_name(val) {
-                    return Some(vendor);
-                }
-            } else if key == "pid" || key == "mdl" || key == "model" {
-                if let Some(make) = extract_printer_make(val) {
-                    return Some(make);
-                }
-            }
-        }
-    }
-
-    // 2. Extract leading manufacturer word from "<Make> <Model...>" string
-    let first_clause = trimmed
-        .split([';', ',', '\n', '/'])
-        .next()
-        .unwrap_or(trimmed)
-        .trim();
-    let tokens: Vec<&str> = first_clause.split_whitespace().collect();
-    if tokens.len() >= 2 {
-        let candidate = tokens[0].trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
-        let valid_chars = candidate.len() >= 2
-            && candidate.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-            && candidate.chars().last().is_some_and(|c| c.is_ascii_alphabetic())
-            && candidate.chars().all(|c| c.is_ascii_alphabetic() || c == '-');
-        if valid_chars && !is_generic_printer_word(&candidate.to_lowercase()) {
-            return Some(candidate.to_string());
-        }
-    }
-
-    None
-}
-
-async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
-    let host_owned = host.to_string();
-    let target_addr = tokio::task::spawn_blocking(move || {
-        if let Ok(ip) = host_owned.parse::<std::net::IpAddr>() {
-            Some(std::net::SocketAddr::new(ip, 161))
-        } else {
-            format!("{host_owned}:161").to_socket_addrs().ok()?.next()
-        }
-    })
-    .await
-    .ok()??;
-
-    let bind_addr = if target_addr.is_ipv4() {
-        "0.0.0.0:0"
-    } else {
-        "[::]:0"
-    };
-    let sock = UdpSocket::bind(bind_addr).await.ok()?;
-    sock.connect(target_addr).await.ok()?;
-
-    let mut details = PrinterPollDetails::default();
-    let mut req_id = 100;
-
-    // 1. Poll general info in a single SNMP GET
-    let general_oids = vec![
-        vec![1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1],       // hrDeviceDescr.1
-        vec![1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 5, 1],       // hrDeviceStatus.1
-        vec![1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1],      // prtGeneralPrinterName.1
-        vec![1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 17, 1],      // prtGeneralSerialNumber.1
-        vec![1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 4, 1, 1],   // prtMarkerLifeCount.1.1
-        vec![1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 1, 1],       // hrPrinterStatus.1
-        vec![1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 2, 1],       // hrPrinterDetectedErrorState.1
-        vec![1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1],   // prtConsoleDisplayBufferText.1.1
-        vec![1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 2],   // prtConsoleDisplayBufferText.1.2
-        vec![1, 3, 6, 1, 2, 1, 1, 1, 0],                 // sysDescr.0
-        vec![1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0], // Brother brInfoMaintenance
-        vec![1, 3, 6, 1, 2, 1, 43, 8, 2, 1, 14, 1, 1],   // prtInputVendorName.1.1
-        vec![1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 12, 1],   // entPhysicalMfgName.1
-    ];
-
-    let resp = snmp_request(&sock, community, req_id, 0xA0, &general_oids).await?;
-    req_id += 1;
+    let resp = snmp_request(sock, community, *req_id, PDU_GET_REQUEST, &general_oids).await?;
+    *req_id += 1;
 
     let mut hr_device_descr = None;
     let mut prt_general_name = None;
@@ -682,65 +146,50 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     let mut hr_error_bytes: Option<Vec<u8>> = None;
     let mut console_lines: Vec<String> = Vec::new();
     let mut brother_toner_pcts = BTreeMap::<String, u8>::new();
+
     for (oid, val) in resp {
         let Some(v) = val else { continue };
-        if oid == [1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1] {
-            if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                hr_device_descr = Some(s);
-            }
-        } else if oid == [1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 5, 1] {
+        let oid_slice = oid.as_slice();
+
+        if oid_slice == OID_HR_DEVICE_DESCR {
+            hr_device_descr = v.as_str().filter(|s| !s.is_empty());
+        } else if oid_slice == OID_HR_DEVICE_STATUS {
             hr_device_status = v.as_i64();
-        } else if oid == [1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1] {
-            if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                prt_general_name = Some(s);
-            }
-        } else if oid == [1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 17, 1] {
-            if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                details.serial_number = Some(s);
-            }
-        } else if oid == [1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 4, 1, 1] {
-            if let Some(c) = v.as_i64().filter(|&c| c >= 0) {
-                details.page_count = Some(c as u64);
-            }
-        } else if oid == [1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 1, 1] {
+        } else if oid_slice == OID_PRT_GENERAL_PRINTER_NAME {
+            prt_general_name = v.as_str().filter(|s| !s.is_empty());
+        } else if oid_slice == OID_PRT_GENERAL_SERIAL_NUMBER {
+            details.serial_number = v.as_str().filter(|s| !s.is_empty());
+        } else if oid_slice == OID_PRT_MARKER_LIFE_COUNT {
+            details.page_count = v.as_i64().filter(|&c| c >= 0).map(|c| c as u64);
+        } else if oid_slice == OID_HR_PRINTER_STATUS {
             if let Some(st) = v.as_i64() {
                 hr_printer_status = Some(st);
-                details.printer_state = Some(
-                    match st {
-                        4 => "Printing",
-                        _ => "Idle",
-                    }
-                    .to_string(),
-                );
+                let state_str = if st == HR_PRINTER_STATUS_PRINTING {
+                    "Printing"
+                } else {
+                    "Idle"
+                };
+                details.printer_state = Some(state_str.to_string());
             }
-        } else if oid == [1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 2, 1] {
-            if let Some(bytes) = v.as_bytes() {
-                hr_error_bytes = Some(bytes.to_vec());
-            }
-        } else if oid == [1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1]
-            || oid == [1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 2]
-        {
+        } else if oid_slice == OID_HR_PRINTER_ERROR_STATE {
+            hr_error_bytes = v.as_bytes().map(|b| b.to_vec());
+        } else if oid_slice == OID_PRT_CONSOLE_LINE_1 || oid_slice == OID_PRT_CONSOLE_LINE_2 {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty())
                 && !console_lines.contains(&s)
             {
                 console_lines.push(s);
             }
-        } else if oid == [1, 3, 6, 1, 2, 1, 1, 1, 0] {
-            if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                sys_descr = Some(s);
-            }
-        } else if oid == [1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0] {
+        } else if oid_slice == OID_SYS_DESCR {
+            sys_descr = v.as_str().filter(|s| !s.is_empty());
+        } else if oid_slice == OID_BROTHER_MAINTENANCE {
             if let Some(bytes) = v.as_bytes() {
                 brother_toner_pcts = parse_brother_maintenance_bytes(bytes);
             }
-        } else if oid == [1, 3, 6, 1, 2, 1, 43, 8, 2, 1, 14, 1, 1]
-            || oid == [1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 12, 1]
+        } else if (oid_slice == OID_PRT_INPUT_VENDOR_NAME
+            || oid_slice == OID_ENT_PHYSICAL_MFG_NAME)
+            && vendor_oid_name.is_none()
         {
-            if vendor_oid_name.is_none()
-                && let Some(s) = v.as_str().filter(|s| !s.is_empty())
-            {
-                vendor_oid_name = Some(s);
-            }
+            vendor_oid_name = v.as_str().filter(|s| !s.is_empty());
         }
     }
 
@@ -758,12 +207,8 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     if let Some(ref err_bytes) = hr_error_bytes {
         let (jam, no_paper) =
             parse_hr_error_state(err_bytes, hr_device_status, hr_printer_status);
-        if jam {
-            details.paper_jam = true;
-        }
-        if no_paper {
-            details.out_of_paper = true;
-        }
+        details.paper_jam |= jam;
+        details.out_of_paper |= no_paper;
     }
 
     details.detected_make = hr_device_descr
@@ -784,8 +229,52 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         })
         .or(prt_general_name);
 
-    // 2. Walk prtMarkerSuppliesEntry (1.3.6.1.2.1.43.11.1.1) and prtMarkerColorantValue (1.3.6.1.2.1.43.12.1.1.4)
-    // Using parallel column GetNext walks for columns 3(colorantIdx), 5(type), 6(desc), 8(max), 9(level)
+    Some(brother_toner_pcts)
+}
+
+async fn poll_colorants(
+    sock: &UdpSocket,
+    community: &str,
+    req_id: &mut i32,
+) -> BTreeMap<u32, String> {
+    let mut colorant_oid = vec![OID_PRT_MARKER_COLORANT_VALUE.to_vec()];
+    let mut colorants = BTreeMap::new();
+
+    for _ in 0..MAX_COLORANT_WALK_STEPS {
+        let Some(c_resp) =
+            snmp_request(sock, community, *req_id, PDU_GET_NEXT_REQUEST, &colorant_oid).await
+        else {
+            break;
+        };
+        *req_id += 1;
+
+        let Some((ret_oid, Some(val))) = c_resp.into_iter().next() else {
+            break;
+        };
+        if ret_oid.len() > OID_PRT_MARKER_COLORANT_VALUE.len()
+            && ret_oid.starts_with(OID_PRT_MARKER_COLORANT_VALUE)
+        {
+            if let Some(&last_idx) = ret_oid.last()
+                && let Some(s) = val.as_str()
+            {
+                colorants.insert(last_idx, s);
+            }
+            colorant_oid = vec![ret_oid];
+        } else {
+            break;
+        }
+    }
+
+    colorants
+}
+
+async fn poll_supplies(
+    sock: &UdpSocket,
+    community: &str,
+    req_id: &mut i32,
+    brother_toner_pcts: &BTreeMap<String, u8>,
+    details: &mut PrinterPollDetails,
+) {
     #[derive(Default)]
     struct RawSupply {
         colorant_idx: Option<i64>,
@@ -795,90 +284,33 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         level: Option<i32>,
     }
 
-    let base_prefix = [1u32, 3, 6, 1, 2, 1, 43, 11, 1, 1];
-    let mut current_oids = vec![
-        vec![1, 3, 6, 1, 2, 1, 43, 11, 1, 1, 3], // colorantIndex
-        vec![1, 3, 6, 1, 2, 1, 43, 11, 1, 1, 5], // type
-        vec![1, 3, 6, 1, 2, 1, 43, 11, 1, 1, 6], // description
-        vec![1, 3, 6, 1, 2, 1, 43, 11, 1, 1, 8], // maxCapacity
-        vec![1, 3, 6, 1, 2, 1, 43, 11, 1, 1, 9], // level
-    ];
-
     let mut supplies_map: BTreeMap<Vec<u32>, RawSupply> = BTreeMap::new();
-
-    for _step in 0..16 {
-        let Some(step_resp) = snmp_request(&sock, community, req_id, 0xA1, &current_oids).await
-        else {
-            break;
-        };
-        req_id += 1;
-
-        let mut any_in_column = false;
-        let mut next_oids = Vec::with_capacity(current_oids.len());
-
-        for (col_idx, (ret_oid, ret_val)) in step_resp.into_iter().enumerate() {
-            let expected_col = match col_idx {
-                0 => 3,
-                1 => 5,
-                2 => 6,
-                3 => 8,
-                _ => 9,
-            };
-
-            if ret_oid.len() > 11
-                && ret_oid[..10] == base_prefix
-                && ret_oid[10] == expected_col
-                && let Some(val) = ret_val
-            {
-                any_in_column = true;
-                let instance_key = ret_oid[11..].to_vec();
-                let entry = supplies_map.entry(instance_key).or_default();
-                match expected_col {
-                    3 => entry.colorant_idx = val.as_i64(),
-                    5 => entry.supply_type = val.as_i64(),
-                    6 => entry.description = val.as_str().map(|s| s.to_string()),
-                    8 => entry.max_capacity = val.as_i64().map(|v| v as i32),
-                    9 => entry.level = val.as_i64().map(|v| v as i32),
-                    _ => {}
-                }
+    snmp_walk_columns(
+        sock,
+        community,
+        req_id,
+        OID_PRT_MARKER_SUPPLIES_ENTRY,
+        SUPPLY_WALK_COLUMNS,
+        MAX_SUPPLY_WALK_STEPS,
+        |instance_key, col, val| {
+            let entry = supplies_map.entry(instance_key).or_default();
+            match col {
+                SUPPLY_COL_COLORANT_INDEX => entry.colorant_idx = val.as_i64(),
+                SUPPLY_COL_TYPE => entry.supply_type = val.as_i64(),
+                SUPPLY_COL_DESCRIPTION => entry.description = val.as_str(),
+                SUPPLY_COL_MAX_CAPACITY => entry.max_capacity = val.as_i64().map(|v| v as i32),
+                SUPPLY_COL_LEVEL => entry.level = val.as_i64().map(|v| v as i32),
+                _ => {}
             }
-            next_oids.push(ret_oid);
-        }
+        },
+    )
+    .await;
 
-        if !any_in_column || next_oids.len() != current_oids.len() {
-            break;
-        }
-        current_oids = next_oids;
-    }
-
-    // Also try walking prtMarkerColorantValue (1.3.6.1.2.1.43.12.1.1.4) up to 8 steps
-    let colorant_prefix = [1u32, 3, 6, 1, 2, 1, 43, 12, 1, 1, 4];
-    let mut colorant_oid = vec![colorant_prefix.to_vec()];
-    let mut colorants: BTreeMap<u32, String> = BTreeMap::new();
-
-    for _ in 0..8 {
-        let Some(c_resp) = snmp_request(&sock, community, req_id, 0xA1, &colorant_oid).await else {
-            break;
-        };
-        req_id += 1;
-        let Some((ret_oid, Some(val))) = c_resp.into_iter().next() else {
-            break;
-        };
-        if ret_oid.len() > 11 && ret_oid[..11] == colorant_prefix {
-            if let Some(&last_idx) = ret_oid.last()
-                && let Some(s) = val.as_str()
-            {
-                colorants.insert(last_idx, s.to_string());
-            }
-            colorant_oid = vec![ret_oid];
-        } else {
-            break;
-        }
-    }
+    let colorants = poll_colorants(sock, community, req_id).await;
 
     for (_instance, raw) in supplies_map {
-        let mut level = raw.level.unwrap_or(-2);
-        let mut max_capacity = raw.max_capacity.unwrap_or(100);
+        let mut level = raw.level.unwrap_or(SUPPLY_LEVEL_UNKNOWN);
+        let mut max_capacity = raw.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
         let colorant_str = raw
             .colorant_idx
             .and_then(|idx| u32::try_from(idx).ok())
@@ -892,7 +324,9 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
                     .map(|c| {
                         let mut ch = c.chars();
                         match ch.next() {
-                            Some(f) => format!("{} Toner", f.to_uppercase().collect::<String>() + ch.as_str()),
+                            Some(f) => {
+                                format!("{} Toner", f.to_uppercase().collect::<String>() + ch.as_str())
+                            }
                             None => "Toner".to_string(),
                         }
                     })
@@ -911,8 +345,8 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
             && let Some(&br_pct) = brother_toner_pcts.get(&color)
         {
             percent = Some(br_pct);
-            level = br_pct as i32;
-            max_capacity = 100;
+            level = i32::from(br_pct);
+            max_capacity = DEFAULT_MAX_CAPACITY;
         }
 
         details.toners.push(TonerSupply {
@@ -936,16 +370,22 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
                 details.toners.push(TonerSupply {
                     name: label.to_string(),
                     color: color.to_string(),
-                    level: pct as i32,
-                    max_capacity: 100,
+                    level: i32::from(pct),
+                    max_capacity: DEFAULT_MAX_CAPACITY,
                     percent: Some(pct),
                     supply_type: "toner".to_string(),
                 });
             }
         }
     }
+}
 
-    // 3. Walk prtAlertEntry (1.3.6.1.2.1.43.18.1.1) for active paper jam / out-of-paper alerts
+async fn poll_alerts(
+    sock: &UdpSocket,
+    community: &str,
+    req_id: &mut i32,
+    details: &mut PrinterPollDetails,
+) {
     #[derive(Default)]
     struct RawAlert {
         severity: Option<i64>,
@@ -954,67 +394,39 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         description: Option<String>,
     }
 
-    let alert_prefix = [1u32, 3, 6, 1, 2, 1, 43, 18, 1, 1];
-    let mut alert_oids = vec![
-        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 2], // prtAlertSeverityLevel
-        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 5], // prtAlertGroup
-        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 7], // prtAlertCode
-        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 8], // prtAlertDescription
-    ];
     let mut alerts_map: BTreeMap<Vec<u32>, RawAlert> = BTreeMap::new();
-
-    for _step in 0..8 {
-        let Some(step_resp) = snmp_request(&sock, community, req_id, 0xA1, &alert_oids).await
-        else {
-            break;
-        };
-        req_id += 1;
-
-        let mut any_in_column = false;
-        let mut next_oids = Vec::with_capacity(alert_oids.len());
-
-        for (col_idx, (ret_oid, ret_val)) in step_resp.into_iter().enumerate() {
-            let expected_col = match col_idx {
-                0 => 2,
-                1 => 5,
-                2 => 7,
-                _ => 8,
-            };
-
-            if ret_oid.len() > 11
-                && ret_oid[..10] == alert_prefix
-                && ret_oid[10] == expected_col
-                && let Some(val) = ret_val
-            {
-                any_in_column = true;
-                let instance_key = ret_oid[11..].to_vec();
-                let entry = alerts_map.entry(instance_key).or_default();
-                match expected_col {
-                    2 => entry.severity = val.as_i64(),
-                    5 => entry.group = val.as_i64(),
-                    7 => entry.code = val.as_i64(),
-                    8 => entry.description = val.as_str().filter(|s| !s.is_empty()),
-                    _ => {}
-                }
+    snmp_walk_columns(
+        sock,
+        community,
+        req_id,
+        OID_PRT_ALERT_ENTRY,
+        ALERT_WALK_COLUMNS,
+        MAX_ALERT_WALK_STEPS,
+        |instance_key, col, val| {
+            let entry = alerts_map.entry(instance_key).or_default();
+            match col {
+                ALERT_COL_SEVERITY => entry.severity = val.as_i64(),
+                ALERT_COL_GROUP => entry.group = val.as_i64(),
+                ALERT_COL_CODE => entry.code = val.as_i64(),
+                ALERT_COL_DESCRIPTION => entry.description = val.as_str().filter(|s| !s.is_empty()),
+                _ => {}
             }
-            next_oids.push(ret_oid);
-        }
-
-        if !any_in_column || next_oids.len() != alert_oids.len() {
-            break;
-        }
-        alert_oids = next_oids;
-    }
+        },
+    )
+    .await;
 
     for (_instance, alert) in alerts_map {
-        // RFC 3805 PrtAlertCodeTC: 8 = jam, 808 = inputMediaSupplyEmpty,
-        // 810 = inputManualInputRequest, 13 = subunitEmpty (when group 8 = input)
-        if alert.code == Some(8) {
+        if alert.code == Some(ALERT_CODE_JAM) {
             details.paper_jam = true;
         }
-        if matches!(alert.code, Some(808) | Some(810))
-            || (alert.group == Some(8) && alert.code == Some(13) && alert.severity != Some(4))
-        {
+        let is_input_empty_alert = matches!(
+            alert.code,
+            Some(ALERT_CODE_INPUT_MEDIA_EMPTY | ALERT_CODE_INPUT_MANUAL_REQUEST)
+        ) || (alert.group == Some(ALERT_GROUP_INPUT)
+            && alert.code == Some(ALERT_CODE_SUBUNIT_EMPTY)
+            && alert.severity != Some(ALERT_SEVERITY_WARNING));
+
+        if is_input_empty_alert {
             details.out_of_paper = true;
         }
         if let Some(ref desc) = alert.description {
@@ -1032,307 +444,56 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
             }
         }
     }
+}
+
+async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
+    let host_owned = host.to_string();
+    let target_addr = tokio::task::spawn_blocking(move || {
+        if let Ok(ip) = host_owned.parse::<std::net::IpAddr>() {
+            Some(std::net::SocketAddr::new(ip, SNMP_PORT))
+        } else {
+            format!("{host_owned}:{SNMP_PORT}")
+                .to_socket_addrs()
+                .ok()?
+                .next()
+        }
+    })
+    .await
+    .ok()??;
+
+    let bind_addr = if target_addr.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    };
+    let sock = UdpSocket::bind(bind_addr).await.ok()?;
+    sock.connect(target_addr).await.ok()?;
+
+    let mut details = PrinterPollDetails::default();
+    let mut req_id = INITIAL_SNMP_REQUEST_ID;
+
+    let brother_toner_pcts = poll_general_info(&sock, community, &mut req_id, &mut details).await?;
+    poll_supplies(
+        &sock,
+        community,
+        &mut req_id,
+        &brother_toner_pcts,
+        &mut details,
+    )
+    .await;
+    poll_alerts(&sock, community, &mut req_id, &mut details).await;
 
     Some(details)
 }
 
-fn build_ipp_get_attributes_request(host: &str) -> Vec<u8> {
-    let uri = format!("ipp://{host}/ipp/print");
-    let mut body = Vec::new();
-    // IPP 2.0, Operation Get-Printer-Attributes (0x000B), request-id 1
-    body.extend_from_slice(&[0x02, 0x00, 0x00, 0x0B, 0x00, 0x00, 0x00, 0x01]);
-    // operation-attributes-tag
-    body.push(0x01);
-
-    fn push_attr(buf: &mut Vec<u8>, tag: u8, name: &str, val: &str) {
-        buf.push(tag);
-        buf.extend_from_slice(&(name.len() as u16).to_be_bytes());
-        buf.extend_from_slice(name.as_bytes());
-        buf.extend_from_slice(&(val.len() as u16).to_be_bytes());
-        buf.extend_from_slice(val.as_bytes());
-    }
-
-    push_attr(&mut body, 0x47, "attributes-charset", "utf-8");
-    push_attr(&mut body, 0x48, "attributes-natural-language", "en");
-    push_attr(&mut body, 0x45, "printer-uri", &uri);
-
-    let requested = [
-        "marker-names",
-        "marker-colors",
-        "marker-types",
-        "marker-levels",
-        "marker-high-levels",
-        "printer-device-id",
-        "printer-make-and-model",
-        "printer-state",
-        "printer-state-reasons",
-        "printer-state-message",
-        "printer-impressions-completed",
-    ];
-    for (idx, attr) in requested.iter().enumerate() {
-        if idx == 0 {
-            push_attr(&mut body, 0x44, "requested-attributes", attr);
-        } else {
-            push_attr(&mut body, 0x44, "", attr);
-        }
-    }
-
-    // end-of-attributes-tag
-    body.push(0x03);
-    body
-}
-
-fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
-    // Strip HTTP headers if present
-    let ipp_bytes = if let Some(idx) = data.windows(4).position(|w| w == b"\r\n\r\n") {
-        &data[idx + 4..]
-    } else {
-        data
-    };
-
-    if ipp_bytes.len() < 9 {
-        return None;
-    }
-
-    let mut pos = 8; // skip version(2), status(2), req_id(4)
-    let mut current_attr_name = String::new();
-
-    let mut marker_names: Vec<String> = Vec::new();
-    let mut marker_colors: Vec<String> = Vec::new();
-    let mut marker_types: Vec<String> = Vec::new();
-    let mut marker_levels: Vec<i32> = Vec::new();
-    let mut marker_highs: Vec<i32> = Vec::new();
-    let mut details = PrinterPollDetails::default();
-
-    while pos < ipp_bytes.len() {
-        let tag = ipp_bytes[pos];
-        pos += 1;
-        if tag == 0x03 {
-            break; // end-of-attributes
-        }
-        if tag <= 0x0F {
-            // delimiter tag
-            continue;
-        }
-        if pos + 2 > ipp_bytes.len() {
-            break;
-        }
-        let name_len = u16::from_be_bytes([ipp_bytes[pos], ipp_bytes[pos + 1]]) as usize;
-        pos += 2;
-        if pos + name_len + 2 > ipp_bytes.len() {
-            break;
-        }
-        if name_len > 0 {
-            current_attr_name =
-                String::from_utf8_lossy(&ipp_bytes[pos..pos + name_len]).to_string();
-        }
-        pos += name_len;
-
-        let val_len = u16::from_be_bytes([ipp_bytes[pos], ipp_bytes[pos + 1]]) as usize;
-        pos += 2;
-        if pos + val_len > ipp_bytes.len() {
-            break;
-        }
-        let val_bytes = &ipp_bytes[pos..pos + val_len];
-        pos += val_len;
-
-        match current_attr_name.as_str() {
-            "marker-names" => {
-                marker_names.push(String::from_utf8_lossy(val_bytes).trim().to_string());
-            }
-            "marker-colors" => {
-                marker_colors.push(String::from_utf8_lossy(val_bytes).trim().to_string());
-            }
-            "marker-types" => {
-                marker_types.push(String::from_utf8_lossy(val_bytes).trim().to_string());
-            }
-            "marker-levels" if val_len == 4 => {
-                marker_levels.push(i32::from_be_bytes([
-                    val_bytes[0],
-                    val_bytes[1],
-                    val_bytes[2],
-                    val_bytes[3],
-                ]));
-            }
-            "marker-high-levels" if val_len == 4 => {
-                marker_highs.push(i32::from_be_bytes([
-                    val_bytes[0],
-                    val_bytes[1],
-                    val_bytes[2],
-                    val_bytes[3],
-                ]));
-            }
-            "printer-device-id" => {
-                let s = String::from_utf8_lossy(val_bytes).trim().to_string();
-                if details.detected_make.is_none()
-                    && let Some(make) = extract_printer_make(&s)
-                {
-                    details.detected_make = Some(make);
-                }
-            }
-            "printer-make-and-model" => {
-                let s = String::from_utf8_lossy(val_bytes).trim().to_string();
-                if !s.is_empty() {
-                    if details.detected_make.is_none() {
-                        details.detected_make = extract_printer_make(&s);
-                    }
-                    details.detected_model = Some(s);
-                }
-            }
-            "printer-state" if val_len == 4 => {
-                let st = i32::from_be_bytes([
-                    val_bytes[0],
-                    val_bytes[1],
-                    val_bytes[2],
-                    val_bytes[3],
-                ]);
-                details.printer_state = Some(
-                    match st {
-                        4 => "Printing",
-                        _ => "Idle",
-                    }
-                    .to_string(),
-                );
-            }
-            "printer-state-reasons" => {
-                let reason = String::from_utf8_lossy(val_bytes).trim().to_lowercase();
-                if !reason.is_empty() && reason != "none" && !reason.ends_with("-report") {
-                    if reason.contains("media-jam") || reason.split('-').any(|p| p == "jam") {
-                        details.paper_jam = true;
-                    }
-                    if reason.contains("media-empty")
-                        || reason.contains("media-needed")
-                        || reason.contains("input-tray-empty")
-                    {
-                        details.out_of_paper = true;
-                    }
-                }
-            }
-            "printer-state-message" => {
-                let s = String::from_utf8_lossy(val_bytes).trim().to_string();
-                if !s.is_empty() {
-                    if is_paper_jam_text(&s) {
-                        details.paper_jam = true;
-                    }
-                    if is_out_of_paper_text(&s) {
-                        details.out_of_paper = true;
-                    }
-                    details.status_message = Some(s);
-                }
-            }
-            "printer-impressions-completed" if val_len == 4 => {
-                let c = i32::from_be_bytes([
-                    val_bytes[0],
-                    val_bytes[1],
-                    val_bytes[2],
-                    val_bytes[3],
-                ]);
-                if c >= 0 {
-                    details.page_count = Some(c as u64);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let count = marker_names.len().max(marker_levels.len());
-    for i in 0..count {
-        let name = marker_names
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| format!("Supply {}", i + 1));
-        let raw_color = marker_colors.get(i).map(|s| s.as_str());
-        let color = infer_supply_color(&name, raw_color);
-        let level = marker_levels.get(i).copied().unwrap_or(-2);
-        let max_capacity = marker_highs.get(i).copied().unwrap_or(100);
-        let supply_type = marker_types
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| "toner".to_string());
-        if !is_primary_toner_or_ink(&supply_type, &name) {
-            continue;
-        }
-        let percent = compute_percent(level, max_capacity);
-
-        details.toners.push(TonerSupply {
-            name,
-            color,
-            level,
-            max_capacity,
-            percent,
-            supply_type,
-        });
-    }
-
-    if details.toners.is_empty()
-        && details.detected_make.is_none()
-        && details.detected_model.is_none()
-        && details.printer_state.is_none()
-        && !details.paper_jam
-        && !details.out_of_paper
-    {
-        None
-    } else {
-        Some(details)
-    }
-}
-
-async fn poll_ipp(host: &str) -> Option<PrinterPollDetails> {
-    let target = if host.contains(':') {
-        host.to_string()
-    } else {
-        format!("{host}:631")
-    };
-
-    let mut stream = timeout(IPP_TIMEOUT, TcpStream::connect(&target))
-        .await
-        .ok()?
-        .ok()?;
-
-    let ipp_body = build_ipp_get_attributes_request(host);
-    let http_req = format!(
-        "POST /ipp/print HTTP/1.1\r\nHost: {}\r\nContent-Type: application/ipp\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        host,
-        ipp_body.len()
-    );
-
-    timeout(IPP_TIMEOUT, async {
-        stream.write_all(http_req.as_bytes()).await.ok()?;
-        stream.write_all(&ipp_body).await.ok()?;
-        let mut resp = Vec::new();
-        let _ = stream.read_to_end(&mut resp).await;
-        parse_ipp_response(&resp)
-    })
-    .await
-    .ok()?
-}
-
 pub async fn poll_printer_details(host: &str, community: &str) -> PrinterPollDetails {
-    let comm = if community.trim().is_empty() {
-        "public"
-    } else {
-        community.trim()
-    };
+    let comm = normalize_snmp_community(community);
 
     if let Some(mut snmp_data) = poll_snmp(host, comm).await {
         if snmp_data.toners.is_empty()
             && let Some(ipp_data) = poll_ipp(host).await
         {
-            snmp_data.toners = ipp_data.toners;
-            if snmp_data.detected_make.is_none() {
-                snmp_data.detected_make = ipp_data.detected_make;
-            }
-            if snmp_data.detected_model.is_none() {
-                snmp_data.detected_model = ipp_data.detected_model;
-            }
-            if snmp_data.printer_state.is_none() {
-                snmp_data.printer_state = ipp_data.printer_state;
-            }
-            if snmp_data.status_message.is_none() {
-                snmp_data.status_message = ipp_data.status_message;
-            }
-            snmp_data.paper_jam |= ipp_data.paper_jam;
-            snmp_data.out_of_paper |= ipp_data.out_of_paper;
+            snmp_data.merge_ipp_fallback(ipp_data);
         }
         return snmp_data;
     }
@@ -1340,293 +501,3 @@ pub async fn poll_printer_details(host: &str, community: &str) -> PrinterPollDet
     poll_ipp(host).await.unwrap_or_default()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::printer_dashboard::db::{
-        add_printer_log_entry, delete_printer_entry, get_latest_printer_log,
-        get_printer_filter_tags, get_printers, insert_printer, query_printer_logs,
-        save_printer_filter_tags_entries, update_printer_detected_model, update_printer_entry,
-        update_printer_sort_order,
-    };
-    use crate::printer_dashboard::types::{Printer, PrinterFilterConfig};
-    use rusqlite::Connection;
-
-    #[test]
-    fn test_snmp_ber_encoding_and_response_parsing() {
-        let oid = vec![1, 3, 6, 1, 2, 1, 43, 11, 1, 1, 9, 1, 1];
-        let encoded_oid = encode_oid(&oid);
-        let mut pos = 0;
-        let (tag, start, len) = parse_ber_tlv(&encoded_oid, &mut pos).unwrap();
-        assert_eq!(tag, 0x06);
-        let decoded = decode_oid(&encoded_oid[start..start + len]);
-        assert_eq!(decoded, oid);
-
-        // Build a synthetic SNMP GetResponse packet with integer 85%
-        let vb_oid = encode_oid(&oid);
-        let vb_val = encode_integer(85);
-        let mut vb_inner = Vec::new();
-        vb_inner.extend(vb_oid);
-        vb_inner.extend(vb_val);
-        let vb = encode_tlv(0x30, &vb_inner);
-        let vbl = encode_tlv(0x30, &vb);
-
-        let mut pdu_inner = Vec::new();
-        pdu_inner.extend(encode_integer(101));
-        pdu_inner.extend(encode_integer(0));
-        pdu_inner.extend(encode_integer(0));
-        pdu_inner.extend(vbl);
-        let pdu = encode_tlv(0xA2, &pdu_inner);
-
-        let mut msg_inner = Vec::new();
-        msg_inner.extend(encode_integer(1));
-        msg_inner.extend(encode_tlv(0x04, b"public"));
-        msg_inner.extend(pdu);
-        let packet = encode_tlv(0x30, &msg_inner);
-
-        let parsed = parse_snmp_response(&packet).expect("valid snmp response");
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].0, oid);
-        assert_eq!(parsed[0].1.as_ref().unwrap().as_i64(), Some(85));
-    }
-
-    #[test]
-    fn test_supply_color_and_percent_calculation() {
-        assert_eq!(infer_supply_color("Cyan Cartridge TK-5240C", None), "cyan");
-        assert_eq!(infer_supply_color("Magenta Toner", None), "magenta");
-        assert_eq!(infer_supply_color("Yellow Toner", Some("yellow")), "yellow");
-        assert_eq!(infer_supply_color("Black Toner Cartridge", None), "black");
-        assert_eq!(infer_supply_color("Waste Toner Box", None), "waste");
-        assert_eq!(infer_supply_color("Imaging Drum Unit", None), "drum");
-
-        assert_eq!(compute_percent(75, 100), Some(75));
-        assert_eq!(compute_percent(1500, 3000), Some(50));
-        assert_eq!(compute_percent(-3, 100), None);
-        assert_eq!(compute_percent(-2, -2), None);
-
-        assert!(is_primary_toner_or_ink("toner", "Black Toner Cartridge"));
-        assert!(is_primary_toner_or_ink("toner", "Cyan Cartridge HP CF211A"));
-        assert!(!is_primary_toner_or_ink("waste_toner", "Waste Toner Box"));
-        assert!(!is_primary_toner_or_ink("maintenance", "Belt Unit"));
-        assert!(!is_primary_toner_or_ink("drum", "Black Drum Unit"));
-
-        // Verify Brother HL-L3240CDW brInfoMaintenance hex blob parsing
-        let brother_blob: Vec<u8> = vec![
-            0x70, 0x01, 0x04, 0x00, 0x00, 0x22, 0x60,
-            0x82, 0x01, 0x04, 0x00, 0x00, 0x00, 0x5a,
-            0x71, 0x01, 0x04, 0x00, 0x00, 0x22, 0xc4,
-            0x83, 0x01, 0x04, 0x00, 0x00, 0x00, 0x5a,
-            0x72, 0x01, 0x04, 0x00, 0x00, 0x1f, 0xa4,
-            0x84, 0x01, 0x04, 0x00, 0x00, 0x00, 0x5a,
-            0x6f, 0x01, 0x04, 0x00, 0x00, 0x1c, 0x20,
-            0x81, 0x01, 0x04, 0x00, 0x00, 0x00, 0x50,
-        ];
-        let parsed_br = parse_brother_maintenance_bytes(&brother_blob);
-        assert_eq!(parsed_br.get("black"), Some(&80));
-        assert_eq!(parsed_br.get("cyan"), Some(&90));
-        assert_eq!(parsed_br.get("magenta"), Some(&90));
-        assert_eq!(parsed_br.get("yellow"), Some(&90));
-    }
-
-    #[test]
-    fn test_printer_db_crud_and_logs() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "
-            PRAGMA foreign_keys = ON;
-            CREATE TABLE printers (
-                id TEXT PRIMARY KEY,
-                host TEXT NOT NULL,
-                label TEXT NOT NULL,
-                description TEXT,
-                model TEXT,
-                location TEXT,
-                snmp_community TEXT NOT NULL DEFAULT 'public',
-                web_url TEXT,
-                sort_order INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE printer_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                printer_id TEXT NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
-                event_type TEXT NOT NULL,
-                latency_ms INTEGER,
-                timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-            );
-            CREATE TABLE printer_filter_tags (
-                tag TEXT NOT NULL,
-                mode TEXT NOT NULL DEFAULT 'all',
-                sort_order INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (tag, mode)
-            );
-            ",
-        )
-        .unwrap();
-
-        let p1 = Printer {
-            id: "p1".to_string(),
-            host: "192.168.1.50".to_string(),
-            label: "Reception Printer".to_string(),
-            description: Some("Main floor".to_string()),
-            model: Some("HP LaserJet".to_string()),
-            location: Some("Lobby".to_string()),
-            snmp_community: "public".to_string(),
-            web_url: None,
-        };
-        insert_printer(&conn, &p1).unwrap();
-
-        let p2 = Printer {
-            id: "p2".to_string(),
-            host: "192.168.1.51".to_string(),
-            label: "Accounting Printer".to_string(),
-            description: None,
-            model: None,
-            location: Some("Room 302".to_string()),
-            snmp_community: "public".to_string(),
-            web_url: Some("https://192.168.1.51:8443".to_string()),
-        };
-        insert_printer(&conn, &p2).unwrap();
-
-        let list = get_printers(&conn).unwrap();
-        assert_eq!(list.len(), 2);
-        assert_eq!(list[0].id, "p1");
-        assert_eq!(list[1].id, "p2");
-
-        // Reorder
-        update_printer_sort_order(&mut conn, &[p2.clone(), p1.clone()]).unwrap();
-        let reordered = get_printers(&conn).unwrap();
-        assert_eq!(reordered[0].id, "p2");
-        assert_eq!(reordered[1].id, "p1");
-
-        // Update
-        let mut p1_updated = p1.clone();
-        p1_updated.label = "Updated Reception".to_string();
-        update_printer_entry(&conn, "p1", &p1_updated).unwrap();
-        let after_update = get_printers(&conn).unwrap();
-        assert_eq!(after_update[1].label, "Updated Reception");
-
-        // Logs
-        add_printer_log_entry(&conn, "p1", "connected", Some(12)).unwrap();
-        let latest = get_latest_printer_log(&conn, "p1").unwrap();
-        assert!(latest.is_some());
-        assert_eq!(latest.unwrap().0, "connected");
-
-        let logs = query_printer_logs(&conn, "p1", 10).unwrap();
-        assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0].latency_ms, Some(12));
-
-        // Delete cascades logs
-        delete_printer_entry(&conn, "p1").unwrap();
-        let remaining = get_printers(&conn).unwrap();
-        assert_eq!(remaining.len(), 1);
-        let logs_after = query_printer_logs(&conn, "p1", 10).unwrap();
-        assert!(logs_after.is_empty());
-
-        // Auto-detected model persistence when model is None
-        update_printer_detected_model(&conn, "p2", "SHARP BP-50C26").unwrap();
-        let after_detect = get_printers(&conn).unwrap();
-        assert_eq!(after_detect[0].model.as_deref(), Some("SHARP BP-50C26"));
-
-        // Filter tags persistence
-        let initial_filters = get_printer_filter_tags(&conn).unwrap();
-        assert!(initial_filters.all_tags.is_empty());
-        assert!(initial_filters.any_tags.is_empty());
-
-        let filter_config = PrinterFilterConfig {
-            all_tags: vec!["SHARP".to_string(), "Toner Low".to_string()],
-            any_tags: vec!["Printing".to_string(), "Idle".to_string()],
-        };
-        save_printer_filter_tags_entries(&mut conn, &filter_config).unwrap();
-        let loaded_filters = get_printer_filter_tags(&conn).unwrap();
-        assert_eq!(loaded_filters, filter_config);
-
-        // Removing a tag and re-saving
-        let updated_config = PrinterFilterConfig {
-            all_tags: vec!["SHARP".to_string()],
-            any_tags: vec!["Idle".to_string()],
-        };
-        save_printer_filter_tags_entries(&mut conn, &updated_config).unwrap();
-        assert_eq!(get_printer_filter_tags(&conn).unwrap(), updated_config);
-
-        // Same tag in both 'all' and 'any' should be preserved independently
-        let dual_config = PrinterFilterConfig {
-            all_tags: vec!["SHARP".to_string()],
-            any_tags: vec!["SHARP".to_string(), "Brother".to_string()],
-        };
-        save_printer_filter_tags_entries(&mut conn, &dual_config).unwrap();
-        assert_eq!(get_printer_filter_tags(&conn).unwrap(), dual_config);
-    }
-
-    #[test]
-    fn test_paper_jam_and_out_of_paper_detection() {
-        // RFC 2790 hrPrinterDetectedErrorState bitmask
-        assert_eq!(parse_hr_error_state(&[0x00, 0x00], Some(2), Some(3)), (false, false));
-        // Bit 5 (0x04) = jammed
-        assert_eq!(parse_hr_error_state(&[0x04, 0x00], Some(5), Some(1)), (true, false));
-        // Bit 1 (0x40) = noPaper
-        assert_eq!(parse_hr_error_state(&[0x40, 0x00], Some(5), Some(1)), (false, true));
-        // Both jammed and noPaper
-        assert_eq!(parse_hr_error_state(&[0x44, 0x00], Some(5), Some(1)), (true, true));
-        // Byte 1 bit 13 (0x04) = inputTrayEmpty when device down (5) or printer status other (1)
-        assert_eq!(parse_hr_error_state(&[0x00, 0x04], Some(5), Some(3)), (false, true));
-        assert_eq!(parse_hr_error_state(&[0x00, 0x04], Some(2), Some(1)), (false, true));
-        // Byte 1 bit 13 (0x04) ignored when printer is idle and device running normally
-        assert_eq!(parse_hr_error_state(&[0x00, 0x04], Some(2), Some(3)), (false, false));
-
-        // Console / alert text matching for paper jams
-        assert!(is_paper_jam_text("Paper Jam in Tray 1"));
-        assert!(is_paper_jam_text("Jam Rear"));
-        assert!(is_paper_jam_text("Paper Jammed"));
-        assert!(is_paper_jam_text("Misfeed in Duplex Unit"));
-        assert!(!is_paper_jam_text("Ready to Print"));
-        assert!(!is_paper_jam_text("Sleeping"));
-
-        // Console / alert text matching for out of paper
-        assert!(is_out_of_paper_text("Out of Paper"));
-        assert!(is_out_of_paper_text("No Paper"));
-        assert!(is_out_of_paper_text("Paper Out Tray 1"));
-        assert!(is_out_of_paper_text("Load Paper in Tray 1"));
-        assert!(is_out_of_paper_text("Tray 1 Empty"));
-        assert!(is_out_of_paper_text("Cassette 1 Empty"));
-        assert!(!is_out_of_paper_text("Toner Empty"));
-        assert!(!is_out_of_paper_text("Output Tray Empty"));
-        assert!(!is_out_of_paper_text("Ready"));
-
-        // 0% toner percent computation
-        assert_eq!(compute_percent(0, 100), Some(0));
-        assert_eq!(compute_percent(0, 3000), Some(0));
-        assert_eq!(compute_percent(0, -2), Some(0));
-
-        // Dynamic printer make extraction from SNMP / IPP strings
-        assert_eq!(
-            extract_printer_make("HP LaserJet 200 color M251n"),
-            Some("HP".to_string())
-        );
-        assert_eq!(
-            extract_printer_make("Brother HL-L3240CDW series"),
-            Some("Brother".to_string())
-        );
-        assert_eq!(
-            extract_printer_make("RICOH IM 370"),
-            Some("RICOH".to_string())
-        );
-        assert_eq!(
-            extract_printer_make("SHARP MX-4061"),
-            Some("SHARP".to_string())
-        );
-        assert_eq!(
-            extract_printer_make(
-                "HP ETHERNET MULTI-ENVIRONMENT,SN:CNF1B18468,FN:V050MLH,SVCID:23144,PID:HP LaserJet 200 color M251n"
-            ),
-            Some("HP".to_string())
-        );
-        assert_eq!(
-            extract_printer_make("MFG:Brother Industries, Ltd.;MDL:HL-L3240CDW series;"),
-            Some("Brother".to_string())
-        );
-        assert_eq!(
-            clean_vendor_name("Sharp Corporation"),
-            Some("Sharp".to_string())
-        );
-        assert_eq!(clean_vendor_name("RICOH"), Some("RICOH".to_string()));
-    }
-}
