@@ -147,7 +147,7 @@
     style:--card-font-scale={cardScale}
   >
     <DashboardHeader
-      title={isNocMode ? "Printer NOC Monitor" : "Printers Dashboard"}
+      title={isNocMode ? "Printer NOC Monitor" : "Printers"}
       countText={isFiltered
         ? `${filteredPrinters.length} of ${store.items.length} shown`
         : `${store.items.length} configured`}

@@ -1,8 +1,8 @@
 import { MonitorStore } from "$lib/monitor-store.svelte";
 import type { HostState, Server, ServerStatusTick } from "./types";
 
-const SOUND_DOWN_PATH = "/sound-files/server-monitor/down.mp3";
-const SOUND_UP_PATH = "/sound-files/server-monitor/up.mp3";
+const SOUND_DOWN_PATH = "/sound-files/servers/down.mp3";
+const SOUND_UP_PATH = "/sound-files/servers/up.mp3";
 const SERVER_STATUS_EVENT = "server-status-tick";
 
 function playAlertSound(audio: HTMLAudioElement | null) {
