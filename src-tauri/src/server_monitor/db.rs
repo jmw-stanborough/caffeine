@@ -72,6 +72,11 @@ pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
 
         CREATE INDEX IF NOT EXISTS idx_printer_logs_lookup
         ON printer_logs(printer_id, timestamp DESC);
+
+        CREATE TABLE IF NOT EXISTS printer_filter_tags (
+            tag TEXT PRIMARY KEY,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
         ",
     )
     .map_err(|e| format!("Failed to run schema migrations: {e}"))?;

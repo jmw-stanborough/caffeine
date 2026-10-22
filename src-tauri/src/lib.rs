@@ -29,6 +29,8 @@ pub fn run() {
             printer_dashboard::config::delete_printer,
             printer_dashboard::config::reorder_printers,
             printer_dashboard::config::get_printer_logs,
+            printer_dashboard::config::load_printer_filter_tags,
+            printer_dashboard::config::save_printer_filter_tags,
             printer_dashboard::webview::open_printer_webview,
             printer_dashboard::webview::resize_printer_webview,
             printer_dashboard::webview::navigate_printer_webview,

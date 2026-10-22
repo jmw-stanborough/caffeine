@@ -952,8 +952,10 @@ pub async fn poll_printer_details(host: &str, community: &str) -> PrinterPollDet
 mod tests {
     use super::*;
     use crate::printer_dashboard::db::{
-        add_printer_log_entry, delete_printer_entry, get_latest_printer_log, get_printers,
-        insert_printer, query_printer_logs, update_printer_entry, update_printer_sort_order,
+        add_printer_log_entry, delete_printer_entry, get_latest_printer_log,
+        get_printer_filter_tags, get_printers, insert_printer, query_printer_logs,
+        save_printer_filter_tags_entries, update_printer_detected_model, update_printer_entry,
+        update_printer_sort_order,
     };
     use crate::printer_dashboard::types::Printer;
     use rusqlite::Connection;
@@ -1058,6 +1060,10 @@ mod tests {
                 latency_ms INTEGER,
                 timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             );
+            CREATE TABLE printer_filter_tags (
+                tag TEXT PRIMARY KEY,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
             ",
         )
         .unwrap();
@@ -1120,5 +1126,26 @@ mod tests {
         assert_eq!(remaining.len(), 1);
         let logs_after = query_printer_logs(&conn, "p1", 10).unwrap();
         assert!(logs_after.is_empty());
+
+        // Auto-detected model persistence when model is None
+        update_printer_detected_model(&conn, "p2", "SHARP BP-50C26").unwrap();
+        let after_detect = get_printers(&conn).unwrap();
+        assert_eq!(after_detect[0].model.as_deref(), Some("SHARP BP-50C26"));
+
+        // Filter tags persistence
+        assert!(get_printer_filter_tags(&conn).unwrap().is_empty());
+        let filter_tags = vec![
+            "SHARP".to_string(),
+            "Toner Low".to_string(),
+            "Printing".to_string(),
+        ];
+        save_printer_filter_tags_entries(&mut conn, &filter_tags).unwrap();
+        let loaded_tags = get_printer_filter_tags(&conn).unwrap();
+        assert_eq!(loaded_tags, filter_tags);
+
+        // Removing a tag and re-saving
+        let updated_tags = vec!["SHARP".to_string(), "Idle".to_string()];
+        save_printer_filter_tags_entries(&mut conn, &updated_tags).unwrap();
+        assert_eq!(get_printer_filter_tags(&conn).unwrap(), updated_tags);
     }
 }

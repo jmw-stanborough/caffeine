@@ -1,6 +1,7 @@
 use super::db::{
-    delete_printer_entry, get_printers, insert_printer, query_printer_logs,
-    update_printer_entry, update_printer_sort_order,
+    delete_printer_entry, get_printer_filter_tags, get_printers, insert_printer,
+    query_printer_logs, save_printer_filter_tags_entries, update_printer_entry,
+    update_printer_sort_order,
 };
 use super::types::{Printer, PrinterLog};
 use crate::server_monitor::db::DbState;
@@ -55,4 +56,20 @@ pub fn get_printer_logs(
 ) -> Result<Vec<PrinterLog>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     query_printer_logs(&conn, &printer_id, limit.unwrap_or(50))
+}
+
+#[tauri::command]
+pub fn load_printer_filter_tags(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    get_printer_filter_tags(&conn)
+}
+
+#[tauri::command]
+pub fn save_printer_filter_tags(
+    db: State<'_, DbState>,
+    tags: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+    save_printer_filter_tags_entries(&mut conn, &tags)?;
+    get_printer_filter_tags(&conn)
 }

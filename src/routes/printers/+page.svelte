@@ -9,6 +9,7 @@
   import PrinterDetailModal from "./printer-detail-modal.svelte";
   import PrinterModal from "./printer-modal.svelte";
   import { PrinterStore } from "./printers.svelte";
+  import { filterPrintersByTags, isWarningTag } from "./tags";
   import type { Printer } from "./types";
 
   const appWindow = getCurrentWindow();
@@ -20,6 +21,16 @@
   let detailPrinterId = $state<string | null>(null);
   let isNocMode = $state(false);
   let cardScale = $state(1);
+
+  let filterInputText = $state("");
+  let filterInputEl = $state<HTMLInputElement | undefined>(undefined);
+  let isFilterFocused = $state(false);
+
+  let isFiltered = $derived(store.filterTags.length > 0);
+  let filteredPrinters = $derived(
+    filterPrintersByTags(store.items, store.statusMap, store.filterTags)
+  );
+  let premadeTags = $derived(store.getPremadeTagSuggestions());
 
   let detailPrinter = $derived(
     detailPrinterId ? store.items.find((p) => p.id === detailPrinterId) : undefined
@@ -36,6 +47,26 @@
 
   function adjustScale(delta: number) {
     cardScale = Math.min(1.6, Math.max(0.7, +(cardScale + delta).toFixed(2)));
+  }
+
+  async function handleFilterKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      const trimmed = filterInputText.trim();
+      if (trimmed) {
+        await store.addFilterTag(trimmed);
+        filterInputText = "";
+      }
+    } else if (e.key === "Backspace" && filterInputText === "" && store.filterTags.length > 0) {
+      e.preventDefault();
+      await store.removeLastFilterTag();
+    }
+  }
+
+  async function handlePremadeTagClick(tag: string) {
+    await store.toggleFilterTag(tag);
+    filterInputEl?.focus();
   }
 
   async function setNocMode(active: boolean) {
@@ -306,7 +337,11 @@
     <header class="page-header">
       <div class="header-titles">
         <h1 class="page-title">{isNocMode ? "Printer NOC Monitor" : "Printers Dashboard"}</h1>
-        <span class="printer-count">{store.items.length} configured</span>
+        <span class="printer-count">
+          {isFiltered
+            ? `${filteredPrinters.length} of ${store.items.length} shown`
+            : `${store.items.length} configured`}
+        </span>
       </div>
       <div class="header-actions">
         <div class="zoom-controls">
@@ -338,6 +373,95 @@
       </div>
     </header>
 
+    {#if !isNocMode}
+      <div class="filter-section">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="tag-entry-box"
+          class:focused={isFilterFocused}
+          onclick={() => filterInputEl?.focus()}
+        >
+          {#each store.filterTags as tag (tag)}
+            <span
+              class="printer-tag entry-tag"
+              class:tag-warning={isWarningTag(tag)}
+              class:tag-standard={!isWarningTag(tag)}
+            >
+              <span class="entry-tag-label">{tag}</span>
+              <button
+                type="button"
+                class="entry-tag-remove"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  store.removeFilterTag(tag);
+                  filterInputEl?.focus();
+                }}
+                aria-label="Remove {tag} filter"
+                title="Remove {tag}"
+              >
+                ×
+              </button>
+            </span>
+          {/each}
+
+          <input
+            type="text"
+            class="tag-entry-input"
+            bind:this={filterInputEl}
+            bind:value={filterInputText}
+            onfocus={() => (isFilterFocused = true)}
+            onblur={() => (isFilterFocused = false)}
+            onkeydown={handleFilterKeyDown}
+            placeholder={store.filterTags.length === 0
+              ? "Filter by tag (type a tag and press Enter)..."
+              : "Add tag..."}
+            aria-label="Filter printers by tag"
+          />
+
+          {#if store.filterTags.length > 0}
+            <button
+              type="button"
+              class="btn-clear-tags"
+              onclick={(e) => {
+                e.stopPropagation();
+                store.clearFilterTags();
+                filterInputText = "";
+                filterInputEl?.focus();
+              }}
+              title="Clear all filter tags"
+            >
+              Clear
+            </button>
+          {/if}
+        </div>
+
+        <div class="premade-tags-bar">
+          <span class="premade-tags-label">Tags:</span>
+          <div class="premade-tags-list">
+            {#each premadeTags as tag (tag)}
+              {@const active = store.hasFilterTag(tag)}
+              <button
+                type="button"
+                class="printer-tag premade-tag-btn"
+                class:tag-warning={isWarningTag(tag)}
+                class:tag-standard={!isWarningTag(tag)}
+                class:active
+                onclick={() => handlePremadeTagClick(tag)}
+                aria-pressed={active}
+                title={active ? `Remove "${tag}" filter` : `Add "${tag}" filter`}
+              >
+                <span>{tag}</span>
+                <span class="premade-tag-indicator" aria-hidden="true">
+                  {active ? "✓" : "+"}
+                </span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/if}
+
     {#if store.errorMessage}
       <div class="error-banner">
         <span>{store.errorMessage}</span>
@@ -348,19 +472,40 @@
     {#if store.loading}
       <p class="status-message">Reading printer configuration...</p>
     {:else}
+      {#if isFiltered && store.items.length > 0 && filteredPrinters.length === 0}
+        <div class="empty-filter-banner">
+          <span>No printers match the active filter tags.</span>
+          <button
+            type="button"
+            class="btn-clear-empty"
+            onclick={() => store.clearFilterTags()}
+          >
+            Clear Filters
+          </button>
+        </div>
+      {/if}
+
       <section
         class="printer-grid"
         class:noc-grid={isNocMode}
         use:dndzone={{
-          items: store.items,
+          items: filteredPrinters,
           flipDurationMs: 200,
-          dragDisabled: isNocMode,
+          dragDisabled: isNocMode || isFiltered,
           dropTargetStyle: {}
         }}
-        onconsider={(e) => (store.items = e.detail.items)}
-        onfinalize={(e) => store.reorderPrinters(e.detail.items)}
+        onconsider={(e) => {
+          if (!isFiltered) {
+            store.items = e.detail.items;
+          }
+        }}
+        onfinalize={(e) => {
+          if (!isFiltered) {
+            store.reorderPrinters(e.detail.items);
+          }
+        }}
       >
-        {#each store.items as printer (printer.id)}
+        {#each filteredPrinters as printer (printer.id)}
           {@const printerState = store.statusMap[printer.id]}
           <div animate:flip={{ duration: 200 }} class="drag-wrapper">
             <PrinterCard
@@ -524,6 +669,199 @@
     background-color: var(--color-surface);
     color: var(--color-text);
     border-color: var(--color-text-muted);
+  }
+
+  /* Tag Filter Section */
+  .filter-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .tag-entry-box {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.5rem;
+    padding: 0.35rem 0.65rem;
+    background-color: var(--color-surface);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.45rem;
+    cursor: text;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .tag-entry-box.focused {
+    border-color: var(--color-primary);
+  }
+
+  .printer-tag {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.22rem 0.5rem;
+    border-radius: 0.25rem;
+    line-height: 1;
+    border: solid var(--width-border) var(--color-border);
+    flex-shrink: 0;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  .tag-standard {
+    background-color: color-mix(in srgb, var(--color-base) 65%, transparent);
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+
+  .tag-warning {
+    background-color: var(--color-warning);
+    color: #1c1917;
+    border-color: color-mix(in srgb, var(--color-warning) 75%, #000000);
+  }
+
+  .entry-tag {
+    gap: 0.3rem;
+    padding-right: 0.3rem;
+  }
+
+  .entry-tag-label {
+    line-height: 1;
+  }
+
+  .entry-tag-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0.05rem 0.18rem;
+    border-radius: 0.2rem;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.12s ease, background-color 0.12s ease;
+  }
+
+  .entry-tag-remove:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.12);
+  }
+
+  .tag-entry-input {
+    flex: 1;
+    min-width: 12rem;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 0.88rem;
+    font-family: inherit;
+    padding: 0.15rem 0.1rem;
+    outline: none;
+  }
+
+  .tag-entry-input::placeholder {
+    color: var(--color-text-muted);
+    opacity: 0.8;
+  }
+
+  .btn-clear-tags {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    margin-left: auto;
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .btn-clear-tags:hover {
+    color: var(--color-text);
+    background-color: color-mix(in srgb, var(--color-base) 55%, transparent);
+  }
+
+  .premade-tags-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .premade-tags-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  .premade-tags-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .premade-tag-btn {
+    gap: 0.3rem;
+    cursor: pointer;
+    opacity: 0.85;
+    transition: opacity 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  }
+
+  .premade-tag-btn:hover {
+    opacity: 1;
+    border-color: var(--color-primary);
+  }
+
+  .premade-tag-btn.active {
+    opacity: 1;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  .premade-tag-indicator {
+    font-size: 0.72rem;
+    font-weight: 700;
+    opacity: 0.75;
+  }
+
+  .empty-filter-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.45rem;
+    background-color: color-mix(in srgb, var(--color-surface) 65%, transparent);
+    border: solid var(--width-border) var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 0.88rem;
+  }
+
+  .btn-clear-empty {
+    background-color: var(--color-base);
+    border: solid var(--width-border) var(--color-border);
+    color: var(--color-text);
+    padding: 0.3rem 0.65rem;
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .btn-clear-empty:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
   }
 
   /* Auto-fill responsive layout: cards take up strictly the space needed while looking uniform */

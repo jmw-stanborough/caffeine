@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { inferPrinterMake, isLowToner } from "./tags";
   import type { Printer, PrinterState, TonerSupply } from "./types";
 
   let {
@@ -49,14 +50,7 @@
 
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
   let displayModel = $derived(printer?.model || detectedModel);
-
-  function isLowToner(toner: TonerSupply): boolean {
-    if (toner.supply_type === "waste_toner" || toner.supply_type === "waste_ink") {
-      return false;
-    }
-    return toner.percent !== undefined && toner.percent !== null && toner.percent <= 15;
-  }
-
+  let makeTag = $derived(inferPrinterMake(printer, detectedModel));
   let hasLowToner = $derived(toners.some((t) => isLowToner(t)));
 
   let effectiveVisualStatus = $derived(
@@ -274,8 +268,11 @@
 
       <div class="card-footer">
         <div class="footer-left">
-          {#if printer.location || printerState || hasLowToner}
+          {#if makeTag || printer.location || printerState || hasLowToner}
             <div class="tags-row">
+              {#if makeTag}
+                <span class="printer-tag tag-make" title="Make: {makeTag}">{makeTag}</span>
+              {/if}
               {#if printer.location}
                 <span class="printer-tag tag-location" title={printer.location}>{printer.location}</span>
               {/if}
@@ -616,6 +613,7 @@
     border-color: color-mix(in srgb, var(--color-warning) 75%, #000000);
   }
 
+  .tag-make,
   .tag-state,
   .tag-location {
     background-color: color-mix(in srgb, var(--color-base) 65%, transparent);

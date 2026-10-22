@@ -1,4 +1,6 @@
-use super::db::{add_printer_log_entry, get_latest_printer_log, get_printers};
+use super::db::{
+    add_printer_log_entry, get_latest_printer_log, get_printers, update_printer_detected_model,
+};
 use super::snmp::{PrinterPollDetails, poll_printer_details};
 use super::types::{Printer, PrinterStatusEvent};
 use crate::server_monitor::db::DbState;
@@ -138,6 +140,15 @@ pub fn start_printer_worker(app: AppHandle) {
                 let Ok((printer_id, host, status, latency_ms, maybe_details)) = task.await else {
                     continue;
                 };
+
+                if let Some(ref details) = maybe_details
+                    && let Some(ref detected) = details.detected_model
+                {
+                    let db = app.state::<DbState>();
+                    if let Ok(conn) = db.0.lock() {
+                        let _ = update_printer_detected_model(&conn, &printer_id, detected);
+                    }
+                }
 
                 let current = if let Some(existing) = trackers.get_mut(&printer_id) {
                     let was_connected = existing.status != HealthStatus::Offline;

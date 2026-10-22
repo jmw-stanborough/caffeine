@@ -1,10 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import {
+  PREMADE_TAGS,
+  getPrinterTags,
+  inferPrinterMake,
+  normalizeTagLabel,
+} from "./tags";
 import type { Printer, PrinterState, PrinterStatusTick } from "./types";
 
 export class PrinterStore {
   items = $state<Printer[]>([]);
   statusMap = $state<Record<string, PrinterState>>({});
+  filterTags = $state<string[]>([]);
   loading = $state(true);
   errorMessage = $state<string | null>(null);
   now = $state(Date.now());
@@ -15,7 +22,7 @@ export class PrinterStore {
 
   async init() {
     this.destroyed = false;
-    await this.fetchPrinters();
+    await Promise.all([this.fetchPrinters(), this.fetchFilterTags()]);
     if (this.destroyed) return;
 
     this.timer = window.setInterval(() => {
@@ -85,6 +92,106 @@ export class PrinterStore {
       this.loading = false;
     }
   };
+
+  fetchFilterTags = async () => {
+    try {
+      const saved = await invoke<string[]>("load_printer_filter_tags");
+      this.filterTags = saved ?? [];
+    } catch (err) {
+      console.error("Failed to load printer filter tags:", err);
+    }
+  };
+
+  private async persistFilterTags() {
+    try {
+      const snapshot = [...this.filterTags];
+      await invoke<string[]>("save_printer_filter_tags", { tags: snapshot });
+    } catch (err) {
+      console.error("Failed to save printer filter tags:", err);
+    }
+  }
+
+  getAllKnownTags(): string[] {
+    const known = new Set<string>(PREMADE_TAGS);
+    for (const printer of this.items) {
+      const state = this.statusMap[printer.id];
+      for (const tag of getPrinterTags(printer, state)) {
+        known.add(tag);
+      }
+    }
+    return Array.from(known);
+  }
+
+  getPremadeTagSuggestions(): string[] {
+    const result: string[] = [...PREMADE_TAGS];
+    const seenLower = new Set(result.map((t) => t.toLowerCase()));
+
+    for (const printer of this.items) {
+      const state = this.statusMap[printer.id];
+      const make = inferPrinterMake(printer, state?.detectedModel);
+      if (make && !seenLower.has(make.toLowerCase())) {
+        seenLower.add(make.toLowerCase());
+        result.push(make);
+      }
+    }
+
+    for (const printer of this.items) {
+      const loc = printer.location?.trim();
+      if (loc && !seenLower.has(loc.toLowerCase())) {
+        seenLower.add(loc.toLowerCase());
+        result.push(loc);
+      }
+    }
+
+    return result;
+  }
+
+  hasFilterTag(tag: string): boolean {
+    const lower = tag.trim().toLowerCase();
+    return this.filterTags.some((t) => t.toLowerCase() === lower);
+  }
+
+  async addFilterTag(rawTag: string): Promise<boolean> {
+    const normalized = normalizeTagLabel(rawTag, this.getAllKnownTags());
+    if (!normalized) return false;
+
+    if (this.hasFilterTag(normalized)) {
+      return false;
+    }
+
+    this.filterTags = [...this.filterTags, normalized];
+    await this.persistFilterTags();
+    return true;
+  }
+
+  async removeFilterTag(tagToRemove: string) {
+    const lower = tagToRemove.trim().toLowerCase();
+    const next = this.filterTags.filter((t) => t.toLowerCase() !== lower);
+    if (next.length !== this.filterTags.length) {
+      this.filterTags = next;
+      await this.persistFilterTags();
+    }
+  }
+
+  async removeLastFilterTag() {
+    if (this.filterTags.length === 0) return;
+    this.filterTags = this.filterTags.slice(0, -1);
+    await this.persistFilterTags();
+  }
+
+  async toggleFilterTag(tag: string) {
+    if (this.hasFilterTag(tag)) {
+      await this.removeFilterTag(tag);
+    } else {
+      await this.addFilterTag(tag);
+    }
+  }
+
+  async clearFilterTags() {
+    if (this.filterTags.length === 0) return;
+    this.filterTags = [];
+    await this.persistFilterTags();
+  }
 
   async savePrinter(savedPrinter: Printer, existingId?: string) {
     try {

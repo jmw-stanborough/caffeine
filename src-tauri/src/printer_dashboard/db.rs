@@ -187,3 +187,58 @@ pub fn query_printer_logs(
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
 }
+
+pub fn update_printer_detected_model(
+    conn: &Connection,
+    id: &str,
+    detected_model: &str,
+) -> Result<(), String> {
+    let trimmed = detected_model.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE printers SET model = ?1 WHERE id = ?2 AND (model IS NULL OR trim(model) = '')",
+        params![trimmed, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_printer_filter_tags(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT tag FROM printer_filter_tags ORDER BY sort_order ASC")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
+pub fn save_printer_filter_tags_entries(
+    conn: &mut Connection,
+    tags: &[String],
+) -> Result<(), String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    {
+        tx.execute("DELETE FROM printer_filter_tags", [])
+            .map_err(|e| e.to_string())?;
+
+        let mut stmt = tx
+            .prepare("INSERT OR IGNORE INTO printer_filter_tags (tag, sort_order) VALUES (?1, ?2)")
+            .map_err(|e| e.to_string())?;
+
+        for (idx, tag) in tags.iter().enumerate() {
+            let cleaned = tag.trim();
+            if !cleaned.is_empty() {
+                stmt.execute(params![cleaned, idx as i64])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
