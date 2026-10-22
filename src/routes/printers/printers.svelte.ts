@@ -44,6 +44,7 @@ export class PrinterStore {
           last_event,
           last_event_at,
           toners,
+          detected_make,
           detected_model,
           serial_number,
           page_count,
@@ -60,6 +61,7 @@ export class PrinterStore {
           lastEvent: last_event ?? previousState?.lastEvent,
           lastEventAt: last_event_at ?? previousState?.lastEventAt,
           toners: toners ?? previousState?.toners ?? [],
+          detectedMake: detected_make ?? previousState?.detectedMake,
           detectedModel: detected_model ?? previousState?.detectedModel,
           serialNumber: serial_number ?? previousState?.serialNumber,
           pageCount: page_count ?? previousState?.pageCount,
@@ -134,6 +136,10 @@ export class PrinterStore {
     return Array.from(known);
   }
 
+  getSuggestedTags(): readonly string[] {
+    return PREMADE_TAGS;
+  }
+
   hasFilterAllTag(tag: string): boolean {
     const lower = tag.trim().toLowerCase();
     return this.filterAllTags.some((t) => t.toLowerCase() === lower);
@@ -168,6 +174,49 @@ export class PrinterStore {
     this.filterAnyTags = [...this.filterAnyTags, normalized];
     await this.persistFilterTags();
     return true;
+  }
+
+  async moveFilterTag(
+    rawTag: string,
+    target: "all" | "any",
+    source?: "suggested" | "all" | "any",
+  ): Promise<boolean> {
+    const normalized = normalizeTagLabel(rawTag, this.getAllKnownTags());
+    if (!normalized) return false;
+    const lower = normalized.toLowerCase();
+
+    let changed = false;
+
+    if (source === "any" && target === "all") {
+      const nextAny = this.filterAnyTags.filter(
+        (t) => t.toLowerCase() !== lower,
+      );
+      if (nextAny.length !== this.filterAnyTags.length) {
+        this.filterAnyTags = nextAny;
+        changed = true;
+      }
+    } else if (source === "all" && target === "any") {
+      const nextAll = this.filterAllTags.filter(
+        (t) => t.toLowerCase() !== lower,
+      );
+      if (nextAll.length !== this.filterAllTags.length) {
+        this.filterAllTags = nextAll;
+        changed = true;
+      }
+    }
+
+    if (target === "all" && !this.hasFilterAllTag(normalized)) {
+      this.filterAllTags = [...this.filterAllTags, normalized];
+      changed = true;
+    } else if (target === "any" && !this.hasFilterAnyTag(normalized)) {
+      this.filterAnyTags = [...this.filterAnyTags, normalized];
+      changed = true;
+    }
+
+    if (changed) {
+      await this.persistFilterTags();
+    }
+    return changed;
   }
 
   async removeFilterAllTag(tagToRemove: string) {

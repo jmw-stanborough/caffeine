@@ -191,12 +191,16 @@ pub fn start_printer_worker(app: AppHandle) {
                             existing.cached_details = new_details;
                         } else {
                             // Keep existing toners if a transient UDP drop happened, update other fields
-                            let poll_succeeded = new_details.detected_model.is_some()
+                            let poll_succeeded = new_details.detected_make.is_some()
+                                || new_details.detected_model.is_some()
                                 || new_details.printer_state.is_some()
                                 || new_details.page_count.is_some()
                                 || new_details.paper_jam
                                 || new_details.out_of_paper;
 
+                            if new_details.detected_make.is_some() {
+                                existing.cached_details.detected_make = new_details.detected_make;
+                            }
                             if new_details.detected_model.is_some() {
                                 existing.cached_details.detected_model = new_details.detected_model;
                             }
@@ -318,6 +322,7 @@ pub fn start_printer_worker(app: AppHandle) {
                     last_event: Some(current.last_event.clone()),
                     last_event_at: Some(current.last_event_at.clone()),
                     toners: current.cached_details.toners.clone(),
+                    detected_make: current.cached_details.detected_make.clone(),
                     detected_model: current.cached_details.detected_model.clone(),
                     serial_number: current.cached_details.serial_number.clone(),
                     page_count: current.cached_details.page_count,

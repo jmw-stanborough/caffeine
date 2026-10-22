@@ -17,6 +17,7 @@
     lastEvent = undefined,
     lastEventAt = undefined,
     toners = [],
+    detectedMake = undefined,
     detectedModel = undefined,
     serialNumber = undefined,
     pageCount = undefined,
@@ -35,6 +36,7 @@
     lastEvent?: PrinterState["lastEvent"];
     lastEventAt?: string;
     toners?: TonerSupply[];
+    detectedMake?: string;
     detectedModel?: string;
     serialNumber?: string;
     pageCount?: number;
@@ -61,7 +63,7 @@
 
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
   let displayModel = $derived(printer?.model || detectedModel);
-  let makeTag = $derived(inferPrinterMake(printer, detectedModel));
+  let makeTag = $derived(inferPrinterMake(printer, detectedModel, detectedMake));
   let isJammed = $derived(hasPaperJam({ paperJam, printerState, statusMessage }));
   let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
   let hasEmptyToner = $derived(toners.some((t) => isEmptyToner(t)));

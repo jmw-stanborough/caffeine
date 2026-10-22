@@ -13,6 +13,7 @@
     printer,
     status = "checking",
     toners = [],
+    detectedMake = undefined,
     detectedModel = undefined,
     printerState = undefined,
     statusMessage = undefined,
@@ -26,6 +27,7 @@
     printer: Printer;
     status?: PrinterState["status"];
     toners?: TonerSupply[];
+    detectedMake?: string;
     detectedModel?: string;
     printerState?: string;
     statusMessage?: string;
@@ -38,7 +40,7 @@
   } = $props();
 
   let displayModel = $derived(printer.model || detectedModel);
-  let makeTag = $derived(inferPrinterMake(printer, detectedModel));
+  let makeTag = $derived(inferPrinterMake(printer, detectedModel, detectedMake));
   let isJammed = $derived(hasPaperJam({ paperJam, printerState, statusMessage }));
   let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
   let hasEmptyToner = $derived(toners.some((t) => isEmptyToner(t)));

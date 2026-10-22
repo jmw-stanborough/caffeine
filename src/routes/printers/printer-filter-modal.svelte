@@ -1,6 +1,18 @@
 <script lang="ts">
   import type { PrinterStore } from "./printers.svelte";
-  import { isFailureTag, isWarningTag } from "./tags";
+  import { PREMADE_TAGS, isFailureTag, isWarningTag } from "./tags";
+
+  type DragSource = "suggested" | "all" | "any";
+
+  interface PointerDragState {
+    tag: string;
+    source: DragSource;
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    active: boolean;
+  }
 
   let {
     open = $bindable(false),
@@ -14,8 +26,18 @@
   let anyInputText = $state("");
   let allInputEl = $state<HTMLInputElement | undefined>(undefined);
   let anyInputEl = $state<HTMLInputElement | undefined>(undefined);
+  let allBoxEl = $state<HTMLElement | undefined>(undefined);
+  let anyBoxEl = $state<HTMLElement | undefined>(undefined);
   let isAllFocused = $state(false);
   let isAnyFocused = $state(false);
+
+  let pointerDrag = $state<PointerDragState | null>(null);
+  let htmlDrag = $state<{ tag: string; source: DragSource } | null>(null);
+  let dropTarget = $state<"all" | "any" | null>(null);
+
+  let isDragging = $derived(
+    Boolean(pointerDrag?.active) || htmlDrag !== null
+  );
 
   $effect(() => {
     if (!open) {
@@ -23,8 +45,169 @@
       anyInputText = "";
       isAllFocused = false;
       isAnyFocused = false;
+      pointerDrag = null;
+      htmlDrag = null;
+      dropTarget = null;
     }
   });
+
+  function hitTestDropZone(clientX: number, clientY: number): "all" | "any" | null {
+    if (allBoxEl) {
+      const rect = allBoxEl.getBoundingClientRect();
+      if (
+        clientX >= rect.left - 6 &&
+        clientX <= rect.right + 6 &&
+        clientY >= rect.top - 6 &&
+        clientY <= rect.bottom + 6
+      ) {
+        return "all";
+      }
+    }
+    if (anyBoxEl) {
+      const rect = anyBoxEl.getBoundingClientRect();
+      if (
+        clientX >= rect.left - 6 &&
+        clientX <= rect.right + 6 &&
+        clientY >= rect.top - 6 &&
+        clientY <= rect.bottom + 6
+      ) {
+        return "any";
+      }
+    }
+    return null;
+  }
+
+  function handleTagPointerDown(
+    e: PointerEvent,
+    tag: string,
+    source: DragSource,
+  ) {
+    if (e.button !== 0) return;
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl?.closest(".entry-tag-remove")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    pointerDrag = {
+      tag,
+      source,
+      startX: e.clientX,
+      startY: e.clientY,
+      x: e.clientX,
+      y: e.clientY,
+      active: false,
+    };
+    dropTarget = null;
+  }
+
+  function handleWindowPointerMove(e: PointerEvent) {
+    if (!pointerDrag) return;
+    pointerDrag.x = e.clientX;
+    pointerDrag.y = e.clientY;
+
+    if (!pointerDrag.active) {
+      const dist = Math.hypot(
+        e.clientX - pointerDrag.startX,
+        e.clientY - pointerDrag.startY,
+      );
+      if (dist >= 4) {
+        pointerDrag.active = true;
+      }
+    }
+
+    if (pointerDrag.active) {
+      dropTarget = hitTestDropZone(e.clientX, e.clientY);
+    }
+  }
+
+  async function handleWindowPointerUp(e: PointerEvent) {
+    if (!pointerDrag) return;
+    const current = pointerDrag;
+    const resolvedTarget = current.active
+      ? hitTestDropZone(e.clientX, e.clientY) ?? dropTarget
+      : null;
+
+    pointerDrag = null;
+    dropTarget = null;
+
+    if (current.active && resolvedTarget) {
+      await store.moveFilterTag(current.tag, resolvedTarget, current.source);
+    }
+  }
+
+  function handleWindowPointerCancel() {
+    pointerDrag = null;
+    dropTarget = null;
+  }
+
+  function handleDragStart(e: DragEvent, tag: string, source: DragSource) {
+    htmlDrag = { tag, source };
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "copyMove";
+      e.dataTransfer.setData("text/plain", tag);
+      e.dataTransfer.setData(
+        "application/x-caffeine-tag",
+        JSON.stringify({ tag, source }),
+      );
+    }
+  }
+
+  function handleDragEnd() {
+    htmlDrag = null;
+    dropTarget = null;
+  }
+
+  function handleZoneDragOver(e: DragEvent, zone: "all" | "any") {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect =
+        htmlDrag?.source === "suggested" ? "copy" : "move";
+    }
+    dropTarget = zone;
+  }
+
+  function handleZoneDragLeave(e: DragEvent, zone: "all" | "any") {
+    const currentTarget = e.currentTarget as HTMLElement | null;
+    const related = e.relatedTarget as Node | null;
+    if (currentTarget && related && currentTarget.contains(related)) {
+      return;
+    }
+    if (dropTarget === zone) {
+      dropTarget = null;
+    }
+  }
+
+  async function handleZoneDrop(e: DragEvent, zone: "all" | "any") {
+    e.preventDefault();
+    e.stopPropagation();
+
+    let tag = htmlDrag?.tag ?? "";
+    let source: DragSource = htmlDrag?.source ?? "suggested";
+
+    if (!tag && e.dataTransfer) {
+      const customPayload = e.dataTransfer.getData("application/x-caffeine-tag");
+      if (customPayload) {
+        try {
+          const parsed = JSON.parse(customPayload);
+          if (parsed?.tag) tag = String(parsed.tag);
+          if (parsed?.source) source = parsed.source;
+        } catch {
+          // ignore malformed payload
+        }
+      }
+      if (!tag) {
+        tag = e.dataTransfer.getData("text/plain") ?? "";
+      }
+    }
+
+    htmlDrag = null;
+    dropTarget = null;
+
+    if (tag.trim()) {
+      await store.moveFilterTag(tag, zone, source);
+    }
+  }
 
   async function handleAllKeyDown(e: KeyboardEvent) {
     if (e.key === "Enter") {
@@ -95,6 +278,12 @@
   }
 </script>
 
+<svelte:window
+  onpointermove={handleWindowPointerMove}
+  onpointerup={handleWindowPointerUp}
+  onpointercancel={handleWindowPointerCancel}
+/>
+
 {#if open}
   <div
     class="modal-backdrop"
@@ -128,15 +317,26 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="tag-entry-box"
+            bind:this={allBoxEl}
             class:focused={isAllFocused}
+            class:drop-ready={isDragging && dropTarget !== "all"}
+            class:drop-active={dropTarget === "all"}
             onclick={() => allInputEl?.focus()}
+            ondragover={(e) => handleZoneDragOver(e, "all")}
+            ondragenter={(e) => handleZoneDragOver(e, "all")}
+            ondragleave={(e) => handleZoneDragLeave(e, "all")}
+            ondrop={(e) => handleZoneDrop(e, "all")}
           >
             {#each store.filterAllTags as tag (tag)}
               <span
-                class="printer-tag entry-tag"
+                class="printer-tag entry-tag draggable-tag"
                 class:tag-failure={isFailureTag(tag)}
                 class:tag-warning={!isFailureTag(tag) && isWarningTag(tag)}
                 class:tag-standard={!isFailureTag(tag) && !isWarningTag(tag)}
+                draggable="true"
+                onpointerdown={(e) => handleTagPointerDown(e, tag, "all")}
+                ondragstart={(e) => handleDragStart(e, tag, "all")}
+                ondragend={handleDragEnd}
               >
                 <span class="entry-tag-label">{tag}</span>
                 <button
@@ -164,7 +364,7 @@
               onblur={() => (isAllFocused = false)}
               onkeydown={handleAllKeyDown}
               placeholder={store.filterAllTags.length === 0
-                ? "Type a tag and press Enter..."
+                ? "Type a tag and press Enter, or drop a tag here..."
                 : "Add tag..."}
               aria-label="Show printers that have all of these tags"
             />
@@ -193,15 +393,26 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="tag-entry-box"
+            bind:this={anyBoxEl}
             class:focused={isAnyFocused}
+            class:drop-ready={isDragging && dropTarget !== "any"}
+            class:drop-active={dropTarget === "any"}
             onclick={() => anyInputEl?.focus()}
+            ondragover={(e) => handleZoneDragOver(e, "any")}
+            ondragenter={(e) => handleZoneDragOver(e, "any")}
+            ondragleave={(e) => handleZoneDragLeave(e, "any")}
+            ondrop={(e) => handleZoneDrop(e, "any")}
           >
             {#each store.filterAnyTags as tag (tag)}
               <span
-                class="printer-tag entry-tag"
+                class="printer-tag entry-tag draggable-tag"
                 class:tag-failure={isFailureTag(tag)}
                 class:tag-warning={!isFailureTag(tag) && isWarningTag(tag)}
                 class:tag-standard={!isFailureTag(tag) && !isWarningTag(tag)}
+                draggable="true"
+                onpointerdown={(e) => handleTagPointerDown(e, tag, "any")}
+                ondragstart={(e) => handleDragStart(e, tag, "any")}
+                ondragend={handleDragEnd}
               >
                 <span class="entry-tag-label">{tag}</span>
                 <button
@@ -229,7 +440,7 @@
               onblur={() => (isAnyFocused = false)}
               onkeydown={handleAnyKeyDown}
               placeholder={store.filterAnyTags.length === 0
-                ? "Type a tag and press Enter..."
+                ? "Type a tag and press Enter, or drop a tag here..."
                 : "Add tag..."}
               aria-label="Show printers that have at least one of these tags"
             />
@@ -249,6 +460,36 @@
                 Clear
               </button>
             {/if}
+          </div>
+        </div>
+
+        <div class="suggested-group">
+          <div class="suggested-header">
+            <span class="filter-label">Suggested tags</span>
+            <span class="suggested-hint">Drag into either filter list above</span>
+          </div>
+          <div class="suggested-tags-list" role="list" aria-label="Suggested filter tags">
+            {#each PREMADE_TAGS as tag (tag)}
+              {@const inAll = store.hasFilterAllTag(tag)}
+              {@const inAny = store.hasFilterAnyTag(tag)}
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+              <span
+                role="listitem"
+                class="printer-tag suggested-tag"
+                class:tag-failure={isFailureTag(tag)}
+                class:tag-warning={!isFailureTag(tag) && isWarningTag(tag)}
+                class:tag-standard={!isFailureTag(tag) && !isWarningTag(tag)}
+                class:in-use={inAll || inAny}
+                class:being-dragged={pointerDrag?.active && pointerDrag.tag === tag && pointerDrag.source === "suggested"}
+                draggable="true"
+                onpointerdown={(e) => handleTagPointerDown(e, tag, "suggested")}
+                ondragstart={(e) => handleDragStart(e, tag, "suggested")}
+                ondragend={handleDragEnd}
+                title="Drag '{tag}' into either filter list above"
+              >
+                <span>{tag}</span>
+              </span>
+            {/each}
           </div>
         </div>
       </div>
@@ -276,6 +517,20 @@
       </div>
     </div>
   </div>
+
+  {#if pointerDrag?.active}
+    <div
+      class="printer-tag drag-ghost-tag"
+      class:tag-failure={isFailureTag(pointerDrag.tag)}
+      class:tag-warning={!isFailureTag(pointerDrag.tag) && isWarningTag(pointerDrag.tag)}
+      class:tag-standard={!isFailureTag(pointerDrag.tag) && !isWarningTag(pointerDrag.tag)}
+      style:left="{pointerDrag.x}px"
+      style:top="{pointerDrag.y}px"
+      aria-hidden="true"
+    >
+      <span>{pointerDrag.tag}</span>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -365,11 +620,23 @@
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.375rem;
     cursor: text;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
   }
 
   .tag-entry-box.focused {
     border-color: var(--color-primary);
+  }
+
+  .tag-entry-box.drop-ready {
+    border-style: dashed;
+    border-color: var(--color-text-muted);
+  }
+
+  .tag-entry-box.drop-active {
+    border-style: solid;
+    border-color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-base));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 35%, transparent);
   }
 
   .printer-tag {
@@ -384,6 +651,7 @@
     flex-shrink: 0;
     white-space: nowrap;
     box-sizing: border-box;
+    user-select: none;
   }
 
   .tag-standard {
@@ -404,10 +672,12 @@
     border-color: color-mix(in srgb, var(--color-warning) 75%, #000000);
   }
 
-  .tag-failure {
-    background-color: var(--color-failure);
-    color: var(--color-base);
-    border-color: color-mix(in srgb, var(--color-failure) 75%, #000000);
+  .draggable-tag {
+    cursor: grab;
+  }
+
+  .draggable-tag:active {
+    cursor: grabbing;
   }
 
   .entry-tag {
@@ -474,6 +744,65 @@
   .btn-clear-tags:hover {
     color: var(--color-text);
     background-color: var(--color-surface);
+  }
+
+  .suggested-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding-top: 0.15rem;
+  }
+
+  .suggested-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .suggested-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    opacity: 0.8;
+  }
+
+  .suggested-tags-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .suggested-tag {
+    cursor: grab;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+  }
+
+  .suggested-tag.tag-standard {
+    background-color: var(--color-base);
+  }
+
+  .suggested-tag:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  }
+
+  .suggested-tag:active,
+  .suggested-tag.being-dragged {
+    cursor: grabbing;
+  }
+
+  .suggested-tag.being-dragged {
+    opacity: 0.55;
+  }
+
+  .drag-ghost-tag {
+    position: fixed;
+    z-index: 250;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(1.05);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
   }
 
   .modal-footer {

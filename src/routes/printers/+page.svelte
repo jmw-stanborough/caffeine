@@ -436,6 +436,7 @@
               nocMode={isNocMode}
               status={printerState?.status ?? "checking"}
               toners={printerState?.toners ?? []}
+              detectedMake={printerState?.detectedMake}
               detectedModel={printerState?.detectedModel}
               printerState={printerState?.printerState}
               statusMessage={printerState?.statusMessage}
@@ -475,6 +476,7 @@
   lastEvent={detailPrinterState?.lastEvent}
   lastEventAt={detailPrinterState?.lastEventAt}
   toners={detailPrinterState?.toners ?? []}
+  detectedMake={detailPrinterState?.detectedMake}
   detectedModel={detailPrinterState?.detectedModel}
   serialNumber={detailPrinterState?.serialNumber}
   pageCount={detailPrinterState?.pageCount}
@@ -637,15 +639,16 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.15rem;
-    height: 1.15rem;
-    padding: 0 0.3rem;
+    min-width: 0.85rem;
+    height: 0.85rem;
+    padding: 1px 0.2rem 0;
     border-radius: 999px;
     background-color: var(--color-primary);
     color: var(--color-base);
-    font-size: 0.72rem;
+    font-size: 0.62rem;
     font-weight: 700;
     line-height: 1;
+    box-sizing: border-box;
   }
 
   .empty-filter-banner {

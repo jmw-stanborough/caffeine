@@ -9,50 +9,6 @@ export const PREMADE_TAGS = [
   "Toner Low",
 ] as const;
 
-interface BrandRule {
-  canonical: string;
-  pattern: RegExp;
-}
-
-const KNOWN_BRANDS: BrandRule[] = [
-  { canonical: "SHARP", pattern: /\b(sharp|(?:bp|mx)-[0-9]{2}[a-z0-9]+)\b/i },
-  { canonical: "Brother", pattern: /\b(brother|(?:hl|mfc|dcp)-[a-z0-9]+)\b/i },
-  {
-    canonical: "HP",
-    pattern: /\b(hp|hewlett[\s-]*packard|laserjet|officejet|deskjet|pagewide|designjet)\b/i,
-  },
-  {
-    canonical: "Canon",
-    pattern: /\b(canon|imagerunner|ir-adv|pixma|maxify|i-sensys)\b/i,
-  },
-  {
-    canonical: "Epson",
-    pattern: /\b(epson|workforce|ecotank|expression)\b/i,
-  },
-  { canonical: "Ricoh", pattern: /\b(ricoh|aficio)\b/i },
-  {
-    canonical: "Xerox",
-    pattern: /\b(xerox|versalink|altalink|workcentre|phaser)\b/i,
-  },
-  { canonical: "Kyocera", pattern: /\b(kyocera|ecosys|taskalfa)\b/i },
-  {
-    canonical: "Konica Minolta",
-    pattern: /\b(konica\s*minolta|konica|minolta|bizhub)\b/i,
-  },
-  { canonical: "Lexmark", pattern: /\blexmark\b/i },
-  { canonical: "Toshiba", pattern: /\b(toshiba|e-studio)\b/i },
-  { canonical: "OKI", pattern: /\boki\b/i },
-  { canonical: "Zebra", pattern: /\bzebra\b/i },
-  { canonical: "Samsung", pattern: /\bsamsung\b/i },
-  { canonical: "Dell", pattern: /\bdell\b/i },
-  { canonical: "Pantum", pattern: /\bpantum\b/i },
-  { canonical: "Fujifilm", pattern: /\b(fujifilm|fuji\s*xerox|apeos)\b/i },
-  { canonical: "DYMO", pattern: /\b(dymo|labelwriter)\b/i },
-  { canonical: "Star", pattern: /\b(star\s*micronics)\b/i },
-  { canonical: "Bixolon", pattern: /\bbixolon\b/i },
-  { canonical: "Citizen", pattern: /\bcitizen\b/i },
-];
-
 const GENERIC_MODEL_WORDS = new Set([
   "printer",
   "printers",
@@ -73,52 +29,109 @@ const GENERIC_MODEL_WORDS = new Set([
   "copy",
   "copier",
   "scanner",
+  "ethernet",
 ]);
+
+const CORPORATE_SUFFIXES = new Set([
+  "corporation",
+  "corp",
+  "inc",
+  "ltd",
+  "co",
+  "industries",
+  "company",
+  "international",
+  "electronics",
+  "group",
+  "systems",
+]);
+
+function cleanVendorName(raw: string): string | undefined {
+  const primary = raw.split(/[,;\n/]/)[0]?.trim() ?? "";
+  if (!primary) return undefined;
+
+  const words = primary.split(/\s+/);
+  while (words.length > 1) {
+    const lastClean = words[words.length - 1]
+      .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")
+      .toLowerCase();
+    if (CORPORATE_SUFFIXES.has(lastClean)) {
+      words.pop();
+    } else {
+      break;
+    }
+  }
+
+  const cleaned = words
+    .join(" ")
+    .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "");
+  if (
+    cleaned.length >= 2 &&
+    /^[A-Za-z]/.test(cleaned) &&
+    !GENERIC_MODEL_WORDS.has(cleaned.toLowerCase())
+  ) {
+    return cleaned;
+  }
+  return undefined;
+}
+
+export function extractPrinterMakeFromText(
+  text?: string,
+): string | undefined {
+  const trimmed = text?.trim();
+  if (!trimmed) return undefined;
+
+  // 1. Check IEEE 1284 / structured key-value segments (MFG:, MANUFACTURER:, PID:)
+  for (const part of trimmed.split(/[;,\n]/)) {
+    const seg = part.trim();
+    const colonIdx = seg.indexOf(":");
+    if (colonIdx > 0) {
+      const key = seg.slice(0, colonIdx).trim().toLowerCase();
+      const val = seg.slice(colonIdx + 1).trim();
+      if (key === "mfg" || key === "manufacturer") {
+        const vendor = cleanVendorName(val);
+        if (vendor) return vendor;
+      } else if (key === "pid" || key === "mdl" || key === "model") {
+        const make = extractPrinterMakeFromText(val);
+        if (make) return make;
+      }
+    }
+  }
+
+  // 2. Extract leading manufacturer word from "<Make> <Model...>" string
+  const firstClause = trimmed.split(/[;,\n/]/)[0]?.trim() ?? "";
+  const tokens = firstClause.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) {
+    const candidate = tokens[0].replace(/^[^A-Za-z0-9-]+|[^A-Za-z0-9-]+$/g, "");
+    if (
+      candidate.length >= 2 &&
+      /^[A-Za-z](?:[A-Za-z-]*[A-Za-z])?$/.test(candidate) &&
+      !GENERIC_MODEL_WORDS.has(candidate.toLowerCase())
+    ) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
 
 export function inferPrinterMake(
   printer?: Printer,
   detectedModel?: string,
+  detectedMake?: string,
 ): string | undefined {
-  if (!printer && !detectedModel) return undefined;
-
-  // 1. Check model and detectedModel against known brands first
-  const primarySources = [printer?.model, detectedModel].filter(
-    (s): s is string => Boolean(s && s.trim()),
-  );
-
-  for (const source of primarySources) {
-    for (const brand of KNOWN_BRANDS) {
-      if (brand.pattern.test(source)) {
-        return brand.canonical;
-      }
-    }
+  if (detectedMake?.trim()) {
+    return detectedMake.trim();
   }
 
-  // 2. Check label and description against known brands as a fallback
-  const secondarySources = [printer?.label, printer?.description].filter(
-    (s): s is string => Boolean(s && s.trim()),
-  );
-
-  for (const source of secondarySources) {
-    for (const brand of KNOWN_BRANDS) {
-      if (brand.pattern.test(source)) {
-        return brand.canonical;
-      }
-    }
+  const fromDetected = extractPrinterMakeFromText(detectedModel);
+  if (fromDetected) {
+    return fromDetected;
   }
 
-  // 3. Fallback: if model/detectedModel starts with a clean brand-like word (letters only, >= 2 chars)
-  const modelText = (printer?.model || detectedModel || "").trim();
-  if (modelText) {
-    const firstToken = modelText.split(/[\s,/()-]+/)[0];
-    if (
-      firstToken &&
-      firstToken.length >= 2 &&
-      /^[A-Za-z]+$/.test(firstToken) &&
-      !GENERIC_MODEL_WORDS.has(firstToken.toLowerCase())
-    ) {
-      return firstToken;
-    }
+  const fromConfiguredModel = extractPrinterMakeFromText(printer?.model);
+  if (fromConfiguredModel) {
+    return fromConfiguredModel;
   }
 
   return undefined;
@@ -280,7 +293,11 @@ export function getPrinterTags(
 ): string[] {
   const tags: string[] = [];
 
-  const make = inferPrinterMake(printer, state?.detectedModel);
+  const make = inferPrinterMake(
+    printer,
+    state?.detectedModel,
+    state?.detectedMake,
+  );
   if (make) {
     tags.push(make);
   }
@@ -323,12 +340,6 @@ export function normalizeTagLabel(
   for (const premade of PREMADE_TAGS) {
     if (premade.toLowerCase() === lower) {
       return premade;
-    }
-  }
-
-  for (const brand of KNOWN_BRANDS) {
-    if (brand.canonical.toLowerCase() === lower) {
-      return brand.canonical;
     }
   }
 

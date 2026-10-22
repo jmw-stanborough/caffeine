@@ -42,6 +42,7 @@ pub struct PrinterStatusEvent {
     pub last_event: Option<String>,
     pub last_event_at: Option<String>,
     pub toners: Vec<TonerSupply>,
+    pub detected_make: Option<String>,
     pub detected_model: Option<String>,
     pub serial_number: Option<String>,
     pub page_count: Option<u64>,

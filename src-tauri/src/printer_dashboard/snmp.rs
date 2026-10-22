@@ -12,6 +12,7 @@ const IPP_TIMEOUT: Duration = Duration::from_millis(1200);
 #[derive(Debug, Default, Clone)]
 pub struct PrinterPollDetails {
     pub toners: Vec<TonerSupply>,
+    pub detected_make: Option<String>,
     pub detected_model: Option<String>,
     pub serial_number: Option<String>,
     pub page_count: Option<u64>,
@@ -509,6 +510,126 @@ pub fn parse_hr_error_state(
     (paper_jam, out_of_paper)
 }
 
+fn is_generic_printer_word(word_lower: &str) -> bool {
+    matches!(
+        word_lower,
+        "printer"
+            | "printers"
+            | "series"
+            | "color"
+            | "colour"
+            | "laser"
+            | "inkjet"
+            | "thermal"
+            | "network"
+            | "mfp"
+            | "mono"
+            | "monochrome"
+            | "duplex"
+            | "generic"
+            | "unknown"
+            | "office"
+            | "copy"
+            | "copier"
+            | "scanner"
+            | "ethernet"
+    )
+}
+
+pub fn clean_vendor_name(raw: &str) -> Option<String> {
+    let primary = raw
+        .split([',', ';', '\n', '/'])
+        .next()
+        .unwrap_or(raw)
+        .trim();
+    if primary.is_empty() {
+        return None;
+    }
+
+    let mut words: Vec<&str> = primary.split_whitespace().collect();
+    while words.len() > 1 {
+        let last_clean = words
+            .last()
+            .unwrap()
+            .trim_matches(|c: char| !c.is_ascii_alphanumeric())
+            .to_lowercase();
+        if matches!(
+            last_clean.as_str(),
+            "corporation"
+                | "corp"
+                | "inc"
+                | "ltd"
+                | "co"
+                | "industries"
+                | "company"
+                | "international"
+                | "electronics"
+                | "group"
+                | "systems"
+        ) {
+            words.pop();
+        } else {
+            break;
+        }
+    }
+
+    let cleaned = words.join(" ");
+    let trimmed = cleaned.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+    if trimmed.len() >= 2
+        && trimmed.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && !is_generic_printer_word(&trimmed.to_lowercase())
+    {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn extract_printer_make(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // 1. Check IEEE 1284 / structured key-value segments (MFG:, MANUFACTURER:, PID:)
+    for part in trimmed.split([';', ',', '\n']) {
+        let seg = part.trim();
+        if let Some((k, v)) = seg.split_once(':') {
+            let key = k.trim().to_ascii_lowercase();
+            let val = v.trim();
+            if key == "mfg" || key == "manufacturer" {
+                if let Some(vendor) = clean_vendor_name(val) {
+                    return Some(vendor);
+                }
+            } else if key == "pid" || key == "mdl" || key == "model" {
+                if let Some(make) = extract_printer_make(val) {
+                    return Some(make);
+                }
+            }
+        }
+    }
+
+    // 2. Extract leading manufacturer word from "<Make> <Model...>" string
+    let first_clause = trimmed
+        .split([';', ',', '\n', '/'])
+        .next()
+        .unwrap_or(trimmed)
+        .trim();
+    let tokens: Vec<&str> = first_clause.split_whitespace().collect();
+    if tokens.len() >= 2 {
+        let candidate = tokens[0].trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+        let valid_chars = candidate.len() >= 2
+            && candidate.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && candidate.chars().last().is_some_and(|c| c.is_ascii_alphabetic())
+            && candidate.chars().all(|c| c.is_ascii_alphabetic() || c == '-');
+        if valid_chars && !is_generic_printer_word(&candidate.to_lowercase()) {
+            return Some(candidate.to_string());
+        }
+    }
+
+    None
+}
+
 async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     let host_owned = host.to_string();
     let target_addr = tokio::task::spawn_blocking(move || {
@@ -545,12 +666,17 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         vec![1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 2],   // prtConsoleDisplayBufferText.1.2
         vec![1, 3, 6, 1, 2, 1, 1, 1, 0],                 // sysDescr.0
         vec![1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0], // Brother brInfoMaintenance
+        vec![1, 3, 6, 1, 2, 1, 43, 8, 2, 1, 14, 1, 1],   // prtInputVendorName.1.1
+        vec![1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 12, 1],   // entPhysicalMfgName.1
     ];
 
     let resp = snmp_request(&sock, community, req_id, 0xA0, &general_oids).await?;
     req_id += 1;
 
+    let mut hr_device_descr = None;
+    let mut prt_general_name = None;
     let mut sys_descr = None;
+    let mut vendor_oid_name = None;
     let mut hr_device_status = None;
     let mut hr_printer_status = None;
     let mut hr_error_bytes: Option<Vec<u8>> = None;
@@ -560,15 +686,13 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         let Some(v) = val else { continue };
         if oid == [1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1] {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                details.detected_model = Some(s);
+                hr_device_descr = Some(s);
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 5, 1] {
             hr_device_status = v.as_i64();
         } else if oid == [1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1] {
-            if details.detected_model.is_none()
-                && let Some(s) = v.as_str().filter(|s| !s.is_empty())
-            {
-                details.detected_model = Some(s);
+            if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
+                prt_general_name = Some(s);
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 17, 1] {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
@@ -583,11 +707,8 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
                 hr_printer_status = Some(st);
                 details.printer_state = Some(
                     match st {
-                        3 => "Idle",
                         4 => "Printing",
-                        5 => "Warmup",
-                        1 => "Other",
-                        _ => "Ready",
+                        _ => "Idle",
                     }
                     .to_string(),
                 );
@@ -611,6 +732,14 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         } else if oid == [1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0] {
             if let Some(bytes) = v.as_bytes() {
                 brother_toner_pcts = parse_brother_maintenance_bytes(bytes);
+            }
+        } else if oid == [1, 3, 6, 1, 2, 1, 43, 8, 2, 1, 14, 1, 1]
+            || oid == [1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 12, 1]
+        {
+            if vendor_oid_name.is_none()
+                && let Some(s) = v.as_str().filter(|s| !s.is_empty())
+            {
+                vendor_oid_name = Some(s);
             }
         }
     }
@@ -637,15 +766,23 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         }
     }
 
-    if details.detected_model.is_none() {
-        details.detected_model = sys_descr.map(|s| {
-            s.split([';', ',', '\n'])
-                .next()
-                .unwrap_or(&s)
-                .trim()
-                .to_string()
-        });
-    }
+    details.detected_make = hr_device_descr
+        .as_deref()
+        .and_then(extract_printer_make)
+        .or_else(|| sys_descr.as_deref().and_then(extract_printer_make))
+        .or_else(|| vendor_oid_name.as_deref().and_then(clean_vendor_name));
+
+    details.detected_model = hr_device_descr
+        .or_else(|| {
+            sys_descr.map(|s| {
+                s.split([';', ',', '\n'])
+                    .next()
+                    .unwrap_or(&s)
+                    .trim()
+                    .to_string()
+            })
+        })
+        .or(prt_general_name);
 
     // 2. Walk prtMarkerSuppliesEntry (1.3.6.1.2.1.43.11.1.1) and prtMarkerColorantValue (1.3.6.1.2.1.43.12.1.1.4)
     // Using parallel column GetNext walks for columns 3(colorantIdx), 5(type), 6(desc), 8(max), 9(level)
@@ -925,6 +1062,7 @@ fn build_ipp_get_attributes_request(host: &str) -> Vec<u8> {
         "marker-types",
         "marker-levels",
         "marker-high-levels",
+        "printer-device-id",
         "printer-make-and-model",
         "printer-state",
         "printer-state-reasons",
@@ -1024,9 +1162,20 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
                     val_bytes[3],
                 ]));
             }
+            "printer-device-id" => {
+                let s = String::from_utf8_lossy(val_bytes).trim().to_string();
+                if details.detected_make.is_none()
+                    && let Some(make) = extract_printer_make(&s)
+                {
+                    details.detected_make = Some(make);
+                }
+            }
             "printer-make-and-model" => {
                 let s = String::from_utf8_lossy(val_bytes).trim().to_string();
                 if !s.is_empty() {
+                    if details.detected_make.is_none() {
+                        details.detected_make = extract_printer_make(&s);
+                    }
                     details.detected_model = Some(s);
                 }
             }
@@ -1039,10 +1188,8 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
                 ]);
                 details.printer_state = Some(
                     match st {
-                        3 => "Idle",
                         4 => "Printing",
-                        5 => "Stopped",
-                        _ => "Ready",
+                        _ => "Idle",
                     }
                     .to_string(),
                 );
@@ -1118,6 +1265,7 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
     }
 
     if details.toners.is_empty()
+        && details.detected_make.is_none()
         && details.detected_model.is_none()
         && details.printer_state.is_none()
         && !details.paper_jam
@@ -1171,6 +1319,9 @@ pub async fn poll_printer_details(host: &str, community: &str) -> PrinterPollDet
             && let Some(ipp_data) = poll_ipp(host).await
         {
             snmp_data.toners = ipp_data.toners;
+            if snmp_data.detected_make.is_none() {
+                snmp_data.detected_make = ipp_data.detected_make;
+            }
             if snmp_data.detected_model.is_none() {
                 snmp_data.detected_model = ipp_data.detected_model;
             }
@@ -1444,5 +1595,38 @@ mod tests {
         assert_eq!(compute_percent(0, 100), Some(0));
         assert_eq!(compute_percent(0, 3000), Some(0));
         assert_eq!(compute_percent(0, -2), Some(0));
+
+        // Dynamic printer make extraction from SNMP / IPP strings
+        assert_eq!(
+            extract_printer_make("HP LaserJet 200 color M251n"),
+            Some("HP".to_string())
+        );
+        assert_eq!(
+            extract_printer_make("Brother HL-L3240CDW series"),
+            Some("Brother".to_string())
+        );
+        assert_eq!(
+            extract_printer_make("RICOH IM 370"),
+            Some("RICOH".to_string())
+        );
+        assert_eq!(
+            extract_printer_make("SHARP MX-4061"),
+            Some("SHARP".to_string())
+        );
+        assert_eq!(
+            extract_printer_make(
+                "HP ETHERNET MULTI-ENVIRONMENT,SN:CNF1B18468,FN:V050MLH,SVCID:23144,PID:HP LaserJet 200 color M251n"
+            ),
+            Some("HP".to_string())
+        );
+        assert_eq!(
+            extract_printer_make("MFG:Brother Industries, Ltd.;MDL:HL-L3240CDW series;"),
+            Some("Brother".to_string())
+        );
+        assert_eq!(
+            clean_vendor_name("Sharp Corporation"),
+            Some("Sharp".to_string())
+        );
+        assert_eq!(clean_vendor_name("RICOH"), Some("RICOH".to_string()));
     }
 }
