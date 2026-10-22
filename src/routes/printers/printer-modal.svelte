@@ -244,7 +244,7 @@
                   <span
                     class="log-badge"
                     class:connected={log.event_type === "connected"}
-                    class:disconnected={log.event_type === "disconnected"}
+                    class:disconnected={log.event_type !== "connected"}
                   >
                     {log.event_type}
                   </span>

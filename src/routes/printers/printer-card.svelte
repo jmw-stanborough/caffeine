@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { inferPrinterMake, isLowToner } from "./tags";
+  import {
+    getEffectivePrinterStatus,
+    hasOutOfPaper,
+    hasPaperJam,
+    inferPrinterMake,
+    isEmptyToner,
+    isLowToner,
+  } from "./tags";
   import type { Printer, PrinterState, TonerSupply } from "./types";
 
   let {
@@ -8,6 +15,9 @@
     toners = [],
     detectedModel = undefined,
     printerState = undefined,
+    statusMessage = undefined,
+    paperJam = false,
+    outOfPaper = false,
     nocMode = false,
     onclick,
     onwebui,
@@ -18,6 +28,9 @@
     toners?: TonerSupply[];
     detectedModel?: string;
     printerState?: string;
+    statusMessage?: string;
+    paperJam?: boolean;
+    outOfPaper?: boolean;
     nocMode?: boolean;
     onclick?: () => void;
     onwebui?: () => void;
@@ -26,15 +39,20 @@
 
   let displayModel = $derived(printer.model || detectedModel);
   let makeTag = $derived(inferPrinterMake(printer, detectedModel));
+  let isJammed = $derived(hasPaperJam({ paperJam, printerState, statusMessage }));
+  let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
+  let hasEmptyToner = $derived(toners.some((t) => isEmptyToner(t)));
   let hasLowToner = $derived(toners.some((t) => isLowToner(t)));
 
-  // If online/checking and has low toner, visual priority is warning/degraded color
   let effectiveVisualStatus = $derived(
-    status === "offline"
-      ? "offline"
-      : hasLowToner
-        ? "degraded"
-        : status
+    getEffectivePrinterStatus({
+      status,
+      toners,
+      paperJam,
+      outOfPaper,
+      printerState,
+      statusMessage,
+    })
   );
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -110,7 +128,7 @@
     {/if}
   </div>
 
-  {#if makeTag || printer.location || printerState || hasLowToner}
+  {#if makeTag || printer.location || printerState || isJammed || isNoPaper || hasEmptyToner || hasLowToner}
     <div class="tags-row">
       {#if makeTag}
         <span class="printer-tag tag-make" title="Make: {makeTag}">{makeTag}</span>
@@ -120,6 +138,15 @@
       {/if}
       {#if printerState}
         <span class="printer-tag tag-state">{printerState}</span>
+      {/if}
+      {#if isJammed}
+        <span class="printer-tag tag-failure" title="Printer has a paper jam">Paper Jam</span>
+      {/if}
+      {#if isNoPaper}
+        <span class="printer-tag tag-failure" title="Printer is out of paper">Out of Paper</span>
+      {/if}
+      {#if hasEmptyToner}
+        <span class="printer-tag tag-failure" title="One or more cartridges have reached 0% toner">Toner Empty</span>
       {/if}
       {#if hasLowToner}
         <span class="printer-tag tag-warning" title="One or more cartridges are low on toner">Toner Low</span>
@@ -262,6 +289,12 @@
     flex-shrink: 0;
     white-space: nowrap;
     box-sizing: border-box;
+  }
+
+  .tag-failure {
+    background-color: var(--color-failure);
+    color: #1c1917;
+    border-color: color-mix(in srgb, var(--color-failure) 75%, #000000);
   }
 
   .tag-warning {

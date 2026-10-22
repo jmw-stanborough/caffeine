@@ -17,6 +17,8 @@ pub struct PrinterPollDetails {
     pub page_count: Option<u64>,
     pub printer_state: Option<String>,
     pub status_message: Option<String>,
+    pub paper_jam: bool,
+    pub out_of_paper: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -424,6 +426,89 @@ fn compute_percent(level: i32, max_capacity: i32) -> Option<u8> {
     }
 }
 
+pub fn is_paper_jam_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    if lower.contains("paper jam")
+        || lower.contains("media jam")
+        || lower.contains("document jam")
+        || lower.contains("jammed")
+        || lower.contains("misfeed")
+        || lower.contains("clear jam")
+    {
+        return true;
+    }
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| matches!(word, "jam" | "jams" | "jammed" | "misfeed"))
+}
+
+pub fn is_out_of_paper_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    if lower.contains("toner")
+        || lower.contains("ink")
+        || lower.contains("waste")
+        || lower.contains("output")
+        || lower.contains("bin")
+    {
+        return false;
+    }
+
+    if lower.contains("out of paper")
+        || lower.contains("no paper")
+        || lower.contains("paper out")
+        || lower.contains("paper empty")
+        || lower.contains("media empty")
+        || lower.contains("media needed")
+        || lower.contains("media out")
+        || lower.contains("load paper")
+        || lower.contains("add paper")
+        || lower.contains("insert paper")
+        || lower.contains("refill paper")
+    {
+        return true;
+    }
+
+    if lower.contains("empty")
+        && (lower.contains("tray")
+            || lower.contains("cassette")
+            || lower.contains("drawer")
+            || lower.contains("feeder")
+            || lower.contains("paper")
+            || lower.contains("media"))
+    {
+        return true;
+    }
+
+    false
+}
+
+/// Parses RFC 2790 `hrPrinterDetectedErrorState` bitmask (`1.3.6.1.2.1.25.3.5.1.2.1`).
+/// Returns `(paper_jam, out_of_paper)`.
+pub fn parse_hr_error_state(
+    bytes: &[u8],
+    hr_device_status: Option<i64>,
+    hr_printer_status: Option<i64>,
+) -> (bool, bool) {
+    let Some(&b0) = bytes.first() else {
+        return (false, false);
+    };
+
+    // Byte 0 bit 5 (0x04) = jammed, bit 1 (0x40) = noPaper
+    let paper_jam = (b0 & 0x04) != 0;
+    let mut out_of_paper = (b0 & 0x40) != 0;
+
+    // Byte 1 bit 13 (0x04 in second byte) = inputTrayEmpty
+    if !out_of_paper
+        && let Some(&b1) = bytes.get(1)
+        && (b1 & 0x04) != 0
+        && (hr_device_status == Some(5) || hr_printer_status == Some(1))
+    {
+        out_of_paper = true;
+    }
+
+    (paper_jam, out_of_paper)
+}
+
 async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     let host_owned = host.to_string();
     let target_addr = tokio::task::spawn_blocking(move || {
@@ -450,11 +535,14 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     // 1. Poll general info in a single SNMP GET
     let general_oids = vec![
         vec![1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1],       // hrDeviceDescr.1
+        vec![1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 5, 1],       // hrDeviceStatus.1
         vec![1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1],      // prtGeneralPrinterName.1
         vec![1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 17, 1],      // prtGeneralSerialNumber.1
         vec![1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 4, 1, 1],   // prtMarkerLifeCount.1.1
         vec![1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 1, 1],       // hrPrinterStatus.1
+        vec![1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 2, 1],       // hrPrinterDetectedErrorState.1
         vec![1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1],   // prtConsoleDisplayBufferText.1.1
+        vec![1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 2],   // prtConsoleDisplayBufferText.1.2
         vec![1, 3, 6, 1, 2, 1, 1, 1, 0],                 // sysDescr.0
         vec![1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0], // Brother brInfoMaintenance
     ];
@@ -463,6 +551,10 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     req_id += 1;
 
     let mut sys_descr = None;
+    let mut hr_device_status = None;
+    let mut hr_printer_status = None;
+    let mut hr_error_bytes: Option<Vec<u8>> = None;
+    let mut console_lines: Vec<String> = Vec::new();
     let mut brother_toner_pcts = BTreeMap::<String, u8>::new();
     for (oid, val) in resp {
         let Some(v) = val else { continue };
@@ -470,6 +562,8 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
                 details.detected_model = Some(s);
             }
+        } else if oid == [1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 5, 1] {
+            hr_device_status = v.as_i64();
         } else if oid == [1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1] {
             if details.detected_model.is_none()
                 && let Some(s) = v.as_str().filter(|s| !s.is_empty())
@@ -486,6 +580,7 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 1, 1] {
             if let Some(st) = v.as_i64() {
+                hr_printer_status = Some(st);
                 details.printer_state = Some(
                     match st {
                         3 => "Idle",
@@ -497,9 +592,17 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
                     .to_string(),
                 );
             }
-        } else if oid == [1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1] {
-            if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                details.status_message = Some(s);
+        } else if oid == [1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 2, 1] {
+            if let Some(bytes) = v.as_bytes() {
+                hr_error_bytes = Some(bytes.to_vec());
+            }
+        } else if oid == [1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1]
+            || oid == [1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 2]
+        {
+            if let Some(s) = v.as_str().filter(|s| !s.is_empty())
+                && !console_lines.contains(&s)
+            {
+                console_lines.push(s);
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 1, 1, 0] {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
@@ -509,6 +612,28 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
             if let Some(bytes) = v.as_bytes() {
                 brother_toner_pcts = parse_brother_maintenance_bytes(bytes);
             }
+        }
+    }
+
+    if !console_lines.is_empty() {
+        let joined = console_lines.join(" — ");
+        if is_paper_jam_text(&joined) {
+            details.paper_jam = true;
+        }
+        if is_out_of_paper_text(&joined) {
+            details.out_of_paper = true;
+        }
+        details.status_message = Some(joined);
+    }
+
+    if let Some(ref err_bytes) = hr_error_bytes {
+        let (jam, no_paper) =
+            parse_hr_error_state(err_bytes, hr_device_status, hr_printer_status);
+        if jam {
+            details.paper_jam = true;
+        }
+        if no_paper {
+            details.out_of_paper = true;
         }
     }
 
@@ -683,6 +808,94 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         }
     }
 
+    // 3. Walk prtAlertEntry (1.3.6.1.2.1.43.18.1.1) for active paper jam / out-of-paper alerts
+    #[derive(Default)]
+    struct RawAlert {
+        severity: Option<i64>,
+        group: Option<i64>,
+        code: Option<i64>,
+        description: Option<String>,
+    }
+
+    let alert_prefix = [1u32, 3, 6, 1, 2, 1, 43, 18, 1, 1];
+    let mut alert_oids = vec![
+        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 2], // prtAlertSeverityLevel
+        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 5], // prtAlertGroup
+        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 7], // prtAlertCode
+        vec![1, 3, 6, 1, 2, 1, 43, 18, 1, 1, 8], // prtAlertDescription
+    ];
+    let mut alerts_map: BTreeMap<Vec<u32>, RawAlert> = BTreeMap::new();
+
+    for _step in 0..8 {
+        let Some(step_resp) = snmp_request(&sock, community, req_id, 0xA1, &alert_oids).await
+        else {
+            break;
+        };
+        req_id += 1;
+
+        let mut any_in_column = false;
+        let mut next_oids = Vec::with_capacity(alert_oids.len());
+
+        for (col_idx, (ret_oid, ret_val)) in step_resp.into_iter().enumerate() {
+            let expected_col = match col_idx {
+                0 => 2,
+                1 => 5,
+                2 => 7,
+                _ => 8,
+            };
+
+            if ret_oid.len() > 11
+                && ret_oid[..10] == alert_prefix
+                && ret_oid[10] == expected_col
+                && let Some(val) = ret_val
+            {
+                any_in_column = true;
+                let instance_key = ret_oid[11..].to_vec();
+                let entry = alerts_map.entry(instance_key).or_default();
+                match expected_col {
+                    2 => entry.severity = val.as_i64(),
+                    5 => entry.group = val.as_i64(),
+                    7 => entry.code = val.as_i64(),
+                    8 => entry.description = val.as_str().filter(|s| !s.is_empty()),
+                    _ => {}
+                }
+            }
+            next_oids.push(ret_oid);
+        }
+
+        if !any_in_column || next_oids.len() != alert_oids.len() {
+            break;
+        }
+        alert_oids = next_oids;
+    }
+
+    for (_instance, alert) in alerts_map {
+        // RFC 3805 PrtAlertCodeTC: 8 = jam, 808 = inputMediaSupplyEmpty,
+        // 810 = inputManualInputRequest, 13 = subunitEmpty (when group 8 = input)
+        if alert.code == Some(8) {
+            details.paper_jam = true;
+        }
+        if matches!(alert.code, Some(808) | Some(810))
+            || (alert.group == Some(8) && alert.code == Some(13) && alert.severity != Some(4))
+        {
+            details.out_of_paper = true;
+        }
+        if let Some(ref desc) = alert.description {
+            let mut matched = false;
+            if is_paper_jam_text(desc) {
+                details.paper_jam = true;
+                matched = true;
+            }
+            if is_out_of_paper_text(desc) {
+                details.out_of_paper = true;
+                matched = true;
+            }
+            if matched && details.status_message.is_none() {
+                details.status_message = Some(desc.clone());
+            }
+        }
+    }
+
     Some(details)
 }
 
@@ -714,6 +927,7 @@ fn build_ipp_get_attributes_request(host: &str) -> Vec<u8> {
         "marker-high-levels",
         "printer-make-and-model",
         "printer-state",
+        "printer-state-reasons",
         "printer-state-message",
         "printer-impressions-completed",
     ];
@@ -833,9 +1047,29 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
                     .to_string(),
                 );
             }
+            "printer-state-reasons" => {
+                let reason = String::from_utf8_lossy(val_bytes).trim().to_lowercase();
+                if !reason.is_empty() && reason != "none" && !reason.ends_with("-report") {
+                    if reason.contains("media-jam") || reason.split('-').any(|p| p == "jam") {
+                        details.paper_jam = true;
+                    }
+                    if reason.contains("media-empty")
+                        || reason.contains("media-needed")
+                        || reason.contains("input-tray-empty")
+                    {
+                        details.out_of_paper = true;
+                    }
+                }
+            }
             "printer-state-message" => {
                 let s = String::from_utf8_lossy(val_bytes).trim().to_string();
                 if !s.is_empty() {
+                    if is_paper_jam_text(&s) {
+                        details.paper_jam = true;
+                    }
+                    if is_out_of_paper_text(&s) {
+                        details.out_of_paper = true;
+                    }
                     details.status_message = Some(s);
                 }
             }
@@ -886,6 +1120,8 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
     if details.toners.is_empty()
         && details.detected_model.is_none()
         && details.printer_state.is_none()
+        && !details.paper_jam
+        && !details.out_of_paper
     {
         None
     } else {
@@ -941,6 +1177,11 @@ pub async fn poll_printer_details(host: &str, community: &str) -> PrinterPollDet
             if snmp_data.printer_state.is_none() {
                 snmp_data.printer_state = ipp_data.printer_state;
             }
+            if snmp_data.status_message.is_none() {
+                snmp_data.status_message = ipp_data.status_message;
+            }
+            snmp_data.paper_jam |= ipp_data.paper_jam;
+            snmp_data.out_of_paper |= ipp_data.out_of_paper;
         }
         return snmp_data;
     }
@@ -957,7 +1198,7 @@ mod tests {
         save_printer_filter_tags_entries, update_printer_detected_model, update_printer_entry,
         update_printer_sort_order,
     };
-    use crate::printer_dashboard::types::Printer;
+    use crate::printer_dashboard::types::{Printer, PrinterFilterConfig};
     use rusqlite::Connection;
 
     #[test]
@@ -1061,8 +1302,10 @@ mod tests {
                 timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
             );
             CREATE TABLE printer_filter_tags (
-                tag TEXT PRIMARY KEY,
-                sort_order INTEGER NOT NULL DEFAULT 0
+                tag TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'all',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (tag, mode)
             );
             ",
         )
@@ -1133,19 +1376,73 @@ mod tests {
         assert_eq!(after_detect[0].model.as_deref(), Some("SHARP BP-50C26"));
 
         // Filter tags persistence
-        assert!(get_printer_filter_tags(&conn).unwrap().is_empty());
-        let filter_tags = vec![
-            "SHARP".to_string(),
-            "Toner Low".to_string(),
-            "Printing".to_string(),
-        ];
-        save_printer_filter_tags_entries(&mut conn, &filter_tags).unwrap();
-        let loaded_tags = get_printer_filter_tags(&conn).unwrap();
-        assert_eq!(loaded_tags, filter_tags);
+        let initial_filters = get_printer_filter_tags(&conn).unwrap();
+        assert!(initial_filters.all_tags.is_empty());
+        assert!(initial_filters.any_tags.is_empty());
+
+        let filter_config = PrinterFilterConfig {
+            all_tags: vec!["SHARP".to_string(), "Toner Low".to_string()],
+            any_tags: vec!["Printing".to_string(), "Idle".to_string()],
+        };
+        save_printer_filter_tags_entries(&mut conn, &filter_config).unwrap();
+        let loaded_filters = get_printer_filter_tags(&conn).unwrap();
+        assert_eq!(loaded_filters, filter_config);
 
         // Removing a tag and re-saving
-        let updated_tags = vec!["SHARP".to_string(), "Idle".to_string()];
-        save_printer_filter_tags_entries(&mut conn, &updated_tags).unwrap();
-        assert_eq!(get_printer_filter_tags(&conn).unwrap(), updated_tags);
+        let updated_config = PrinterFilterConfig {
+            all_tags: vec!["SHARP".to_string()],
+            any_tags: vec!["Idle".to_string()],
+        };
+        save_printer_filter_tags_entries(&mut conn, &updated_config).unwrap();
+        assert_eq!(get_printer_filter_tags(&conn).unwrap(), updated_config);
+
+        // Same tag in both 'all' and 'any' should be preserved independently
+        let dual_config = PrinterFilterConfig {
+            all_tags: vec!["SHARP".to_string()],
+            any_tags: vec!["SHARP".to_string(), "Brother".to_string()],
+        };
+        save_printer_filter_tags_entries(&mut conn, &dual_config).unwrap();
+        assert_eq!(get_printer_filter_tags(&conn).unwrap(), dual_config);
+    }
+
+    #[test]
+    fn test_paper_jam_and_out_of_paper_detection() {
+        // RFC 2790 hrPrinterDetectedErrorState bitmask
+        assert_eq!(parse_hr_error_state(&[0x00, 0x00], Some(2), Some(3)), (false, false));
+        // Bit 5 (0x04) = jammed
+        assert_eq!(parse_hr_error_state(&[0x04, 0x00], Some(5), Some(1)), (true, false));
+        // Bit 1 (0x40) = noPaper
+        assert_eq!(parse_hr_error_state(&[0x40, 0x00], Some(5), Some(1)), (false, true));
+        // Both jammed and noPaper
+        assert_eq!(parse_hr_error_state(&[0x44, 0x00], Some(5), Some(1)), (true, true));
+        // Byte 1 bit 13 (0x04) = inputTrayEmpty when device down (5) or printer status other (1)
+        assert_eq!(parse_hr_error_state(&[0x00, 0x04], Some(5), Some(3)), (false, true));
+        assert_eq!(parse_hr_error_state(&[0x00, 0x04], Some(2), Some(1)), (false, true));
+        // Byte 1 bit 13 (0x04) ignored when printer is idle and device running normally
+        assert_eq!(parse_hr_error_state(&[0x00, 0x04], Some(2), Some(3)), (false, false));
+
+        // Console / alert text matching for paper jams
+        assert!(is_paper_jam_text("Paper Jam in Tray 1"));
+        assert!(is_paper_jam_text("Jam Rear"));
+        assert!(is_paper_jam_text("Paper Jammed"));
+        assert!(is_paper_jam_text("Misfeed in Duplex Unit"));
+        assert!(!is_paper_jam_text("Ready to Print"));
+        assert!(!is_paper_jam_text("Sleeping"));
+
+        // Console / alert text matching for out of paper
+        assert!(is_out_of_paper_text("Out of Paper"));
+        assert!(is_out_of_paper_text("No Paper"));
+        assert!(is_out_of_paper_text("Paper Out Tray 1"));
+        assert!(is_out_of_paper_text("Load Paper in Tray 1"));
+        assert!(is_out_of_paper_text("Tray 1 Empty"));
+        assert!(is_out_of_paper_text("Cassette 1 Empty"));
+        assert!(!is_out_of_paper_text("Toner Empty"));
+        assert!(!is_out_of_paper_text("Output Tray Empty"));
+        assert!(!is_out_of_paper_text("Ready"));
+
+        // 0% toner percent computation
+        assert_eq!(compute_percent(0, 100), Some(0));
+        assert_eq!(compute_percent(0, 3000), Some(0));
+        assert_eq!(compute_percent(0, -2), Some(0));
     }
 }

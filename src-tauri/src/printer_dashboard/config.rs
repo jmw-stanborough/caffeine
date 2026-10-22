@@ -3,7 +3,7 @@ use super::db::{
     query_printer_logs, save_printer_filter_tags_entries, update_printer_entry,
     update_printer_sort_order,
 };
-use super::types::{Printer, PrinterLog};
+use super::types::{Printer, PrinterFilterConfig, PrinterLog};
 use crate::server_monitor::db::DbState;
 use tauri::State;
 
@@ -59,7 +59,7 @@ pub fn get_printer_logs(
 }
 
 #[tauri::command]
-pub fn load_printer_filter_tags(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+pub fn load_printer_filter_tags(db: State<'_, DbState>) -> Result<PrinterFilterConfig, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     get_printer_filter_tags(&conn)
 }
@@ -67,9 +67,11 @@ pub fn load_printer_filter_tags(db: State<'_, DbState>) -> Result<Vec<String>, S
 #[tauri::command]
 pub fn save_printer_filter_tags(
     db: State<'_, DbState>,
-    tags: Vec<String>,
-) -> Result<Vec<String>, String> {
+    all_tags: Vec<String>,
+    any_tags: Vec<String>,
+) -> Result<PrinterFilterConfig, String> {
     let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-    save_printer_filter_tags_entries(&mut conn, &tags)?;
+    let config = PrinterFilterConfig { all_tags, any_tags };
+    save_printer_filter_tags_entries(&mut conn, &config)?;
     get_printer_filter_tags(&conn)
 }

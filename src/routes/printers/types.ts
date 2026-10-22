@@ -33,12 +33,14 @@ export interface PrinterStatusTick {
   page_count?: number;
   printer_state?: string;
   status_message?: string;
+  paper_jam?: boolean;
+  out_of_paper?: boolean;
 }
 
 export interface PrinterState {
   status: StatusKind;
   latencyMs?: number;
-  lastEvent?: "connected" | "disconnected";
+  lastEvent?: string;
   lastEventAt?: string;
   toners: TonerSupply[];
   detectedModel?: string;
@@ -46,6 +48,8 @@ export interface PrinterState {
   pageCount?: number;
   printerState?: string;
   statusMessage?: string;
+  paperJam?: boolean;
+  outOfPaper?: boolean;
 }
 
 export interface PrinterLog {
@@ -54,4 +58,9 @@ export interface PrinterLog {
   event_type: string;
   latency_ms?: number;
   timestamp: string;
+}
+
+export interface PrinterFilterConfig {
+  all_tags: string[];
+  any_tags: string[];
 }

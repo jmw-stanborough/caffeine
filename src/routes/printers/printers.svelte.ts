@@ -3,15 +3,20 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   PREMADE_TAGS,
   getPrinterTags,
-  inferPrinterMake,
   normalizeTagLabel,
 } from "./tags";
-import type { Printer, PrinterState, PrinterStatusTick } from "./types";
+import type {
+  Printer,
+  PrinterFilterConfig,
+  PrinterState,
+  PrinterStatusTick,
+} from "./types";
 
 export class PrinterStore {
   items = $state<Printer[]>([]);
   statusMap = $state<Record<string, PrinterState>>({});
-  filterTags = $state<string[]>([]);
+  filterAllTags = $state<string[]>([]);
+  filterAnyTags = $state<string[]>([]);
   loading = $state(true);
   errorMessage = $state<string | null>(null);
   now = $state(Date.now());
@@ -44,22 +49,24 @@ export class PrinterStore {
           page_count,
           printer_state,
           status_message,
+          paper_jam,
+          out_of_paper,
         } = event.payload;
         const previousState = this.statusMap[printer_id];
 
         this.statusMap[printer_id] = {
           status,
           latencyMs: latency_ms,
-          lastEvent:
-            (last_event as "connected" | "disconnected") ??
-            previousState?.lastEvent,
+          lastEvent: last_event ?? previousState?.lastEvent,
           lastEventAt: last_event_at ?? previousState?.lastEventAt,
           toners: toners ?? previousState?.toners ?? [],
           detectedModel: detected_model ?? previousState?.detectedModel,
           serialNumber: serial_number ?? previousState?.serialNumber,
           pageCount: page_count ?? previousState?.pageCount,
           printerState: printer_state ?? previousState?.printerState,
-          statusMessage: status_message ?? previousState?.statusMessage,
+          statusMessage: status_message,
+          paperJam: paper_jam ?? false,
+          outOfPaper: out_of_paper ?? false,
         };
       },
     );
@@ -95,8 +102,9 @@ export class PrinterStore {
 
   fetchFilterTags = async () => {
     try {
-      const saved = await invoke<string[]>("load_printer_filter_tags");
-      this.filterTags = saved ?? [];
+      const saved = await invoke<PrinterFilterConfig>("load_printer_filter_tags");
+      this.filterAllTags = saved?.all_tags ?? [];
+      this.filterAnyTags = saved?.any_tags ?? [];
     } catch (err) {
       console.error("Failed to load printer filter tags:", err);
     }
@@ -104,8 +112,12 @@ export class PrinterStore {
 
   private async persistFilterTags() {
     try {
-      const snapshot = [...this.filterTags];
-      await invoke<string[]>("save_printer_filter_tags", { tags: snapshot });
+      const allTags = [...this.filterAllTags];
+      const anyTags = [...this.filterAnyTags];
+      await invoke<PrinterFilterConfig>("save_printer_filter_tags", {
+        allTags,
+        anyTags,
+      });
     } catch (err) {
       console.error("Failed to save printer filter tags:", err);
     }
@@ -122,74 +134,90 @@ export class PrinterStore {
     return Array.from(known);
   }
 
-  getPremadeTagSuggestions(): string[] {
-    const result: string[] = [...PREMADE_TAGS];
-    const seenLower = new Set(result.map((t) => t.toLowerCase()));
-
-    for (const printer of this.items) {
-      const state = this.statusMap[printer.id];
-      const make = inferPrinterMake(printer, state?.detectedModel);
-      if (make && !seenLower.has(make.toLowerCase())) {
-        seenLower.add(make.toLowerCase());
-        result.push(make);
-      }
-    }
-
-    for (const printer of this.items) {
-      const loc = printer.location?.trim();
-      if (loc && !seenLower.has(loc.toLowerCase())) {
-        seenLower.add(loc.toLowerCase());
-        result.push(loc);
-      }
-    }
-
-    return result;
-  }
-
-  hasFilterTag(tag: string): boolean {
+  hasFilterAllTag(tag: string): boolean {
     const lower = tag.trim().toLowerCase();
-    return this.filterTags.some((t) => t.toLowerCase() === lower);
+    return this.filterAllTags.some((t) => t.toLowerCase() === lower);
   }
 
-  async addFilterTag(rawTag: string): Promise<boolean> {
+  hasFilterAnyTag(tag: string): boolean {
+    const lower = tag.trim().toLowerCase();
+    return this.filterAnyTags.some((t) => t.toLowerCase() === lower);
+  }
+
+  async addFilterAllTag(rawTag: string): Promise<boolean> {
     const normalized = normalizeTagLabel(rawTag, this.getAllKnownTags());
     if (!normalized) return false;
 
-    if (this.hasFilterTag(normalized)) {
+    if (this.hasFilterAllTag(normalized)) {
       return false;
     }
 
-    this.filterTags = [...this.filterTags, normalized];
+    this.filterAllTags = [...this.filterAllTags, normalized];
     await this.persistFilterTags();
     return true;
   }
 
-  async removeFilterTag(tagToRemove: string) {
+  async addFilterAnyTag(rawTag: string): Promise<boolean> {
+    const normalized = normalizeTagLabel(rawTag, this.getAllKnownTags());
+    if (!normalized) return false;
+
+    if (this.hasFilterAnyTag(normalized)) {
+      return false;
+    }
+
+    this.filterAnyTags = [...this.filterAnyTags, normalized];
+    await this.persistFilterTags();
+    return true;
+  }
+
+  async removeFilterAllTag(tagToRemove: string) {
     const lower = tagToRemove.trim().toLowerCase();
-    const next = this.filterTags.filter((t) => t.toLowerCase() !== lower);
-    if (next.length !== this.filterTags.length) {
-      this.filterTags = next;
+    const next = this.filterAllTags.filter((t) => t.toLowerCase() !== lower);
+    if (next.length !== this.filterAllTags.length) {
+      this.filterAllTags = next;
       await this.persistFilterTags();
     }
   }
 
-  async removeLastFilterTag() {
-    if (this.filterTags.length === 0) return;
-    this.filterTags = this.filterTags.slice(0, -1);
-    await this.persistFilterTags();
-  }
-
-  async toggleFilterTag(tag: string) {
-    if (this.hasFilterTag(tag)) {
-      await this.removeFilterTag(tag);
-    } else {
-      await this.addFilterTag(tag);
+  async removeFilterAnyTag(tagToRemove: string) {
+    const lower = tagToRemove.trim().toLowerCase();
+    const next = this.filterAnyTags.filter((t) => t.toLowerCase() !== lower);
+    if (next.length !== this.filterAnyTags.length) {
+      this.filterAnyTags = next;
+      await this.persistFilterTags();
     }
   }
 
+  async removeLastFilterAllTag() {
+    if (this.filterAllTags.length === 0) return;
+    this.filterAllTags = this.filterAllTags.slice(0, -1);
+    await this.persistFilterTags();
+  }
+
+  async removeLastFilterAnyTag() {
+    if (this.filterAnyTags.length === 0) return;
+    this.filterAnyTags = this.filterAnyTags.slice(0, -1);
+    await this.persistFilterTags();
+  }
+
+  async clearFilterAllTags() {
+    if (this.filterAllTags.length === 0) return;
+    this.filterAllTags = [];
+    await this.persistFilterTags();
+  }
+
+  async clearFilterAnyTags() {
+    if (this.filterAnyTags.length === 0) return;
+    this.filterAnyTags = [];
+    await this.persistFilterTags();
+  }
+
   async clearFilterTags() {
-    if (this.filterTags.length === 0) return;
-    this.filterTags = [];
+    if (this.filterAllTags.length === 0 && this.filterAnyTags.length === 0) {
+      return;
+    }
+    this.filterAllTags = [];
+    this.filterAnyTags = [];
     await this.persistFilterTags();
   }
 

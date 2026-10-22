@@ -7,9 +7,10 @@
   import { flip } from "svelte/animate";
   import PrinterCard from "./printer-card.svelte";
   import PrinterDetailModal from "./printer-detail-modal.svelte";
+  import PrinterFilterModal from "./printer-filter-modal.svelte";
   import PrinterModal from "./printer-modal.svelte";
   import { PrinterStore } from "./printers.svelte";
-  import { filterPrintersByTags, isWarningTag } from "./tags";
+  import { filterPrintersByTags, getEffectivePrinterStatus } from "./tags";
   import type { Printer } from "./types";
 
   const appWindow = getCurrentWindow();
@@ -19,18 +20,22 @@
   let editingPrinter = $state<Printer | undefined>(undefined);
   let isDetailModalOpen = $state(false);
   let detailPrinterId = $state<string | null>(null);
+  let isFilterModalOpen = $state(false);
   let isNocMode = $state(false);
   let cardScale = $state(1);
 
-  let filterInputText = $state("");
-  let filterInputEl = $state<HTMLInputElement | undefined>(undefined);
-  let isFilterFocused = $state(false);
-
-  let isFiltered = $derived(store.filterTags.length > 0);
-  let filteredPrinters = $derived(
-    filterPrintersByTags(store.items, store.statusMap, store.filterTags)
+  let activeFilterCount = $derived(
+    store.filterAllTags.length + store.filterAnyTags.length
   );
-  let premadeTags = $derived(store.getPremadeTagSuggestions());
+  let isFiltered = $derived(activeFilterCount > 0);
+  let filteredPrinters = $derived(
+    filterPrintersByTags(
+      store.items,
+      store.statusMap,
+      store.filterAllTags,
+      store.filterAnyTags
+    )
+  );
 
   let detailPrinter = $derived(
     detailPrinterId ? store.items.find((p) => p.id === detailPrinterId) : undefined
@@ -49,30 +54,11 @@
     cardScale = Math.min(1.6, Math.max(0.7, +(cardScale + delta).toFixed(2)));
   }
 
-  async function handleFilterKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      e.stopPropagation();
-      const trimmed = filterInputText.trim();
-      if (trimmed) {
-        await store.addFilterTag(trimmed);
-        filterInputText = "";
-      }
-    } else if (e.key === "Backspace" && filterInputText === "" && store.filterTags.length > 0) {
-      e.preventDefault();
-      await store.removeLastFilterTag();
-    }
-  }
-
-  async function handlePremadeTagClick(tag: string) {
-    await store.toggleFilterTag(tag);
-    filterInputEl?.focus();
-  }
-
   async function setNocMode(active: boolean) {
     if (active) {
       isDetailModalOpen = false;
       isModalOpen = false;
+      isFilterModalOpen = false;
       if (activeWebPrinter) {
         await closeWebInterface();
       }
@@ -186,13 +172,22 @@
 
   function openDetailModal(printer: Printer) {
     if (isNocMode) return;
+    isFilterModalOpen = false;
     detailPrinterId = printer.id;
     isDetailModalOpen = true;
+  }
+
+  function openFilterModal() {
+    if (isNocMode) return;
+    isDetailModalOpen = false;
+    isModalOpen = false;
+    isFilterModalOpen = true;
   }
 
   async function openEditModal(printer?: Printer) {
     if (isNocMode) return;
     isDetailModalOpen = false;
+    isFilterModalOpen = false;
     if (activeWebPrinter) {
       await closeWebInterface();
     }
@@ -209,6 +204,8 @@
           isModalOpen = false;
         } else if (isDetailModalOpen) {
           isDetailModalOpen = false;
+        } else if (isFilterModalOpen) {
+          isFilterModalOpen = false;
         } else if (activeWebPrinter) {
           closeWebInterface();
         } else if (isNocMode) {
@@ -254,7 +251,7 @@
 
         <div class="printer-identity">
           <span
-            class="status-dot {store.statusMap[activeWebPrinter.id]?.status ?? 'checking'}"
+            class="status-dot {getEffectivePrinterStatus(store.statusMap[activeWebPrinter.id])}"
             aria-hidden="true"
           ></span>
           <strong class="toolbar-label">{activeWebPrinter.label}</strong>
@@ -344,6 +341,21 @@
         </span>
       </div>
       <div class="header-actions">
+        {#if !isNocMode}
+          <button
+            type="button"
+            class="btn-filter"
+            class:active={isFiltered}
+            onclick={openFilterModal}
+            title="Configure tag filters"
+          >
+            <span>⚙ Filter</span>
+            {#if isFiltered}
+              <span class="filter-count-badge">{activeFilterCount}</span>
+            {/if}
+          </button>
+        {/if}
+
         <div class="zoom-controls">
           <button
             type="button"
@@ -372,95 +384,6 @@
         </button>
       </div>
     </header>
-
-    {#if !isNocMode}
-      <div class="filter-section">
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="tag-entry-box"
-          class:focused={isFilterFocused}
-          onclick={() => filterInputEl?.focus()}
-        >
-          {#each store.filterTags as tag (tag)}
-            <span
-              class="printer-tag entry-tag"
-              class:tag-warning={isWarningTag(tag)}
-              class:tag-standard={!isWarningTag(tag)}
-            >
-              <span class="entry-tag-label">{tag}</span>
-              <button
-                type="button"
-                class="entry-tag-remove"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  store.removeFilterTag(tag);
-                  filterInputEl?.focus();
-                }}
-                aria-label="Remove {tag} filter"
-                title="Remove {tag}"
-              >
-                ×
-              </button>
-            </span>
-          {/each}
-
-          <input
-            type="text"
-            class="tag-entry-input"
-            bind:this={filterInputEl}
-            bind:value={filterInputText}
-            onfocus={() => (isFilterFocused = true)}
-            onblur={() => (isFilterFocused = false)}
-            onkeydown={handleFilterKeyDown}
-            placeholder={store.filterTags.length === 0
-              ? "Filter by tag (type a tag and press Enter)..."
-              : "Add tag..."}
-            aria-label="Filter printers by tag"
-          />
-
-          {#if store.filterTags.length > 0}
-            <button
-              type="button"
-              class="btn-clear-tags"
-              onclick={(e) => {
-                e.stopPropagation();
-                store.clearFilterTags();
-                filterInputText = "";
-                filterInputEl?.focus();
-              }}
-              title="Clear all filter tags"
-            >
-              Clear
-            </button>
-          {/if}
-        </div>
-
-        <div class="premade-tags-bar">
-          <span class="premade-tags-label">Tags:</span>
-          <div class="premade-tags-list">
-            {#each premadeTags as tag (tag)}
-              {@const active = store.hasFilterTag(tag)}
-              <button
-                type="button"
-                class="printer-tag premade-tag-btn"
-                class:tag-warning={isWarningTag(tag)}
-                class:tag-standard={!isWarningTag(tag)}
-                class:active
-                onclick={() => handlePremadeTagClick(tag)}
-                aria-pressed={active}
-                title={active ? `Remove "${tag}" filter` : `Add "${tag}" filter`}
-              >
-                <span>{tag}</span>
-                <span class="premade-tag-indicator" aria-hidden="true">
-                  {active ? "✓" : "+"}
-                </span>
-              </button>
-            {/each}
-          </div>
-        </div>
-      </div>
-    {/if}
 
     {#if store.errorMessage}
       <div class="error-banner">
@@ -515,6 +438,9 @@
               toners={printerState?.toners ?? []}
               detectedModel={printerState?.detectedModel}
               printerState={printerState?.printerState}
+              statusMessage={printerState?.statusMessage}
+              paperJam={printerState?.paperJam ?? false}
+              outOfPaper={printerState?.outOfPaper ?? false}
               onclick={() => openDetailModal(printer)}
               onwebui={() => openWebInterface(printer)}
               onconfigure={() => openEditModal(printer)}
@@ -554,9 +480,16 @@
   pageCount={detailPrinterState?.pageCount}
   printerState={detailPrinterState?.printerState}
   statusMessage={detailPrinterState?.statusMessage}
+  paperJam={detailPrinterState?.paperJam ?? false}
+  outOfPaper={detailPrinterState?.outOfPaper ?? false}
   now={store.now}
   onwebui={(p) => openWebInterface(p)}
   onconfigure={(p) => openEditModal(p)}
+/>
+
+<PrinterFilterModal
+  bind:open={isFilterModalOpen}
+  {store}
 />
 
 <PrinterModal
@@ -671,166 +604,48 @@
     border-color: var(--color-text-muted);
   }
 
-  /* Tag Filter Section */
-  .filter-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-  }
-
-  .tag-entry-box {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 2.5rem;
-    padding: 0.35rem 0.65rem;
-    background-color: var(--color-surface);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.45rem;
-    cursor: text;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-
-  .tag-entry-box.focused {
-    border-color: var(--color-primary);
-  }
-
-  .printer-tag {
+  .btn-filter {
     display: inline-flex;
     align-items: center;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.22rem 0.5rem;
-    border-radius: 0.25rem;
-    line-height: 1;
+    gap: 0.4rem;
+    background-color: transparent;
     border: solid var(--width-border) var(--color-border);
-    flex-shrink: 0;
+    color: var(--color-text-muted);
+    padding: 0.35rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
     white-space: nowrap;
-    box-sizing: border-box;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
   }
 
-  .tag-standard {
-    background-color: color-mix(in srgb, var(--color-base) 65%, transparent);
+  .btn-filter:hover {
+    background-color: var(--color-surface);
     color: var(--color-text);
-    border-color: var(--color-border);
+    border-color: var(--color-text-muted);
   }
 
-  .tag-warning {
-    background-color: var(--color-warning);
-    color: #1c1917;
-    border-color: color-mix(in srgb, var(--color-warning) 75%, #000000);
+  .btn-filter.active {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+    background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
   }
 
-  .entry-tag {
-    gap: 0.3rem;
-    padding-right: 0.3rem;
-  }
-
-  .entry-tag-label {
-    line-height: 1;
-  }
-
-  .entry-tag-remove {
+  .filter-count-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: transparent;
-    border: none;
-    color: inherit;
-    font-size: 0.85rem;
-    font-weight: 700;
-    line-height: 1;
-    padding: 0.05rem 0.18rem;
-    border-radius: 0.2rem;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.12s ease, background-color 0.12s ease;
-  }
-
-  .entry-tag-remove:hover {
-    opacity: 1;
-    background-color: rgba(0, 0, 0, 0.12);
-  }
-
-  .tag-entry-input {
-    flex: 1;
-    min-width: 12rem;
-    border: none;
-    background: transparent;
-    color: var(--color-text);
-    font-size: 0.88rem;
-    font-family: inherit;
-    padding: 0.15rem 0.1rem;
-    outline: none;
-  }
-
-  .tag-entry-input::placeholder {
-    color: var(--color-text-muted);
-    opacity: 0.8;
-  }
-
-  .btn-clear-tags {
-    background: transparent;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: 0.78rem;
-    font-weight: 600;
-    padding: 0.2rem 0.45rem;
-    border-radius: 0.25rem;
-    cursor: pointer;
-    margin-left: auto;
-    transition: color 0.15s ease, background-color 0.15s ease;
-  }
-
-  .btn-clear-tags:hover {
-    color: var(--color-text);
-    background-color: color-mix(in srgb, var(--color-base) 55%, transparent);
-  }
-
-  .premade-tags-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-  }
-
-  .premade-tags-label {
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--color-text-muted);
-    white-space: nowrap;
-  }
-
-  .premade-tags-list {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-  }
-
-  .premade-tag-btn {
-    gap: 0.3rem;
-    cursor: pointer;
-    opacity: 0.85;
-    transition: opacity 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-  }
-
-  .premade-tag-btn:hover {
-    opacity: 1;
-    border-color: var(--color-primary);
-  }
-
-  .premade-tag-btn.active {
-    opacity: 1;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 1px var(--color-primary);
-  }
-
-  .premade-tag-indicator {
+    min-width: 1.15rem;
+    height: 1.15rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background-color: var(--color-primary);
+    color: var(--color-base);
     font-size: 0.72rem;
     font-weight: 700;
-    opacity: 0.75;
+    line-height: 1;
   }
 
   .empty-filter-banner {

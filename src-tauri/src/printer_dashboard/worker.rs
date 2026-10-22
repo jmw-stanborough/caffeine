@@ -97,6 +97,13 @@ fn event_name_for_status(status: &HealthStatus) -> &'static str {
     }
 }
 
+fn has_empty_toner(details: &PrinterPollDetails) -> bool {
+    details.toners.iter().any(|t| {
+        !matches!(t.supply_type.as_str(), "waste_toner" | "waste_ink")
+            && (t.percent == Some(0) || (t.percent.is_none() && t.level == 0))
+    })
+}
+
 pub fn start_printer_worker(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut trackers = HashMap::<String, PrinterTracker>::new();
@@ -119,8 +126,17 @@ pub fn start_printer_worker(app: AppHandle) {
                 .map(|printer| {
                     let should_poll_details = trackers
                         .get(&printer.id)
-                        .and_then(|t| t.last_snmp_poll)
-                        .is_none_or(|last| last.elapsed() >= Duration::from_secs(12));
+                        .is_none_or(|t| {
+                            let interval = if t.cached_details.paper_jam
+                                || t.cached_details.out_of_paper
+                                || has_empty_toner(&t.cached_details)
+                            {
+                                Duration::from_secs(4)
+                            } else {
+                                Duration::from_secs(12)
+                            };
+                            t.last_snmp_poll.is_none_or(|last| last.elapsed() >= interval)
+                        });
 
                     tokio::spawn(async move {
                         let (status, latency_ms) = check_printer_reachability(&printer).await;
@@ -153,6 +169,9 @@ pub fn start_printer_worker(app: AppHandle) {
                 let current = if let Some(existing) = trackers.get_mut(&printer_id) {
                     let was_connected = existing.status != HealthStatus::Offline;
                     let is_connected = status != HealthStatus::Offline;
+                    let had_jam = existing.cached_details.paper_jam;
+                    let had_no_paper = existing.cached_details.out_of_paper;
+                    let had_empty_toner = has_empty_toner(&existing.cached_details);
 
                     if was_connected != is_connected {
                         let new_event = event_name_for_status(&status);
@@ -172,6 +191,12 @@ pub fn start_printer_worker(app: AppHandle) {
                             existing.cached_details = new_details;
                         } else {
                             // Keep existing toners if a transient UDP drop happened, update other fields
+                            let poll_succeeded = new_details.detected_model.is_some()
+                                || new_details.printer_state.is_some()
+                                || new_details.page_count.is_some()
+                                || new_details.paper_jam
+                                || new_details.out_of_paper;
+
                             if new_details.detected_model.is_some() {
                                 existing.cached_details.detected_model = new_details.detected_model;
                             }
@@ -181,11 +206,43 @@ pub fn start_printer_worker(app: AppHandle) {
                             if new_details.printer_state.is_some() {
                                 existing.cached_details.printer_state = new_details.printer_state;
                             }
-                            if new_details.status_message.is_some() {
+                            if poll_succeeded {
                                 existing.cached_details.status_message = new_details.status_message;
+                                existing.cached_details.paper_jam = new_details.paper_jam;
+                                existing.cached_details.out_of_paper = new_details.out_of_paper;
                             }
                         }
                         existing.last_snmp_poll = Some(Instant::now());
+
+                        if is_connected {
+                            let db = app.state::<DbState>();
+                            if let Ok(conn) = db.0.lock() {
+                                if !had_jam && existing.cached_details.paper_jam {
+                                    let _ = add_printer_log_entry(
+                                        &conn,
+                                        &printer_id,
+                                        "paper jam",
+                                        latency_ms,
+                                    );
+                                }
+                                if !had_no_paper && existing.cached_details.out_of_paper {
+                                    let _ = add_printer_log_entry(
+                                        &conn,
+                                        &printer_id,
+                                        "out of paper",
+                                        latency_ms,
+                                    );
+                                }
+                                if !had_empty_toner && has_empty_toner(&existing.cached_details) {
+                                    let _ = add_printer_log_entry(
+                                        &conn,
+                                        &printer_id,
+                                        "toner empty",
+                                        latency_ms,
+                                    );
+                                }
+                            }
+                        }
                     }
                     existing
                 } else {
@@ -213,11 +270,42 @@ pub fn start_printer_worker(app: AppHandle) {
                     };
 
                     let poll_time = maybe_details.as_ref().map(|_| Instant::now());
+                    let initial_details = maybe_details.unwrap_or_default();
+                    if status != HealthStatus::Offline {
+                        let db = app.state::<DbState>();
+                        if let Ok(conn) = db.0.lock() {
+                            if initial_details.paper_jam {
+                                let _ = add_printer_log_entry(
+                                    &conn,
+                                    &printer_id,
+                                    "paper jam",
+                                    latency_ms,
+                                );
+                            }
+                            if initial_details.out_of_paper {
+                                let _ = add_printer_log_entry(
+                                    &conn,
+                                    &printer_id,
+                                    "out of paper",
+                                    latency_ms,
+                                );
+                            }
+                            if has_empty_toner(&initial_details) {
+                                let _ = add_printer_log_entry(
+                                    &conn,
+                                    &printer_id,
+                                    "toner empty",
+                                    latency_ms,
+                                );
+                            }
+                        }
+                    }
+
                     trackers.entry(printer_id.clone()).or_insert(PrinterTracker {
                         status: status.clone(),
                         last_event,
                         last_event_at,
-                        cached_details: maybe_details.unwrap_or_default(),
+                        cached_details: initial_details,
                         last_snmp_poll: poll_time,
                     })
                 };
@@ -235,6 +323,8 @@ pub fn start_printer_worker(app: AppHandle) {
                     page_count: current.cached_details.page_count,
                     printer_state: current.cached_details.printer_state.clone(),
                     status_message: current.cached_details.status_message.clone(),
+                    paper_jam: current.cached_details.paper_jam,
+                    out_of_paper: current.cached_details.out_of_paper,
                 };
 
                 let _ = app.emit("printer-status-tick", event);

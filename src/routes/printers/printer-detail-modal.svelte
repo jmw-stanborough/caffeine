@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { inferPrinterMake, isLowToner } from "./tags";
+  import {
+    getEffectivePrinterStatus,
+    hasOutOfPaper,
+    hasPaperJam,
+    inferPrinterMake,
+    isEmptyToner,
+    isLowToner,
+  } from "./tags";
   import type { Printer, PrinterState, TonerSupply } from "./types";
 
   let {
@@ -15,6 +22,8 @@
     pageCount = undefined,
     printerState = undefined,
     statusMessage = undefined,
+    paperJam = false,
+    outOfPaper = false,
     now = Date.now(),
     onwebui,
     onconfigure,
@@ -31,6 +40,8 @@
     pageCount?: number;
     printerState?: string;
     statusMessage?: string;
+    paperJam?: boolean;
+    outOfPaper?: boolean;
     now?: number;
     onwebui?: (printer: Printer) => void;
     onconfigure?: (printer: Printer) => void;
@@ -51,14 +62,20 @@
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
   let displayModel = $derived(printer?.model || detectedModel);
   let makeTag = $derived(inferPrinterMake(printer, detectedModel));
+  let isJammed = $derived(hasPaperJam({ paperJam, printerState, statusMessage }));
+  let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
+  let hasEmptyToner = $derived(toners.some((t) => isEmptyToner(t)));
   let hasLowToner = $derived(toners.some((t) => isLowToner(t)));
 
   let effectiveVisualStatus = $derived(
-    status === "offline"
-      ? "offline"
-      : hasLowToner
-        ? "degraded"
-        : status
+    getEffectivePrinterStatus({
+      status,
+      toners,
+      paperJam,
+      outOfPaper,
+      printerState,
+      statusMessage,
+    })
   );
 
   function getTonerBarColor(toner: TonerSupply): string {
@@ -108,6 +125,7 @@
 
   function getBarWidth(toner: TonerSupply): number {
     if (toner.percent !== undefined && toner.percent !== null) {
+      if (toner.percent <= 0) return 0;
       return Math.max(2, Math.min(100, toner.percent));
     }
     if (toner.level === -3) {
@@ -220,8 +238,9 @@
           <div class="toners-list">
             {#each toners as toner (toner.name + toner.color)}
               {@const barColor = getTonerBarColor(toner)}
+              {@const empty = isEmptyToner(toner)}
               {@const low = isLowToner(toner)}
-              <div class="toner-row" class:low-supply={low}>
+              <div class="toner-row" class:low-supply={low || empty}>
                 <div class="toner-info">
                   <span
                     class="toner-swatch"
@@ -231,7 +250,9 @@
                     {getTonerShortLabel(toner)}
                   </span>
                   <span class="toner-name" title={toner.name}>{toner.name}</span>
-                  {#if low}
+                  {#if empty}
+                    <span class="empty-badge">EMPTY</span>
+                  {:else if low}
                     <span class="low-badge">LOW</span>
                   {/if}
                   <span class="toner-pct">{formatLevelText(toner)}</span>
@@ -268,7 +289,7 @@
 
       <div class="card-footer">
         <div class="footer-left">
-          {#if makeTag || printer.location || printerState || hasLowToner}
+          {#if makeTag || printer.location || printerState || isJammed || isNoPaper || hasEmptyToner || hasLowToner}
             <div class="tags-row">
               {#if makeTag}
                 <span class="printer-tag tag-make" title="Make: {makeTag}">{makeTag}</span>
@@ -278,6 +299,15 @@
               {/if}
               {#if printerState}
                 <span class="printer-tag tag-state">{printerState}</span>
+              {/if}
+              {#if isJammed}
+                <span class="printer-tag tag-failure" title="Printer has a paper jam">Paper Jam</span>
+              {/if}
+              {#if isNoPaper}
+                <span class="printer-tag tag-failure" title="Printer is out of paper">Out of Paper</span>
+              {/if}
+              {#if hasEmptyToner}
+                <span class="printer-tag tag-failure" title="One or more cartridges have reached 0% toner">Toner Empty</span>
               {/if}
               {#if hasLowToner}
                 <span class="printer-tag tag-warning" title="One or more cartridges are low on toner">Toner Low</span>
@@ -326,7 +356,7 @@
 
   .modal-card {
     background-color: var(--color-surface);
-    border: solid var(--width-border) var(--color-border);
+    border: solid var(--width-border) var(--status-color, var(--color-border));
     border-radius: 0.5rem;
     width: 100%;
     max-width: 34rem;
@@ -546,13 +576,21 @@
     flex: 1;
   }
 
+  .empty-badge,
   .low-badge {
     font-size: 0.65rem;
     font-weight: 800;
     padding: 0.05rem 0.3rem;
     border-radius: 0.2rem;
+    color: #1c1917;
+  }
+
+  .empty-badge {
     background-color: var(--color-failure);
-    color: var(--color-base);
+  }
+
+  .low-badge {
+    background-color: var(--color-warning);
   }
 
   .toner-pct {
@@ -605,6 +643,12 @@
     flex-shrink: 0;
     white-space: nowrap;
     box-sizing: border-box;
+  }
+
+  .tag-failure {
+    background-color: var(--color-failure);
+    color: #1c1917;
+    border-color: color-mix(in srgb, var(--color-failure) 75%, #000000);
   }
 
   .tag-warning {

@@ -1,4 +1,4 @@
-use super::types::{Printer, PrinterLog};
+use super::types::{Printer, PrinterFilterConfig, PrinterLog};
 use rusqlite::{Connection, OptionalExtension, params};
 
 pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
@@ -205,22 +205,33 @@ pub fn update_printer_detected_model(
     Ok(())
 }
 
-pub fn get_printer_filter_tags(conn: &Connection) -> Result<Vec<String>, String> {
+pub fn get_printer_filter_tags(conn: &Connection) -> Result<PrinterFilterConfig, String> {
     let mut stmt = conn
-        .prepare("SELECT tag FROM printer_filter_tags ORDER BY sort_order ASC")
+        .prepare("SELECT tag, mode FROM printer_filter_tags ORDER BY sort_order ASC")
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map([], |row| row.get::<_, String>(0))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+    let mut config = PrinterFilterConfig::default();
+    for row in rows {
+        let (tag, mode) = row.map_err(|e| e.to_string())?;
+        if mode == "any" {
+            config.any_tags.push(tag);
+        } else {
+            config.all_tags.push(tag);
+        }
+    }
+
+    Ok(config)
 }
 
 pub fn save_printer_filter_tags_entries(
     conn: &mut Connection,
-    tags: &[String],
+    config: &PrinterFilterConfig,
 ) -> Result<(), String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     {
@@ -228,13 +239,23 @@ pub fn save_printer_filter_tags_entries(
             .map_err(|e| e.to_string())?;
 
         let mut stmt = tx
-            .prepare("INSERT OR IGNORE INTO printer_filter_tags (tag, sort_order) VALUES (?1, ?2)")
+            .prepare(
+                "INSERT OR IGNORE INTO printer_filter_tags (tag, mode, sort_order) VALUES (?1, ?2, ?3)",
+            )
             .map_err(|e| e.to_string())?;
 
-        for (idx, tag) in tags.iter().enumerate() {
+        for (idx, tag) in config.all_tags.iter().enumerate() {
             let cleaned = tag.trim();
             if !cleaned.is_empty() {
-                stmt.execute(params![cleaned, idx as i64])
+                stmt.execute(params![cleaned, "all", idx as i64])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        for (idx, tag) in config.any_tags.iter().enumerate() {
+            let cleaned = tag.trim();
+            if !cleaned.is_empty() {
+                stmt.execute(params![cleaned, "any", idx as i64])
                     .map_err(|e| e.to_string())?;
             }
         }

@@ -74,16 +74,51 @@ pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
         ON printer_logs(printer_id, timestamp DESC);
 
         CREATE TABLE IF NOT EXISTS printer_filter_tags (
-            tag TEXT PRIMARY KEY,
-            sort_order INTEGER NOT NULL DEFAULT 0
+            tag TEXT NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'all',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (tag, mode)
         );
         ",
     )
     .map_err(|e| format!("Failed to run schema migrations: {e}"))?;
 
+    migrate_printer_filter_tags_table(&conn)?;
     migrate_legacy_json(app, &conn)?;
 
     Ok(DbState(Mutex::new(conn)))
+}
+
+fn migrate_printer_filter_tags_table(conn: &Connection) -> Result<(), String> {
+    let has_mode: bool = {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(printer_filter_tags)")
+            .map_err(|e| e.to_string())?;
+        let cols = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?;
+        cols.filter_map(Result::ok).any(|name| name == "mode")
+    };
+
+    if !has_mode {
+        conn.execute_batch(
+            "
+            CREATE TABLE printer_filter_tags_new (
+                tag TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'all',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (tag, mode)
+            );
+            INSERT OR IGNORE INTO printer_filter_tags_new (tag, mode, sort_order)
+            SELECT tag, 'all', sort_order FROM printer_filter_tags;
+            DROP TABLE printer_filter_tags;
+            ALTER TABLE printer_filter_tags_new RENAME TO printer_filter_tags;
+            ",
+        )
+        .map_err(|e| format!("Failed to migrate printer_filter_tags schema: {e}"))?;
+    }
+
+    Ok(())
 }
 
 fn migrate_legacy_json(app: &AppHandle, conn: &Connection) -> Result<(), String> {

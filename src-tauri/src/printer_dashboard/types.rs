@@ -47,6 +47,8 @@ pub struct PrinterStatusEvent {
     pub page_count: Option<u64>,
     pub printer_state: Option<String>,
     pub status_message: Option<String>,
+    pub paper_jam: bool,
+    pub out_of_paper: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,4 +58,12 @@ pub struct PrinterLog {
     pub event_type: String,
     pub latency_ms: Option<u64>,
     pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrinterFilterConfig {
+    #[serde(default)]
+    pub all_tags: Vec<String>,
+    #[serde(default)]
+    pub any_tags: Vec<String>,
 }

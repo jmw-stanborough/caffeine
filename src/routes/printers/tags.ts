@@ -1,6 +1,13 @@
-import type { Printer, PrinterState, TonerSupply } from "./types";
+import type { Printer, PrinterState, StatusKind, TonerSupply } from "./types";
 
-export const PREMADE_TAGS = ["Printing", "Idle", "Toner Low"] as const;
+export const PREMADE_TAGS = [
+  "Printing",
+  "Idle",
+  "Paper Jam",
+  "Out of Paper",
+  "Toner Empty",
+  "Toner Low",
+] as const;
 
 interface BrandRule {
   canonical: string;
@@ -117,11 +124,31 @@ export function inferPrinterMake(
   return undefined;
 }
 
+export function isEmptyToner(toner: TonerSupply): boolean {
+  if (
+    toner.supply_type === "waste_toner" ||
+    toner.supply_type === "waste_ink"
+  ) {
+    return false;
+  }
+  if (toner.percent !== undefined && toner.percent !== null) {
+    return toner.percent <= 0;
+  }
+  return toner.level === 0;
+}
+
+export function hasEmptyTonerSupply(toners?: TonerSupply[]): boolean {
+  return (toners ?? []).some((t) => isEmptyToner(t));
+}
+
 export function isLowToner(toner: TonerSupply): boolean {
   if (
     toner.supply_type === "waste_toner" ||
     toner.supply_type === "waste_ink"
   ) {
+    return false;
+  }
+  if (isEmptyToner(toner)) {
     return false;
   }
   return (
@@ -133,6 +160,114 @@ export function isLowToner(toner: TonerSupply): boolean {
 
 export function hasLowTonerSupply(toners?: TonerSupply[]): boolean {
   return (toners ?? []).some((t) => isLowToner(t));
+}
+
+export function isPaperJamText(text?: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("paper jam") ||
+    lower.includes("media jam") ||
+    lower.includes("document jam") ||
+    lower.includes("jammed") ||
+    lower.includes("misfeed") ||
+    lower.includes("clear jam")
+  ) {
+    return true;
+  }
+  return lower
+    .split(/[^a-z0-9]+/)
+    .some((w) => w === "jam" || w === "jams" || w === "jammed" || w === "misfeed");
+}
+
+export function isOutOfPaperText(text?: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("toner") ||
+    lower.includes("ink") ||
+    lower.includes("waste") ||
+    lower.includes("output") ||
+    lower.includes("bin")
+  ) {
+    return false;
+  }
+  if (
+    lower.includes("out of paper") ||
+    lower.includes("no paper") ||
+    lower.includes("paper out") ||
+    lower.includes("paper empty") ||
+    lower.includes("media empty") ||
+    lower.includes("media needed") ||
+    lower.includes("media out") ||
+    lower.includes("load paper") ||
+    lower.includes("add paper") ||
+    lower.includes("insert paper") ||
+    lower.includes("refill paper")
+  ) {
+    return true;
+  }
+  if (
+    lower.includes("empty") &&
+    (lower.includes("tray") ||
+      lower.includes("cassette") ||
+      lower.includes("drawer") ||
+      lower.includes("feeder") ||
+      lower.includes("paper") ||
+      lower.includes("media"))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function hasPaperJam(
+  state?: Pick<PrinterState, "paperJam" | "printerState" | "statusMessage">,
+): boolean {
+  if (!state) return false;
+  return (
+    Boolean(state.paperJam) ||
+    isPaperJamText(state.printerState) ||
+    isPaperJamText(state.statusMessage)
+  );
+}
+
+export function hasOutOfPaper(
+  state?: Pick<PrinterState, "outOfPaper" | "printerState" | "statusMessage">,
+): boolean {
+  if (!state) return false;
+  return (
+    Boolean(state.outOfPaper) ||
+    isOutOfPaperText(state.printerState) ||
+    isOutOfPaperText(state.statusMessage)
+  );
+}
+
+export function getEffectivePrinterStatus(
+  state?: Partial<PrinterState>,
+): StatusKind {
+  const baseStatus = state?.status ?? "checking";
+  if (
+    baseStatus === "offline" ||
+    hasPaperJam(state) ||
+    hasOutOfPaper(state) ||
+    hasEmptyTonerSupply(state?.toners)
+  ) {
+    return "offline";
+  }
+  if (hasLowTonerSupply(state?.toners)) {
+    return "degraded";
+  }
+  return baseStatus;
+}
+
+export function isFailureTag(tag: string): boolean {
+  const lower = tag.trim().toLowerCase();
+  return (
+    lower === "paper jam" ||
+    lower === "out of paper" ||
+    lower === "toner empty"
+  );
 }
 
 export function isWarningTag(tag: string): boolean {
@@ -156,6 +291,18 @@ export function getPrinterTags(
 
   if (state?.printerState?.trim()) {
     tags.push(state.printerState.trim());
+  }
+
+  if (hasPaperJam(state)) {
+    tags.push("Paper Jam");
+  }
+
+  if (hasOutOfPaper(state)) {
+    tags.push("Out of Paper");
+  }
+
+  if (hasEmptyTonerSupply(state?.toners)) {
+    tags.push("Toner Empty");
   }
 
   if (hasLowTonerSupply(state?.toners)) {
@@ -194,33 +341,6 @@ export function normalizeTagLabel(
   return trimmed;
 }
 
-const KNOWN_STATES = new Set([
-  "printing",
-  "idle",
-  "warmup",
-  "ready",
-  "stopped",
-  "other",
-]);
-
-function getTagFacet(
-  tagLower: string,
-  allMakes: Set<string>,
-  allLocations: Set<string>,
-  allStates: Set<string>,
-): string {
-  if (tagLower === "toner low") return "warning";
-  if (KNOWN_STATES.has(tagLower) || allStates.has(tagLower)) return "state";
-  if (
-    allMakes.has(tagLower) ||
-    KNOWN_BRANDS.some((b) => b.canonical.toLowerCase() === tagLower)
-  ) {
-    return "make";
-  }
-  if (allLocations.has(tagLower)) return "location";
-  return `custom:${tagLower}`;
-}
-
 function tagMatchesPrinter(
   filterTagLower: string,
   printerTags: string[],
@@ -241,53 +361,42 @@ function tagMatchesPrinter(
 export function filterPrintersByTags(
   printers: Printer[],
   statusMap: Record<string, PrinterState>,
-  filterTags: string[],
+  allTags: string[],
+  anyTags: string[] = [],
 ): Printer[] {
-  const activeFilters = filterTags
+  const activeAll = allTags
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+  const activeAny = anyTags
     .map((t) => t.trim().toLowerCase())
     .filter(Boolean);
 
-  if (activeFilters.length === 0) {
+  if (activeAll.length === 0 && activeAny.length === 0) {
     return printers;
-  }
-
-  const allMakes = new Set<string>();
-  const allLocations = new Set<string>();
-  const allStates = new Set<string>();
-
-  for (const p of printers) {
-    const st = statusMap[p.id];
-    const make = inferPrinterMake(p, st?.detectedModel);
-    if (make) allMakes.add(make.toLowerCase());
-    if (p.location?.trim()) allLocations.add(p.location.trim().toLowerCase());
-    if (st?.printerState?.trim()) {
-      allStates.add(st.printerState.trim().toLowerCase());
-    }
-  }
-
-  // Group active filters by facet so mutually exclusive tags within the same facet
-  // (e.g. "Printing" + "Idle" or "SHARP" + "Brother") combine with OR, while
-  // tags across different facets (e.g. "SHARP" + "Toner Low") combine with AND.
-  const facetGroups = new Map<string, string[]>();
-  for (const f of activeFilters) {
-    const facet = getTagFacet(f, allMakes, allLocations, allStates);
-    const group = facetGroups.get(facet) ?? [];
-    group.push(f);
-    facetGroups.set(facet, group);
   }
 
   return printers.filter((printer) => {
     const state = statusMap[printer.id];
     const pTags = getPrinterTags(printer, state);
 
-    for (const group of facetGroups.values()) {
-      const matchesFacet = group.some((f) =>
+    if (activeAll.length > 0) {
+      const matchesAll = activeAll.every((f) =>
         tagMatchesPrinter(f, pTags, state?.status),
       );
-      if (!matchesFacet) {
+      if (!matchesAll) {
         return false;
       }
     }
+
+    if (activeAny.length > 0) {
+      const matchesAny = activeAny.some((f) =>
+        tagMatchesPrinter(f, pTags, state?.status),
+      );
+      if (!matchesAny) {
+        return false;
+      }
+    }
+
     return true;
   });
 }
