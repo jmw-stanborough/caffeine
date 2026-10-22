@@ -177,20 +177,25 @@
 
   .page-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
+    gap: 0.6rem 1rem;
   }
 
   .header-titles {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 1rem;
+    gap: 0.25rem 0.75rem;
+    min-width: 0;
   }
 
   .header-actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-shrink: 0;
   }
 
   .page-title {
@@ -198,11 +203,13 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--color-text);
+    white-space: nowrap;
   }
 
   .server-count {
     font-size: 0.9rem;
     color: var(--color-text-muted);
+    white-space: nowrap;
   }
 
   .zoom-controls {
@@ -210,6 +217,7 @@
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.375rem;
     overflow: hidden;
+    flex-shrink: 0;
   }
 
   .btn-zoom {
@@ -221,6 +229,7 @@
     font-weight: 700;
     line-height: 1;
     cursor: pointer;
+    white-space: nowrap;
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 
@@ -242,6 +251,8 @@
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
     transition: all 0.15s ease;
   }
 
@@ -253,14 +264,14 @@
 
   .server-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--card-min-width, 18rem), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-width, 18rem)), 1fr));
     gap: 1rem;
     width: 100%;
     outline: none;
   }
 
   .server-grid.noc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(var(--noc-min-width, 16rem), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--noc-min-width, 16rem)), 1fr));
     gap: 1.25rem;
   }
 

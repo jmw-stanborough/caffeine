@@ -280,6 +280,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 1rem;
+    box-sizing: border-box;
     z-index: 100;
   }
 
@@ -295,7 +297,8 @@
     gap: 1.25rem;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     outline: none;
-    max-height: 85vh;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
   }
 
   .modal-header {

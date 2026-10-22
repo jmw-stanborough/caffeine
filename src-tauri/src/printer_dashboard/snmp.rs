@@ -22,20 +22,27 @@ pub struct PrinterPollDetails {
 #[derive(Debug, Clone)]
 enum SnmpVal {
     Int(i64),
-    Str(String),
+    Bytes(Vec<u8>),
 }
 
 impl SnmpVal {
     fn as_i64(&self) -> Option<i64> {
         match self {
             SnmpVal::Int(v) => Some(*v),
-            SnmpVal::Str(s) => s.trim().parse::<i64>().ok(),
+            SnmpVal::Bytes(b) => std::str::from_utf8(b).ok()?.trim().parse::<i64>().ok(),
         }
     }
 
-    fn as_str(&self) -> Option<&str> {
+    fn as_str(&self) -> Option<String> {
         match self {
-            SnmpVal::Str(s) => Some(s.as_str()),
+            SnmpVal::Bytes(b) => Some(clean_octet_string(b)),
+            SnmpVal::Int(_) => None,
+        }
+    }
+
+    fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            SnmpVal::Bytes(b) => Some(b.as_slice()),
             SnmpVal::Int(_) => None,
         }
     }
@@ -263,7 +270,7 @@ fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>
         let val = match val_tag {
             0x02 => Some(SnmpVal::Int(decode_signed_int(val_slice))),
             0x41 | 0x42 | 0x43 => Some(SnmpVal::Int(decode_unsigned_int(val_slice))),
-            0x04 => Some(SnmpVal::Str(clean_octet_string(val_slice))),
+            0x04 => Some(SnmpVal::Bytes(val_slice.to_vec())),
             // 0x80 = NoSuchObject, 0x81 = NoSuchInstance, 0x82 = EndOfMibView, 0x05 = Null
             _ => None,
         };
@@ -327,9 +334,9 @@ fn supply_type_label(type_code: Option<i64>, description: &str) -> String {
         _ => {
             if desc_lower.contains("waste") {
                 "waste_toner".to_string()
-            } else if desc_lower.contains("drum") || desc_lower.contains("imaging") {
+            } else if desc_lower.contains("drum") || desc_lower.contains("imaging") || desc_lower.contains("opc") {
                 "drum".to_string()
-            } else if desc_lower.contains("fuser") || desc_lower.contains("belt") || desc_lower.contains("kit") {
+            } else if desc_lower.contains("fuser") || desc_lower.contains("belt") || desc_lower.contains("kit") || desc_lower.contains("transfer") {
                 "maintenance".to_string()
             } else if desc_lower.contains("ink") {
                 "ink".to_string()
@@ -338,6 +345,69 @@ fn supply_type_label(type_code: Option<i64>, description: &str) -> String {
             }
         }
     }
+}
+
+pub fn is_primary_toner_or_ink(supply_type: &str, description: &str) -> bool {
+    let desc = description.to_lowercase();
+    if desc.contains("waste")
+        || desc.contains("drum")
+        || desc.contains("belt")
+        || desc.contains("fuser")
+        || desc.contains("transfer")
+        || desc.contains("collector")
+        || desc.contains("maintenance")
+        || desc.contains("cleaner")
+        || desc.contains("roller")
+    {
+        return false;
+    }
+    matches!(supply_type, "toner" | "ink" | "toner-cartridge" | "ink-cartridge")
+}
+
+pub fn parse_brother_maintenance_bytes(data: &[u8]) -> BTreeMap<String, u8> {
+    let mut exact_pct = BTreeMap::new();
+    let mut scaled_pct = BTreeMap::new();
+
+    let mut i = 0;
+    while i + 7 <= data.len() {
+        let tag = data[i];
+        if data[i + 1] == 0x01 && data[i + 2] == 0x04 {
+            let raw = u32::from_be_bytes([data[i + 3], data[i + 4], data[i + 5], data[i + 6]]);
+            match tag {
+                0x81 | 0x82 | 0x83 | 0x84 => {
+                    let color = match tag {
+                        0x81 => "black",
+                        0x82 => "cyan",
+                        0x83 => "magenta",
+                        _ => "yellow",
+                    };
+                    if raw <= 100 {
+                        exact_pct.insert(color.to_string(), raw as u8);
+                    }
+                }
+                0x6F | 0x70 | 0x71 | 0x72 => {
+                    let color = match tag {
+                        0x6F => "black",
+                        0x70 => "cyan",
+                        0x71 => "magenta",
+                        _ => "yellow",
+                    };
+                    let pct = (raw / 100).min(100) as u8;
+                    scaled_pct.insert(color.to_string(), pct);
+                }
+                _ => {}
+            }
+            i += 7;
+        } else {
+            i += 1;
+        }
+    }
+
+    for (color, pct) in scaled_pct {
+        exact_pct.entry(color).or_insert(pct);
+    }
+
+    exact_pct
 }
 
 fn compute_percent(level: i32, max_capacity: i32) -> Option<u8> {
@@ -386,27 +456,29 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         vec![1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 1, 1],       // hrPrinterStatus.1
         vec![1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1],   // prtConsoleDisplayBufferText.1.1
         vec![1, 3, 6, 1, 2, 1, 1, 1, 0],                 // sysDescr.0
+        vec![1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0], // Brother brInfoMaintenance
     ];
 
     let resp = snmp_request(&sock, community, req_id, 0xA0, &general_oids).await?;
     req_id += 1;
 
     let mut sys_descr = None;
+    let mut brother_toner_pcts = BTreeMap::<String, u8>::new();
     for (oid, val) in resp {
         let Some(v) = val else { continue };
         if oid == [1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1] {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                details.detected_model = Some(s.to_string());
+                details.detected_model = Some(s);
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1] {
             if details.detected_model.is_none()
                 && let Some(s) = v.as_str().filter(|s| !s.is_empty())
             {
-                details.detected_model = Some(s.to_string());
+                details.detected_model = Some(s);
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 17, 1] {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                details.serial_number = Some(s.to_string());
+                details.serial_number = Some(s);
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 4, 1, 1] {
             if let Some(c) = v.as_i64().filter(|&c| c >= 0) {
@@ -427,11 +499,15 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1] {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                details.status_message = Some(s.to_string());
+                details.status_message = Some(s);
             }
         } else if oid == [1, 3, 6, 1, 2, 1, 1, 1, 0] {
             if let Some(s) = v.as_str().filter(|s| !s.is_empty()) {
-                sys_descr = Some(s.to_string());
+                sys_descr = Some(s);
+            }
+        } else if oid == [1, 3, 6, 1, 4, 1, 2435, 2, 3, 9, 4, 2, 1, 5, 5, 8, 0] {
+            if let Some(bytes) = v.as_bytes() {
+                brother_toner_pcts = parse_brother_maintenance_bytes(bytes);
             }
         }
     }
@@ -539,8 +615,8 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     }
 
     for (_instance, raw) in supplies_map {
-        let level = raw.level.unwrap_or(-2);
-        let max_capacity = raw.max_capacity.unwrap_or(100);
+        let mut level = raw.level.unwrap_or(-2);
+        let mut max_capacity = raw.max_capacity.unwrap_or(100);
         let colorant_str = raw
             .colorant_idx
             .and_then(|idx| u32::try_from(idx).ok())
@@ -561,9 +637,21 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
                     .unwrap_or_else(|| "Toner Supply".to_string())
             });
 
-        let color = infer_supply_color(&desc, colorant_str);
         let supply_type = supply_type_label(raw.supply_type, &desc);
-        let percent = compute_percent(level, max_capacity);
+        if !is_primary_toner_or_ink(&supply_type, &desc) {
+            continue;
+        }
+
+        let color = infer_supply_color(&desc, colorant_str);
+        let mut percent = compute_percent(level, max_capacity);
+
+        if percent.is_none()
+            && let Some(&br_pct) = brother_toner_pcts.get(&color)
+        {
+            percent = Some(br_pct);
+            level = br_pct as i32;
+            max_capacity = 100;
+        }
 
         details.toners.push(TonerSupply {
             name: desc,
@@ -573,6 +661,26 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
             percent,
             supply_type,
         });
+    }
+
+    if details.toners.is_empty() && !brother_toner_pcts.is_empty() {
+        for (color, label) in [
+            ("black", "Black Toner Cartridge"),
+            ("cyan", "Cyan Toner Cartridge"),
+            ("magenta", "Magenta Toner Cartridge"),
+            ("yellow", "Yellow Toner Cartridge"),
+        ] {
+            if let Some(&pct) = brother_toner_pcts.get(color) {
+                details.toners.push(TonerSupply {
+                    name: label.to_string(),
+                    color: color.to_string(),
+                    level: pct as i32,
+                    max_capacity: 100,
+                    percent: Some(pct),
+                    supply_type: "toner".to_string(),
+                });
+            }
+        }
     }
 
     Some(details)
@@ -760,6 +868,9 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
             .get(i)
             .cloned()
             .unwrap_or_else(|| "toner".to_string());
+        if !is_primary_toner_or_ink(&supply_type, &name) {
+            continue;
+        }
         let percent = compute_percent(level, max_capacity);
 
         details.toners.push(TonerSupply {
@@ -898,6 +1009,29 @@ mod tests {
         assert_eq!(compute_percent(1500, 3000), Some(50));
         assert_eq!(compute_percent(-3, 100), None);
         assert_eq!(compute_percent(-2, -2), None);
+
+        assert!(is_primary_toner_or_ink("toner", "Black Toner Cartridge"));
+        assert!(is_primary_toner_or_ink("toner", "Cyan Cartridge HP CF211A"));
+        assert!(!is_primary_toner_or_ink("waste_toner", "Waste Toner Box"));
+        assert!(!is_primary_toner_or_ink("maintenance", "Belt Unit"));
+        assert!(!is_primary_toner_or_ink("drum", "Black Drum Unit"));
+
+        // Verify Brother HL-L3240CDW brInfoMaintenance hex blob parsing
+        let brother_blob: Vec<u8> = vec![
+            0x70, 0x01, 0x04, 0x00, 0x00, 0x22, 0x60,
+            0x82, 0x01, 0x04, 0x00, 0x00, 0x00, 0x5a,
+            0x71, 0x01, 0x04, 0x00, 0x00, 0x22, 0xc4,
+            0x83, 0x01, 0x04, 0x00, 0x00, 0x00, 0x5a,
+            0x72, 0x01, 0x04, 0x00, 0x00, 0x1f, 0xa4,
+            0x84, 0x01, 0x04, 0x00, 0x00, 0x00, 0x5a,
+            0x6f, 0x01, 0x04, 0x00, 0x00, 0x1c, 0x20,
+            0x81, 0x01, 0x04, 0x00, 0x00, 0x00, 0x50,
+        ];
+        let parsed_br = parse_brother_maintenance_bytes(&brother_blob);
+        assert_eq!(parsed_br.get("black"), Some(&80));
+        assert_eq!(parsed_br.get("cyan"), Some(&90));
+        assert_eq!(parsed_br.get("magenta"), Some(&90));
+        assert_eq!(parsed_br.get("yellow"), Some(&90));
     }
 
     #[test]

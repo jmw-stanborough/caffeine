@@ -6,6 +6,7 @@
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
   import PrinterCard from "./printer-card.svelte";
+  import PrinterDetailModal from "./printer-detail-modal.svelte";
   import PrinterModal from "./printer-modal.svelte";
   import { PrinterStore } from "./printers.svelte";
   import type { Printer } from "./types";
@@ -15,8 +16,17 @@
 
   let isModalOpen = $state(false);
   let editingPrinter = $state<Printer | undefined>(undefined);
+  let isDetailModalOpen = $state(false);
+  let detailPrinterId = $state<string | null>(null);
   let isNocMode = $state(false);
   let cardScale = $state(1);
+
+  let detailPrinter = $derived(
+    detailPrinterId ? store.items.find((p) => p.id === detailPrinterId) : undefined
+  );
+  let detailPrinterState = $derived(
+    detailPrinterId ? store.statusMap[detailPrinterId] : undefined
+  );
 
   let activeWebPrinter = $state<Printer | null>(null);
   let webviewUrl = $state("");
@@ -29,8 +39,12 @@
   }
 
   async function setNocMode(active: boolean) {
-    if (active && activeWebPrinter) {
-      await closeWebInterface();
+    if (active) {
+      isDetailModalOpen = false;
+      isModalOpen = false;
+      if (activeWebPrinter) {
+        await closeWebInterface();
+      }
     }
     isNocMode = active;
     try {
@@ -67,6 +81,7 @@
 
   async function openWebInterface(printer: Printer) {
     if (isNocMode) return;
+    isDetailModalOpen = false;
     webviewError = null;
     activeWebPrinter = printer;
     webviewUrl = resolvePrinterUrl(printer);
@@ -138,8 +153,15 @@
     }
   }
 
+  function openDetailModal(printer: Printer) {
+    if (isNocMode) return;
+    detailPrinterId = printer.id;
+    isDetailModalOpen = true;
+  }
+
   async function openEditModal(printer?: Printer) {
     if (isNocMode) return;
+    isDetailModalOpen = false;
     if (activeWebPrinter) {
       await closeWebInterface();
     }
@@ -152,7 +174,11 @@
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (activeWebPrinter) {
+        if (isModalOpen) {
+          isModalOpen = false;
+        } else if (isDetailModalOpen) {
+          isDetailModalOpen = false;
+        } else if (activeWebPrinter) {
           closeWebInterface();
         } else if (isNocMode) {
           setNocMode(false);
@@ -273,7 +299,8 @@
   <div
     class="page-container"
     class:noc-layout={isNocMode}
-    style:--card-min-height="{15.5 * cardScale}rem"
+    style:--card-min-width="{24 * cardScale}rem"
+    style:--noc-min-width="{20 * cardScale}rem"
     style:--card-font-scale={cardScale}
   >
     <header class="page-header">
@@ -340,17 +367,11 @@
               {printer}
               nocMode={isNocMode}
               status={printerState?.status ?? "checking"}
-              latencyMs={printerState?.latencyMs}
-              lastEvent={printerState?.lastEvent}
-              lastEventAt={printerState?.lastEventAt}
               toners={printerState?.toners ?? []}
               detectedModel={printerState?.detectedModel}
-              serialNumber={printerState?.serialNumber}
-              pageCount={printerState?.pageCount}
               printerState={printerState?.printerState}
-              statusMessage={printerState?.statusMessage}
-              now={store.now}
-              onclick={() => openWebInterface(printer)}
+              onclick={() => openDetailModal(printer)}
+              onwebui={() => openWebInterface(printer)}
               onconfigure={() => openEditModal(printer)}
             />
           </div>
@@ -374,6 +395,24 @@
     {/if}
   </div>
 {/if}
+
+<PrinterDetailModal
+  bind:open={isDetailModalOpen}
+  printer={detailPrinter}
+  status={detailPrinterState?.status ?? "checking"}
+  latencyMs={detailPrinterState?.latencyMs}
+  lastEvent={detailPrinterState?.lastEvent}
+  lastEventAt={detailPrinterState?.lastEventAt}
+  toners={detailPrinterState?.toners ?? []}
+  detectedModel={detailPrinterState?.detectedModel}
+  serialNumber={detailPrinterState?.serialNumber}
+  pageCount={detailPrinterState?.pageCount}
+  printerState={detailPrinterState?.printerState}
+  statusMessage={detailPrinterState?.statusMessage}
+  now={store.now}
+  onwebui={(p) => openWebInterface(p)}
+  onconfigure={(p) => openEditModal(p)}
+/>
 
 <PrinterModal
   bind:open={isModalOpen}
@@ -402,20 +441,25 @@
 
   .page-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
+    gap: 0.6rem 1rem;
   }
 
   .header-titles {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 1rem;
+    gap: 0.25rem 0.75rem;
+    min-width: 0;
   }
 
   .header-actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-shrink: 0;
   }
 
   .page-title {
@@ -423,11 +467,13 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--color-text);
+    white-space: nowrap;
   }
 
   .printer-count {
     font-size: 0.9rem;
     color: var(--color-text-muted);
+    white-space: nowrap;
   }
 
   .zoom-controls {
@@ -435,6 +481,7 @@
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.375rem;
     overflow: hidden;
+    flex-shrink: 0;
   }
 
   .btn-zoom {
@@ -446,6 +493,7 @@
     font-weight: 700;
     line-height: 1;
     cursor: pointer;
+    white-space: nowrap;
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 
@@ -467,6 +515,8 @@
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
     transition: all 0.15s ease;
   }
 
@@ -476,30 +526,29 @@
     border-color: var(--color-text-muted);
   }
 
-  /* Printer cards take up half of their container's width (2 columns) */
+  /* Auto-fill responsive layout: cards take up strictly the space needed while looking uniform */
   .printer-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-width, 24rem)), 1fr));
+    grid-auto-rows: auto;
+    align-items: stretch;
+    gap: 1rem;
     width: 100%;
     outline: none;
   }
 
-  @media (max-width: 900px) {
-    .printer-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
   .printer-grid.noc-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--noc-min-width, 20rem)), 1fr));
+    grid-auto-rows: auto;
+    align-items: stretch;
+    gap: 1.25rem;
   }
 
   .drag-wrapper,
   .add-card-wrapper {
+    width: 100%;
     height: 100%;
-    min-height: var(--card-min-height, 15.5rem);
+    display: flex;
     outline: none;
   }
 
@@ -528,13 +577,13 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.45rem;
-    min-height: var(--card-min-height, 15.5rem);
+    gap: 0.35rem;
+    min-height: 5rem;
     height: 100%;
     width: 100%;
     box-sizing: border-box;
     margin: 0;
-    padding: 1.5rem;
+    padding: 0.85rem 1.1rem;
     background-color: transparent;
     border: 2px dashed var(--color-border);
     border-radius: 0.5rem;
@@ -555,19 +604,20 @@
   }
 
   .plus-icon {
-    font-size: calc(2.25rem * var(--card-font-scale, 1));
+    font-size: calc(1.5rem * var(--card-font-scale, 1));
     font-weight: 300;
     line-height: 1;
   }
 
   .add-title {
-    font-size: calc(1.05rem * var(--card-font-scale, 1));
+    font-size: calc(0.95rem * var(--card-font-scale, 1));
     font-weight: 600;
   }
 
   .add-subtitle {
-    font-size: calc(0.8rem * var(--card-font-scale, 1));
+    font-size: calc(0.75rem * var(--card-font-scale, 1));
     opacity: 0.75;
+    text-align: center;
   }
 
   .status-message {
@@ -586,11 +636,12 @@
 
   .webview-toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    height: 48px;
-    padding-inline: 1rem;
+    gap: 0.5rem 1rem;
+    min-height: 48px;
+    padding: 0.4rem 1rem;
     background-color: var(--color-surface);
     border-bottom: solid var(--width-border) var(--color-border);
     flex-shrink: 0;
@@ -601,6 +652,7 @@
     align-items: center;
     gap: 0.85rem;
     min-width: 0;
+    flex: 1;
   }
 
   .btn-back {
@@ -612,6 +664,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
     flex-shrink: 0;
     transition: border-color 0.15s ease, color 0.15s ease;
   }
@@ -651,6 +704,8 @@
   .toolbar-label {
     font-size: 0.95rem;
     color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
@@ -669,6 +724,7 @@
 
   .toolbar-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.45rem;
     flex-shrink: 0;
@@ -699,6 +755,7 @@
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
     transition: all 0.15s ease;
   }
 
