@@ -61,6 +61,8 @@ pub struct PrinterStatusEvent {
     pub status_message: Option<String>,
     pub paper_jam: bool,
     pub out_of_paper: bool,
+    pub is_color: Option<bool>,
+    pub is_duplex: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

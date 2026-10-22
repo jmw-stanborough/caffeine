@@ -1,5 +1,7 @@
 <script lang="ts">
   import {
+    getPrinterColorTag,
+    getPrinterDuplexTag,
     hasOutOfPaper,
     hasPaperJam,
     inferPrinterMake,
@@ -17,6 +19,8 @@
     statusMessage = undefined,
     paperJam = false,
     outOfPaper = false,
+    isColor = undefined,
+    isDuplex = undefined,
   }: {
     printer?: Printer;
     toners?: TonerSupply[];
@@ -26,6 +30,8 @@
     statusMessage?: string;
     paperJam?: boolean;
     outOfPaper?: boolean;
+    isColor?: boolean;
+    isDuplex?: boolean;
   } = $props();
 
   let makeTag = $derived(inferPrinterMake(printer, detectedModel, detectedMake));
@@ -33,9 +39,29 @@
   let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
   let hasEmptyToner = $derived(toners.some(isEmptyToner));
   let hasLowToner = $derived(toners.some(isLowToner));
+  let colorTag = $derived(
+    getPrinterColorTag(printer, {
+      status: "online",
+      toners,
+      detectedMake,
+      detectedModel,
+      isColor,
+      isDuplex,
+    }),
+  );
+  let duplexTag = $derived(
+    getPrinterDuplexTag(printer, {
+      status: "online",
+      toners,
+      detectedMake,
+      detectedModel,
+      isColor,
+      isDuplex,
+    }),
+  );
 </script>
 
-{#if makeTag || printer?.location || printerState || isJammed || isNoPaper || hasEmptyToner || hasLowToner}
+{#if makeTag || printer?.location || printerState || isJammed || isNoPaper || hasEmptyToner || hasLowToner || colorTag || duplexTag}
   <div class="tags-row">
     {#if makeTag}
       <span class="printer-tag tag-make" title="Make: {makeTag}">{makeTag}</span>
@@ -58,6 +84,12 @@
     {#if hasLowToner}
       <span class="printer-tag tag-warning" title="One or more cartridges are low on toner">Toner Low</span>
     {/if}
+    {#if colorTag}
+      <span class="printer-tag tag-capability" title="Color capability: {colorTag}">{colorTag}</span>
+    {/if}
+    {#if duplexTag}
+      <span class="printer-tag tag-capability" title="Duplex capability: {duplexTag}">{duplexTag}</span>
+    {/if}
   </div>
 {/if}
 
@@ -77,7 +109,8 @@
 
   .tag-make,
   .tag-state,
-  .tag-location {
+  .tag-location,
+  .tag-capability {
     background-color: color-mix(in srgb, var(--color-base) 65%, transparent);
     color: var(--color-text);
     border-color: var(--color-border);

@@ -3,9 +3,9 @@ pub mod ipp;
 pub mod parsers;
 
 pub use parsers::{
-    clean_vendor_name, extract_printer_make, infer_supply_color, is_out_of_paper_text,
-    is_paper_jam_text, is_primary_toner_or_ink, parse_brother_maintenance_bytes,
-    parse_hr_error_state,
+    clean_vendor_name, extract_printer_make, infer_capabilities_from_model, infer_supply_color,
+    is_out_of_paper_text, is_paper_jam_text, is_primary_toner_or_ink,
+    parse_brother_maintenance_bytes, parse_hr_error_state,
 };
 
 use super::types::{TonerSupply, normalize_snmp_community};
@@ -24,6 +24,7 @@ const INITIAL_SNMP_REQUEST_ID: i32 = 100;
 const MAX_SUPPLY_WALK_STEPS: usize = 16;
 const MAX_COLORANT_WALK_STEPS: usize = 8;
 const MAX_ALERT_WALK_STEPS: usize = 8;
+const MAX_MEDIA_PATH_WALK_STEPS: usize = 8;
 
 const OID_SYS_DESCR: &[u32] = &[1, 3, 6, 1, 2, 1, 1, 1, 0];
 const OID_HR_DEVICE_DESCR: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1];
@@ -34,6 +35,7 @@ const OID_PRT_GENERAL_PRINTER_NAME: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16
 const OID_PRT_GENERAL_SERIAL_NUMBER: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 17, 1];
 const OID_PRT_INPUT_VENDOR_NAME: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 8, 2, 1, 14, 1, 1];
 const OID_PRT_MARKER_LIFE_COUNT: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 4, 1, 1];
+const OID_PRT_MARKER_PROCESS_COLORANTS: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 6, 1, 1];
 const OID_PRT_CONSOLE_LINE_1: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 1];
 const OID_PRT_CONSOLE_LINE_2: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 16, 5, 1, 2, 1, 2];
 const OID_ENT_PHYSICAL_MFG_NAME: &[u32] = &[1, 3, 6, 1, 2, 1, 47, 1, 1, 1, 1, 12, 1];
@@ -54,6 +56,11 @@ const SUPPLY_WALK_COLUMNS: &[u32] = &[
 ];
 
 const OID_PRT_MARKER_COLORANT_VALUE: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 12, 1, 1, 4];
+
+const OID_PRT_MEDIA_PATH_ENTRY: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 13, 4, 1];
+const MEDIA_PATH_COL_TYPE: u32 = 9;
+const MEDIA_PATH_COL_DESCRIPTION: u32 = 10;
+const MEDIA_PATH_WALK_COLUMNS: &[u32] = &[MEDIA_PATH_COL_TYPE, MEDIA_PATH_COL_DESCRIPTION];
 
 const OID_PRT_ALERT_ENTRY: &[u32] = &[1, 3, 6, 1, 2, 1, 43, 18, 1, 1];
 const ALERT_COL_SEVERITY: u32 = 2;
@@ -85,6 +92,8 @@ pub struct PrinterPollDetails {
     pub status_message: Option<String>,
     pub paper_jam: bool,
     pub out_of_paper: bool,
+    pub is_color: Option<bool>,
+    pub is_duplex: Option<bool>,
 }
 
 impl PrinterPollDetails {
@@ -104,6 +113,12 @@ impl PrinterPollDetails {
         if self.status_message.is_none() {
             self.status_message = ipp_data.status_message;
         }
+        if self.is_color.is_none() {
+            self.is_color = ipp_data.is_color;
+        }
+        if self.is_duplex.is_none() {
+            self.is_duplex = ipp_data.is_duplex;
+        }
         self.paper_jam |= ipp_data.paper_jam;
         self.out_of_paper |= ipp_data.out_of_paper;
     }
@@ -121,6 +136,7 @@ async fn poll_general_info(
         OID_PRT_GENERAL_PRINTER_NAME,
         OID_PRT_GENERAL_SERIAL_NUMBER,
         OID_PRT_MARKER_LIFE_COUNT,
+        OID_PRT_MARKER_PROCESS_COLORANTS,
         OID_HR_PRINTER_STATUS,
         OID_HR_PRINTER_ERROR_STATE,
         OID_PRT_CONSOLE_LINE_1,
@@ -161,6 +177,14 @@ async fn poll_general_info(
             details.serial_number = v.as_str().filter(|s| !s.is_empty());
         } else if oid_slice == OID_PRT_MARKER_LIFE_COUNT {
             details.page_count = v.as_i64().filter(|&c| c >= 0).map(|c| c as u64);
+        } else if oid_slice == OID_PRT_MARKER_PROCESS_COLORANTS {
+            if let Some(c) = v.as_i64() {
+                if c > 1 {
+                    details.is_color = Some(true);
+                } else if c == 1 {
+                    details.is_color = Some(false);
+                }
+            }
         } else if oid_slice == OID_HR_PRINTER_STATUS {
             if let Some(st) = v.as_i64() {
                 hr_printer_status = Some(st);
@@ -378,6 +402,32 @@ async fn poll_supplies(
             }
         }
     }
+
+    if details.is_color.is_none() {
+        let has_cmy_toner = details.toners.iter().any(|t| {
+            matches!(t.color.as_str(), "cyan" | "magenta" | "yellow")
+        });
+        if has_cmy_toner {
+            details.is_color = Some(true);
+        } else if !colorants.is_empty() {
+            let has_cmy_colorant = colorants.values().any(|val| {
+                let v = val.to_lowercase();
+                v.contains("cyan") || v.contains("magenta") || v.contains("yellow")
+            });
+            if has_cmy_colorant {
+                details.is_color = Some(true);
+            } else if colorants.values().any(|v| v.to_lowercase().contains("black")) {
+                details.is_color = Some(false);
+            }
+        } else if !details.toners.is_empty() {
+            let only_black = details.toners.iter().all(|t| {
+                matches!(t.color.as_str(), "black" | "waste" | "drum" | "maintenance")
+            });
+            if only_black {
+                details.is_color = Some(false);
+            }
+        }
+    }
 }
 
 async fn poll_alerts(
@@ -446,6 +496,101 @@ async fn poll_alerts(
     }
 }
 
+async fn poll_media_paths(
+    sock: &UdpSocket,
+    community: &str,
+    req_id: &mut i32,
+    details: &mut PrinterPollDetails,
+) {
+    #[derive(Default)]
+    struct RawMediaPath {
+        path_type: Option<i64>,
+        description: Option<String>,
+    }
+
+    let mut paths_map: BTreeMap<Vec<u32>, RawMediaPath> = BTreeMap::new();
+    snmp_walk_columns(
+        sock,
+        community,
+        req_id,
+        OID_PRT_MEDIA_PATH_ENTRY,
+        MEDIA_PATH_WALK_COLUMNS,
+        MAX_MEDIA_PATH_WALK_STEPS,
+        |instance_key, col, val| {
+            let entry = paths_map.entry(instance_key).or_default();
+            match col {
+                MEDIA_PATH_COL_TYPE => entry.path_type = val.as_i64(),
+                MEDIA_PATH_COL_DESCRIPTION => entry.description = val.as_str(),
+                _ => {}
+            }
+        },
+    )
+    .await;
+
+    let mut has_duplex = false;
+    let mut has_simplex = false;
+
+    for (_instance, raw) in paths_map {
+        let is_duplex_type = matches!(raw.path_type, Some(3 | 4));
+        let is_duplex_desc = raw
+            .description
+            .as_deref()
+            .map(|d| d.to_lowercase().contains("duplex"))
+            .unwrap_or(false);
+
+        if is_duplex_type || is_duplex_desc {
+            has_duplex = true;
+        }
+
+        let is_simplex_type = raw.path_type == Some(5);
+        let is_simplex_desc = raw
+            .description
+            .as_deref()
+            .map(|d| d.to_lowercase().contains("simplex"))
+            .unwrap_or(false);
+
+        if is_simplex_type || is_simplex_desc {
+            has_simplex = true;
+        }
+    }
+
+    if has_duplex {
+        details.is_duplex = Some(true);
+    } else if has_simplex {
+        details.is_duplex = Some(false);
+    }
+}
+
+fn apply_capability_fallbacks(details: &mut PrinterPollDetails) {
+    if details.is_color.is_none() {
+        let has_cmy_toner = details.toners.iter().any(|t| {
+            matches!(t.color.as_str(), "cyan" | "magenta" | "yellow")
+        });
+        if has_cmy_toner {
+            details.is_color = Some(true);
+        } else if !details.toners.is_empty() {
+            let only_black = details.toners.iter().all(|t| {
+                matches!(t.color.as_str(), "black" | "waste" | "drum" | "maintenance")
+            });
+            if only_black {
+                details.is_color = Some(false);
+            }
+        }
+    }
+
+    let (inferred_color, inferred_duplex) = infer_capabilities_from_model(
+        details.detected_model.as_deref(),
+        details.status_message.as_deref(),
+    );
+
+    if details.is_color.is_none() {
+        details.is_color = inferred_color;
+    }
+    if details.is_duplex.is_none() {
+        details.is_duplex = inferred_duplex;
+    }
+}
+
 async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     let host_owned = host.to_string();
     let target_addr = tokio::task::spawn_blocking(move || {
@@ -481,6 +626,7 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
         &mut details,
     )
     .await;
+    poll_media_paths(&sock, community, &mut req_id, &mut details).await;
     poll_alerts(&sock, community, &mut req_id, &mut details).await;
 
     Some(details)
@@ -489,15 +635,21 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
 pub async fn poll_printer_details(host: &str, community: &str) -> PrinterPollDetails {
     let comm = normalize_snmp_community(community);
 
-    if let Some(mut snmp_data) = poll_snmp(host, comm).await {
-        if snmp_data.toners.is_empty()
+    let mut details = if let Some(mut snmp_data) = poll_snmp(host, comm).await {
+        if (snmp_data.toners.is_empty()
+            || snmp_data.is_color.is_none()
+            || snmp_data.is_duplex.is_none())
             && let Some(ipp_data) = poll_ipp(host).await
         {
             snmp_data.merge_ipp_fallback(ipp_data);
         }
-        return snmp_data;
-    }
+        snmp_data
+    } else {
+        poll_ipp(host).await.unwrap_or_default()
+    };
 
-    poll_ipp(host).await.unwrap_or_default()
+    apply_capability_fallbacks(&mut details);
+
+    details
 }
 

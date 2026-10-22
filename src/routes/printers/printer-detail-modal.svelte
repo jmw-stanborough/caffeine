@@ -22,6 +22,8 @@
     statusMessage = undefined,
     paperJam = false,
     outOfPaper = false,
+    isColor = undefined,
+    isDuplex = undefined,
     now = Date.now(),
     onwebui,
     onconfigure,
@@ -41,6 +43,8 @@
     statusMessage?: string;
     paperJam?: boolean;
     outOfPaper?: boolean;
+    isColor?: boolean;
+    isDuplex?: boolean;
     now?: number;
     onwebui?: (printer: Printer) => void;
     onconfigure?: (printer: Printer) => void;
@@ -153,6 +157,8 @@
           {statusMessage}
           {paperJam}
           {outOfPaper}
+          {isColor}
+          {isDuplex}
         />
 
         <div class="host-line">

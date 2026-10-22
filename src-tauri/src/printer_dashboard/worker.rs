@@ -71,6 +71,12 @@ impl PrinterTracker {
             if new_details.printer_state.is_some() {
                 self.cached_details.printer_state = new_details.printer_state;
             }
+            if new_details.is_color.is_some() {
+                self.cached_details.is_color = new_details.is_color;
+            }
+            if new_details.is_duplex.is_some() {
+                self.cached_details.is_duplex = new_details.is_duplex;
+            }
             if poll_succeeded {
                 self.cached_details.status_message = new_details.status_message;
                 self.cached_details.paper_jam = new_details.paper_jam;
@@ -248,6 +254,8 @@ pub fn start_printer_worker(app: AppHandle) {
                     status_message: current.cached_details.status_message.clone(),
                     paper_jam: current.cached_details.paper_jam,
                     out_of_paper: current.cached_details.out_of_paper,
+                    is_color: current.cached_details.is_color,
+                    is_duplex: current.cached_details.is_duplex,
                 };
 
                 let _ = app.emit(PRINTER_STATUS_EVENT_NAME, event);

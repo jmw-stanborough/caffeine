@@ -14,6 +14,8 @@
     statusMessage = undefined,
     paperJam = false,
     outOfPaper = false,
+    isColor = undefined,
+    isDuplex = undefined,
     nocMode = false,
     onclick,
     onwebui,
@@ -28,6 +30,8 @@
     statusMessage?: string;
     paperJam?: boolean;
     outOfPaper?: boolean;
+    isColor?: boolean;
+    isDuplex?: boolean;
     nocMode?: boolean;
     onclick?: () => void;
     onwebui?: () => void;
@@ -124,6 +128,8 @@
     {statusMessage}
     {paperJam}
     {outOfPaper}
+    {isColor}
+    {isDuplex}
   />
 </div>
 

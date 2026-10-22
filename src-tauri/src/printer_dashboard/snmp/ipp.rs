@@ -63,6 +63,9 @@ fn build_ipp_get_attributes_request(host: &str) -> Vec<u8> {
         "printer-state-reasons",
         "printer-state-message",
         "printer-impressions-completed",
+        "color-supported",
+        "print-color-mode-supported",
+        "sides-supported",
     ];
     for (idx, attr) in requested.iter().enumerate() {
         let attr_name = if idx == 0 { "requested-attributes" } else { "" };
@@ -95,6 +98,10 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
     let mut marker_types: Vec<String> = Vec::new();
     let mut marker_levels: Vec<i32> = Vec::new();
     let mut marker_highs: Vec<i32> = Vec::new();
+    let mut has_ipp_color_mode = false;
+    let mut has_ipp_mono_mode = false;
+    let mut has_ipp_duplex = false;
+    let mut has_ipp_simplex = false;
     let mut details = PrinterPollDetails::default();
 
     while pos < ipp_bytes.len() {
@@ -222,6 +229,36 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
                     details.page_count = Some(c as u64);
                 }
             }
+            "color-supported" => {
+                if tag == 0x22 && !val_bytes.is_empty() {
+                    details.is_color = Some(val_bytes[0] != 0);
+                } else {
+                    let s = String::from_utf8_lossy(val_bytes).trim().to_lowercase();
+                    if s == "true" {
+                        details.is_color = Some(true);
+                    } else if s == "false" {
+                        details.is_color = Some(false);
+                    }
+                }
+            }
+            "print-color-mode-supported" => {
+                let mode = String::from_utf8_lossy(val_bytes).trim().to_lowercase();
+                if mode.contains("color") {
+                    has_ipp_color_mode = true;
+                }
+                if mode.contains("monochrome") || mode.contains("mono") {
+                    has_ipp_mono_mode = true;
+                }
+            }
+            "sides-supported" => {
+                let side = String::from_utf8_lossy(val_bytes).trim().to_lowercase();
+                if side.contains("two-sided") || side.contains("duplex") {
+                    has_ipp_duplex = true;
+                }
+                if side.contains("one-sided") || side.contains("simplex") {
+                    has_ipp_simplex = true;
+                }
+            }
             _ => {}
         }
     }
@@ -258,12 +295,42 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
         });
     }
 
+    if details.is_color.is_none() {
+        if has_ipp_color_mode {
+            details.is_color = Some(true);
+        } else if has_ipp_mono_mode {
+            details.is_color = Some(false);
+        } else if !details.toners.is_empty() {
+            let has_cmy_toner = details.toners.iter().any(|t| {
+                matches!(t.color.as_str(), "cyan" | "magenta" | "yellow")
+            });
+            if has_cmy_toner {
+                details.is_color = Some(true);
+            } else {
+                let only_black = details.toners.iter().all(|t| {
+                    matches!(t.color.as_str(), "black" | "waste" | "drum" | "maintenance")
+                });
+                if only_black {
+                    details.is_color = Some(false);
+                }
+            }
+        }
+    }
+
+    if has_ipp_duplex {
+        details.is_duplex = Some(true);
+    } else if has_ipp_simplex {
+        details.is_duplex = Some(false);
+    }
+
     if details.toners.is_empty()
         && details.detected_make.is_none()
         && details.detected_model.is_none()
         && details.printer_state.is_none()
         && !details.paper_jam
         && !details.out_of_paper
+        && details.is_color.is_none()
+        && details.is_duplex.is_none()
     {
         None
     } else {
@@ -299,4 +366,56 @@ pub async fn poll_ipp(host: &str) -> Option<PrinterPollDetails> {
     })
     .await
     .ok()?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_test_ipp_packet(attributes: &[(u8, &str, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&[0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        buf.push(IPP_TAG_OPERATION_ATTRIBUTES);
+
+        for &(tag, name, val) in attributes {
+            buf.push(tag);
+            buf.extend_from_slice(&(name.len() as u16).to_be_bytes());
+            buf.extend_from_slice(name.as_bytes());
+            buf.extend_from_slice(&(val.len() as u16).to_be_bytes());
+            buf.extend_from_slice(val);
+        }
+
+        buf.push(IPP_TAG_END_OF_ATTRIBUTES);
+        buf
+    }
+
+    #[test]
+    fn test_parse_ipp_color_and_duplex_capabilities() {
+        let attrs = vec![
+            (0x44, "printer-make-and-model", b"Brother HL-L3240CDW" as &[u8]),
+            (0x22, "color-supported", &[0x01]),
+            (0x44, "sides-supported", b"one-sided"),
+            (0x44, "", b"two-sided-long-edge"),
+        ];
+        let packet = build_test_ipp_packet(&attrs);
+        let parsed = parse_ipp_response(&packet).expect("valid response");
+
+        assert_eq!(parsed.detected_model, Some("Brother HL-L3240CDW".to_string()));
+        assert_eq!(parsed.is_color, Some(true));
+        assert_eq!(parsed.is_duplex, Some(true));
+    }
+
+    #[test]
+    fn test_parse_ipp_mono_and_simplex_capabilities() {
+        let attrs = vec![
+            (0x44, "printer-make-and-model", b"HP LaserJet 1020" as &[u8]),
+            (0x22, "color-supported", &[0x00]),
+            (0x44, "sides-supported", b"one-sided"),
+        ];
+        let packet = build_test_ipp_packet(&attrs);
+        let parsed = parse_ipp_response(&packet).expect("valid response");
+
+        assert_eq!(parsed.is_color, Some(false));
+        assert_eq!(parsed.is_duplex, Some(false));
+    }
 }

@@ -406,6 +406,62 @@ pub fn extract_printer_make(text: &str) -> Option<String> {
     None
 }
 
+pub fn infer_capabilities_from_model(
+    model: Option<&str>,
+    description: Option<&str>,
+) -> (Option<bool>, Option<bool>) {
+    let combined = format!(
+        "{} {}",
+        model.unwrap_or(""),
+        description.unwrap_or("")
+    )
+    .to_lowercase();
+
+    let is_color = if combined.contains("color")
+        || combined.contains("colour")
+        || combined.contains("cdw")
+        || combined.contains("cdn")
+    {
+        Some(true)
+    } else if combined.contains("mono") || combined.contains("monochrome") {
+        Some(false)
+    } else {
+        None
+    };
+
+    let is_duplex = if combined.contains("duplex") {
+        Some(true)
+    } else if combined.contains("simplex") {
+        Some(false)
+    } else {
+        let mut has_duplex = false;
+        for token in combined.split(|c: char| !c.is_alphanumeric() && c != '-') {
+            let t = token.trim();
+            if t.len() >= 2 {
+                if t.ends_with("dn")
+                    || t.ends_with("dw")
+                    || t.ends_with("cdw")
+                    || t.ends_with("fdw")
+                    || t.ends_with("dne")
+                    || t.ends_with("dni")
+                    || t.ends_with("dwt")
+                    || t.ends_with("-d")
+                {
+                    has_duplex = true;
+                    break;
+                }
+            }
+        }
+        if has_duplex {
+            Some(true)
+        } else {
+            None
+        }
+    };
+
+    (is_color, is_duplex)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,5 +582,22 @@ mod tests {
             Some("Sharp".to_string())
         );
         assert_eq!(clean_vendor_name("RICOH"), Some("RICOH".to_string()));
+
+        assert_eq!(
+            infer_capabilities_from_model(Some("Brother HL-L3240CDW series"), None),
+            (Some(true), Some(true))
+        );
+        assert_eq!(
+            infer_capabilities_from_model(Some("HP LaserJet P2055dn"), Some("Office mono printer")),
+            (Some(false), Some(true))
+        );
+        assert_eq!(
+            infer_capabilities_from_model(Some("Brother HL-1110"), Some("Simplex monochrome desktop")),
+            (Some(false), Some(false))
+        );
+        assert_eq!(
+            infer_capabilities_from_model(Some("HP LaserJet 200 color M251n"), None),
+            (Some(true), None)
+        );
     }
 }

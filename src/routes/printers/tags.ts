@@ -33,6 +33,10 @@ export const PREMADE_TAGS = [
   "Out of Paper",
   "Toner Empty",
   "Toner Low",
+  "Colour",
+  "Mono",
+  "Simplex",
+  "Duplex",
 ] as const;
 
 export function isFailureTag(tag: string): boolean {
@@ -46,6 +50,49 @@ export function isFailureTag(tag: string): boolean {
 
 export function isWarningTag(tag: string): boolean {
   return tag.trim().toLowerCase() === "toner low";
+}
+
+export function getPrinterColorTag(
+  printer?: Printer,
+  state?: PrinterState,
+): "Colour" | "Mono" | undefined {
+  if (state?.isColor !== undefined) {
+    return state.isColor ? "Colour" : "Mono";
+  }
+  if (state?.toners && state.toners.length > 0) {
+    const hasColor = state.toners.some((t) => {
+      const c = t.color.toLowerCase();
+      return c === "cyan" || c === "magenta" || c === "yellow";
+    });
+    if (hasColor) return "Colour";
+    const hasBlack = state.toners.some((t) => t.color.toLowerCase() === "black");
+    if (hasBlack) return "Mono";
+  }
+  const text = `${printer?.model ?? ""} ${state?.detectedModel ?? ""} ${printer?.description ?? ""}`.toLowerCase();
+  if (text.includes("color") || text.includes("colour") || /\b(cdw|cdn)\b/i.test(text)) {
+    return "Colour";
+  }
+  if (text.includes("mono") || text.includes("monochrome")) {
+    return "Mono";
+  }
+  return undefined;
+}
+
+export function getPrinterDuplexTag(
+  printer?: Printer,
+  state?: PrinterState,
+): "Duplex" | "Simplex" | undefined {
+  if (state?.isDuplex !== undefined) {
+    return state.isDuplex ? "Duplex" : "Simplex";
+  }
+  const text = `${printer?.model ?? ""} ${state?.detectedModel ?? ""} ${printer?.description ?? ""}`.toLowerCase();
+  if (text.includes("duplex") || /\b[a-z0-9-]*\d[a-z]*(dn|dw|cdw|fdw|dne|dni|dwt|d)\b/i.test(text)) {
+    return "Duplex";
+  }
+  if (text.includes("simplex")) {
+    return "Simplex";
+  }
+  return undefined;
 }
 
 export function getPrinterTags(
@@ -87,6 +134,16 @@ export function getPrinterTags(
     tags.push("Toner Low");
   }
 
+  const colorTag = getPrinterColorTag(printer, state);
+  if (colorTag) {
+    tags.push(colorTag);
+  }
+
+  const duplexTag = getPrinterDuplexTag(printer, state);
+  if (duplexTag) {
+    tags.push(duplexTag);
+  }
+
   return tags;
 }
 
@@ -97,6 +154,19 @@ export function normalizeTagLabel(
   const trimmed = rawTag.trim();
   if (!trimmed) return "";
   const lower = trimmed.toLowerCase();
+
+  if (lower === "color" || lower === "colour") {
+    return "Colour";
+  }
+  if (lower === "mono" || lower === "monochrome") {
+    return "Mono";
+  }
+  if (lower === "duplex") {
+    return "Duplex";
+  }
+  if (lower === "simplex") {
+    return "Simplex";
+  }
 
   for (const premade of PREMADE_TAGS) {
     if (premade.toLowerCase() === lower) {
@@ -121,6 +191,18 @@ function tagMatchesPrinter(
   for (const pTag of printerTags) {
     const pLower = pTag.toLowerCase();
     if (pLower === filterTagLower || pLower.includes(filterTagLower)) {
+      return true;
+    }
+    if (
+      (filterTagLower === "color" && pLower === "colour") ||
+      (filterTagLower === "colour" && pLower === "color")
+    ) {
+      return true;
+    }
+    if (
+      (filterTagLower === "monochrome" && pLower === "mono") ||
+      (filterTagLower === "mono" && pLower === "monochrome")
+    ) {
       return true;
     }
   }

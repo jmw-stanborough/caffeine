@@ -43,6 +43,8 @@ export class PrinterStore extends MonitorStore<
         status_message,
         paper_jam,
         out_of_paper,
+        is_color,
+        is_duplex,
       } = payload;
       const previousState = this.statusMap[printer_id];
 
@@ -60,6 +62,8 @@ export class PrinterStore extends MonitorStore<
         statusMessage: status_message,
         paperJam: paper_jam ?? false,
         outOfPaper: out_of_paper ?? false,
+        isColor: is_color ?? previousState?.isColor,
+        isDuplex: is_duplex ?? previousState?.isDuplex,
       };
     });
   }

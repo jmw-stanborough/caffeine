@@ -225,6 +225,8 @@
               statusMessage={printerState?.statusMessage}
               paperJam={printerState?.paperJam ?? false}
               outOfPaper={printerState?.outOfPaper ?? false}
+              isColor={printerState?.isColor}
+              isDuplex={printerState?.isDuplex}
               onclick={() => openDetailModal(printer)}
               onwebui={() => openWebInterface(printer)}
               onconfigure={() => openEditModal(printer)}
@@ -267,6 +269,8 @@
   statusMessage={detailPrinterState?.statusMessage}
   paperJam={detailPrinterState?.paperJam ?? false}
   outOfPaper={detailPrinterState?.outOfPaper ?? false}
+  isColor={detailPrinterState?.isColor}
+  isDuplex={detailPrinterState?.isDuplex}
   now={store.now}
   onwebui={(p) => openWebInterface(p)}
   onconfigure={(p) => openEditModal(p)}

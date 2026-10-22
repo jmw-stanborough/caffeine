@@ -37,6 +37,8 @@ export interface PrinterStatusTick {
   status_message?: string;
   paper_jam?: boolean;
   out_of_paper?: boolean;
+  is_color?: boolean;
+  is_duplex?: boolean;
 }
 
 export interface PrinterState {
@@ -53,6 +55,8 @@ export interface PrinterState {
   statusMessage?: string;
   paperJam?: boolean;
   outOfPaper?: boolean;
+  isColor?: boolean;
+  isDuplex?: boolean;
 }
 
 export interface PrinterLog {
