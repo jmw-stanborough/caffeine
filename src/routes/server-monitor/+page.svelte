@@ -118,14 +118,15 @@
       onfinalize={(e) => store.reorderServers(e.detail.items)}
     >
       {#each store.items as server (server.id)}
+        {@const hostState = store.statusMap[server.id]}
         <div animate:flip={{ duration: 200 }} class="drag-wrapper">
           <ServerCard
             {server}
             nocMode={isNocMode}
-            status={store.statusMap[server.host]?.status ?? "checking"}
-            latencyMs={store.statusMap[server.host]?.latencyMs}
-            lastEvent={store.statusMap[server.host]?.lastEvent}
-            lastEventAt={store.statusMap[server.host]?.lastEventAt}
+            status={hostState?.status ?? "checking"}
+            latencyMs={hostState?.latencyMs}
+            lastEvent={hostState?.lastEvent}
+            lastEventAt={hostState?.lastEventAt}
             now={store.now}
             onclick={() => openEditModal(server)}
           />
@@ -276,15 +277,15 @@
     align-items: center;
     padding: 0.75rem 1rem;
     border-radius: 0.375rem;
-    background-color: color-mix(in srgb, var(--color-error) 15%, transparent);
-    color: var(--color-error);
-    border: solid var(--width-border) var(--color-error);
+    background-color: color-mix(in srgb, var(--color-failure) 15%, transparent);
+    color: var(--color-failure);
+    border: solid var(--width-border) var(--color-failure);
   }
 
   .btn-retry {
     background: transparent;
-    border: solid var(--width-border) var(--color-error);
-    color: var(--color-error);
+    border: solid var(--width-border) var(--color-failure);
+    color: var(--color-failure);
     padding: 0.25rem 0.5rem;
     border-radius: 0.25rem;
     cursor: pointer;

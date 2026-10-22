@@ -366,7 +366,7 @@
   }
 
   .history-state.error {
-    color: var(--color-error);
+    color: var(--color-failure);
   }
 
   .log-list {
@@ -401,8 +401,8 @@
   }
 
   .log-badge.disconnected {
-    color: var(--color-error);
-    background-color: color-mix(in srgb, var(--color-error) 15%, transparent);
+    color: var(--color-failure);
+    background-color: color-mix(in srgb, var(--color-failure) 15%, transparent);
   }
 
   .log-details {
@@ -473,8 +473,8 @@
 
   .btn-delete {
     background-color: transparent;
-    border: solid var(--width-border) var(--color-error);
-    color: var(--color-error);
+    border: solid var(--width-border) var(--color-failure);
+    color: var(--color-failure);
     padding: 0.45rem 0.85rem;
     border-radius: 0.375rem;
     font-size: 0.85rem;
@@ -483,7 +483,7 @@
   }
 
   .btn-delete.confirming {
-    background-color: var(--color-error);
+    background-color: var(--color-failure);
     color: var(--color-base);
   }
 

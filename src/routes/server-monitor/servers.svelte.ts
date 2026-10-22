@@ -11,6 +11,7 @@ export class ServerStore {
 
   private unlistenStatus: UnlistenFn | null = null;
   private timer: number | null = null;
+  private destroyed = false;
   private soundDown =
     typeof Audio !== "undefined"
       ? new Audio("/sound-files/server-monitor/down.mp3")
@@ -21,18 +22,20 @@ export class ServerStore {
       : null;
 
   async init() {
+    this.destroyed = false;
     await this.fetchServers();
+    if (this.destroyed) return;
 
     this.timer = window.setInterval(() => {
       this.now = Date.now();
     }, 10_000);
 
-    this.unlistenStatus = await listen<ServerStatusTick>(
+    const unlisten = await listen<ServerStatusTick>(
       "server-status-tick",
       (event) => {
-        const { host, status, latency_ms, last_event, last_event_at } =
+        const { server_id, status, latency_ms, last_event, last_event_at } =
           event.payload;
-        const previousState = this.statusMap[host];
+        const previousState = this.statusMap[server_id];
 
         if (previousState && previousState.status !== "checking") {
           if (previousState.status === "online" && status === "offline") {
@@ -51,7 +54,7 @@ export class ServerStore {
           }
         }
 
-        this.statusMap[host] = {
+        this.statusMap[server_id] = {
           status,
           latencyMs: latency_ms,
           lastEvent:
@@ -61,12 +64,21 @@ export class ServerStore {
         };
       },
     );
+
+    if (this.destroyed) {
+      unlisten();
+    } else {
+      this.unlistenStatus = unlisten;
+    }
   }
 
   destroy() {
+    this.destroyed = true;
     this.unlistenStatus?.();
+    this.unlistenStatus = null;
     if (this.timer !== null) {
       clearInterval(this.timer);
+      this.timer = null;
     }
   }
 
@@ -100,17 +112,12 @@ export class ServerStore {
   }
 
   async deleteServer(idToDelete: string) {
-    const target = this.items.find((s) => s.id === idToDelete);
     const backup = this.items;
     this.items = this.items.filter((s) => s.id !== idToDelete);
 
     try {
       this.items = await invoke<Server[]>("delete_server", { id: idToDelete });
-      if (target && !this.items.some((s) => s.host === target.host)) {
-        const nextStatus = { ...this.statusMap };
-        delete nextStatus[target.host];
-        this.statusMap = nextStatus;
-      }
+      delete this.statusMap[idToDelete];
     } catch (err) {
       this.errorMessage = String(err);
       this.items = backup;
@@ -133,7 +140,9 @@ export class ServerStore {
     this.items = sanitized;
 
     try {
-      await invoke("reorder_servers", { servers: sanitized });
+      this.items = await invoke<Server[]>("reorder_servers", {
+        servers: sanitized,
+      });
     } catch (err) {
       this.errorMessage = String(err);
       this.items = previous;

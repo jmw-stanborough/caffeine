@@ -1,5 +1,5 @@
 use super::types::{Agent, Server, ServerLog};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -67,9 +67,8 @@ fn migrate_legacy_json(app: &AppHandle, conn: &Connection) -> Result<(), String>
         return Ok(());
     }
 
-    let config_dir = match app.path().config_dir() {
-        Ok(dir) => dir,
-        Err(_) => return Ok(()),
+    let Ok(config_dir) = app.path().config_dir() else {
+        return Ok(());
     };
 
     let json_path = config_dir
@@ -77,13 +76,8 @@ fn migrate_legacy_json(app: &AppHandle, conn: &Connection) -> Result<(), String>
         .join("server-monitor")
         .join("settings.json");
 
-    if !json_path.exists() {
+    let Ok(contents) = fs::read_to_string(&json_path) else {
         return Ok(());
-    }
-
-    let contents = match fs::read_to_string(&json_path) {
-        Ok(c) => c,
-        Err(_) => return Ok(()),
     };
 
     #[derive(serde::Deserialize)]
@@ -132,13 +126,7 @@ pub fn get_servers(conn: &Connection) -> Result<Vec<Server>, String> {
         .query_map([], |row| {
             let port: Option<u16> = row.get(4)?;
             let key: Option<String> = row.get(5)?;
-            let agent = match (port, key) {
-                (Some(p), Some(k)) => Some(Agent {
-                    port: p,
-                    api_key: k,
-                }),
-                _ => None,
-            };
+            let agent = port.zip(key).map(|(port, api_key)| Agent { port, api_key });
 
             Ok(Server {
                 id: row.get(0)?,
@@ -150,18 +138,16 @@ pub fn get_servers(conn: &Connection) -> Result<Vec<Server>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    let mut out = Vec::new();
-    for item in rows {
-        out.push(item.map_err(|e| e.to_string())?);
-    }
-    Ok(out)
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 pub fn insert_server(conn: &Connection, server: &Server) -> Result<(), String> {
-    let mut srv = server.clone();
-    if srv.id.is_empty() {
-        srv.id = uuid::Uuid::new_v4().to_string();
-    }
+    let id = if server.id.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        server.id.clone()
+    };
 
     let next_order: i64 = conn
         .query_row(
@@ -171,17 +157,17 @@ pub fn insert_server(conn: &Connection, server: &Server) -> Result<(), String> {
         )
         .unwrap_or(0);
 
-    let port = srv.agent.as_ref().map(|a| a.port as i64);
-    let key = srv.agent.as_ref().map(|a| a.api_key.as_str());
+    let port = server.agent.as_ref().map(|a| a.port as i64);
+    let key = server.agent.as_ref().map(|a| a.api_key.as_str());
 
     conn.execute(
         "INSERT INTO servers (id, host, label, description, agent_port, agent_api_key, sort_order)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
-            srv.id,
-            srv.host,
-            srv.label,
-            srv.description,
+            id,
+            server.host,
+            server.label,
+            server.description,
             port,
             key,
             next_order
@@ -241,38 +227,27 @@ pub fn add_log_entry(
     )
     .map_err(|e| e.to_string())?;
 
-    let timestamp: String = conn
-        .query_row(
-            "SELECT timestamp FROM server_logs WHERE id = last_insert_rowid()",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-
-    Ok(timestamp)
+    conn.query_row(
+        "SELECT timestamp FROM server_logs WHERE id = last_insert_rowid()",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
 }
 
 pub fn get_latest_log(
     conn: &Connection,
     server_id: &str,
 ) -> Result<Option<(String, String)>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT event_type, timestamp FROM server_logs
-             WHERE server_id = ?1
-             ORDER BY id DESC LIMIT 1",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let mut rows = stmt
-        .query_map(params![server_id], |row| Ok((row.get(0)?, row.get(1)?)))
-        .map_err(|e| e.to_string())?;
-
-    if let Some(res) = rows.next() {
-        Ok(Some(res.map_err(|e| e.to_string())?))
-    } else {
-        Ok(None)
-    }
+    conn.query_row(
+        "SELECT event_type, timestamp FROM server_logs
+         WHERE server_id = ?1
+         ORDER BY id DESC LIMIT 1",
+        params![server_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
 }
 
 pub fn query_logs(
@@ -303,9 +278,6 @@ pub fn query_logs(
         })
         .map_err(|e| e.to_string())?;
 
-    let mut logs = Vec::new();
-    for log in rows {
-        logs.push(log.map_err(|e| e.to_string())?);
-    }
-    Ok(logs)
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }

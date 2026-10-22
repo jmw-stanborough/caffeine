@@ -114,8 +114,6 @@
 
   .server-card.noc {
     cursor: default;
-    min-height: var(--card-min-height, 8.5rem);
-    padding: 1rem;
   }
 
   .server-card.noc .card-main {
@@ -138,28 +136,21 @@
 
   .server-card.online {
     --status-color: var(--color-success);
-    background-color: color-mix(in srgb, var(--status-color) 32%, var(--color-surface));
-  }
-
-  .server-card.online:hover {
-    background-color: color-mix(in srgb, var(--status-color) 42%, var(--color-surface));
   }
 
   .server-card.degraded {
     --status-color: var(--color-warning);
-    background-color: color-mix(in srgb, var(--status-color) 32%, var(--color-surface));
-  }
-
-  .server-card.degraded:hover {
-    background-color: color-mix(in srgb, var(--status-color) 42%, var(--color-surface));
   }
 
   .server-card.offline {
-    --status-color: var(--color-error);
+    --status-color: var(--color-failure);
+  }
+
+  .server-card:is(.online, .degraded, .offline) {
     background-color: color-mix(in srgb, var(--status-color) 32%, var(--color-surface));
   }
 
-  .server-card.offline:hover {
+  .server-card:is(.online, .degraded, .offline):hover {
     background-color: color-mix(in srgb, var(--status-color) 42%, var(--color-surface));
   }
 
@@ -219,9 +210,10 @@
     font-size: calc(0.8rem * var(--card-font-scale, 1));
     color: var(--color-text);
     overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     line-clamp: 2;
-    display: box;
-    box-orient: vertical;
   }
 
   .card-footer {
