@@ -189,3 +189,15 @@ export function parseStatusChips(statusMessage?: string): StatusChip[] {
 
   return chips;
 }
+
+export function getPrinterIssues(state?: Partial<PrinterState>): string[] {
+  const issues: string[] = [];
+  if (state?.status === "offline") issues.push("Offline");
+  if (hasPaperJam(state)) issues.push("Paper jam");
+  if (hasOutOfPaper(state)) issues.push("Out of paper");
+  for (const toner of state?.toners ?? []) {
+    if (isEmptyToner(toner)) issues.push(` empty`);
+    else if (isLowToner(toner)) issues.push(` low`);
+  }
+  return issues;
+}
