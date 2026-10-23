@@ -195,9 +195,7 @@ export function getPrinterIssues(state?: Partial<PrinterState>): string[] {
   if (state?.status === "offline") issues.push("Offline");
   if (hasPaperJam(state)) issues.push("Paper jam");
   if (hasOutOfPaper(state)) issues.push("Out of paper");
-  for (const toner of state?.toners ?? []) {
-    if (isEmptyToner(toner)) issues.push(` empty`);
-    else if (isLowToner(toner)) issues.push(` low`);
-  }
+  if (hasEmptyTonerSupply(state?.toners)) issues.push("Toner empty");
+  if (hasLowTonerSupply(state?.toners)) issues.push("Toner low");
   return issues;
 }
