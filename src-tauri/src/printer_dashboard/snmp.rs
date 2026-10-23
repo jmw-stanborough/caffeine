@@ -24,6 +24,7 @@ pub struct PrinterPollDetails {
     pub toners: Vec<TonerSupply>,
     pub detected_make: Option<String>,
     pub detected_model: Option<String>,
+    pub detected_location: Option<String>,
     pub serial_number: Option<String>,
     pub page_count: Option<u64>,
     pub printer_state: Option<String>,
@@ -44,6 +45,9 @@ impl PrinterPollDetails {
         }
         if self.detected_model.is_none() {
             self.detected_model = ipp_data.detected_model;
+        }
+        if self.detected_location.is_none() {
+            self.detected_location = ipp_data.detected_location;
         }
         if self.printer_state.is_none() {
             self.printer_state = ipp_data.printer_state;

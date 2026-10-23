@@ -147,22 +147,38 @@ pub fn query_printer_logs(
     )
 }
 
-/// Persists the SNMP-detected model string only if the user has not manually configured a model.
+fn update_printer_field_if_empty(
+    conn: &Connection,
+    id: &str,
+    column: &str,
+    value: &str,
+) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let sql = format!(
+        "UPDATE printers SET {column} = ?1 WHERE id = ?2 AND ({column} IS NULL OR trim({column}) = '')"
+    );
+    conn.execute(&sql, params![trimmed, id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn update_printer_detected_model(
     conn: &Connection,
     id: &str,
     detected_model: &str,
 ) -> Result<(), String> {
-    let trimmed = detected_model.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-    conn.execute(
-        "UPDATE printers SET model = ?1 WHERE id = ?2 AND (model IS NULL OR trim(model) = '')",
-        params![trimmed, id],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
+    update_printer_field_if_empty(conn, id, "model", detected_model)
+}
+
+pub fn update_printer_detected_location(
+    conn: &Connection,
+    id: &str,
+    detected_location: &str,
+) -> Result<(), String> {
+    update_printer_field_if_empty(conn, id, "location", detected_location)
 }
 
 pub fn get_printer_filter_tags(conn: &Connection) -> Result<PrinterFilterConfig, String> {
@@ -317,6 +333,29 @@ mod tests {
         update_printer_detected_model(&conn, "p2", "SHARP BP-50C26").unwrap();
         let after_detect = get_printers(&conn).unwrap();
         assert_eq!(after_detect[0].model.as_deref(), Some("SHARP BP-50C26"));
+
+        update_printer_detected_location(&conn, "p2", "Overridden Room").unwrap();
+        let p2_after_loc_attempt = get_printers(&conn).unwrap();
+        assert_eq!(p2_after_loc_attempt[0].location.as_deref(), Some("Room 302"));
+
+        let p3 = Printer {
+            id: "p3".to_string(),
+            host: "192.168.1.52".to_string(),
+            label: "Warehouse Printer".to_string(),
+            description: None,
+            model: None,
+            location: None,
+            snmp_community: "public".to_string(),
+            web_url: None,
+        };
+        insert_printer(&conn, &p3).unwrap();
+        update_printer_detected_location(&conn, "p3", "Warehouse Dock 4").unwrap();
+        let p3_after_detect = get_printers(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|p| p.id == "p3")
+            .unwrap();
+        assert_eq!(p3_after_detect.location.as_deref(), Some("Warehouse Dock 4"));
 
         let initial_filters = get_printer_filter_tags(&conn).unwrap();
         assert!(initial_filters.all_tags.is_empty());

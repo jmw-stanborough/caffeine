@@ -1,4 +1,5 @@
 pub const OID_SYS_DESCR: &[u32] = &[1, 3, 6, 1, 2, 1, 1, 1, 0];
+pub const OID_SYS_LOCATION: &[u32] = &[1, 3, 6, 1, 2, 1, 1, 6, 0];
 pub const OID_HR_DEVICE_DESCR: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1];
 pub const OID_HR_DEVICE_STATUS: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 5, 1];
 pub const OID_HR_PRINTER_STATUS: &[u32] = &[1, 3, 6, 1, 2, 1, 25, 3, 5, 1, 1, 1];

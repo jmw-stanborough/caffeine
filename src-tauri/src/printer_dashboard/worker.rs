@@ -1,6 +1,6 @@
 use super::db::{
     PRINTER_ID_COLUMN, PRINTER_LOGS_TABLE, add_printer_log_entry, get_printers,
-    update_printer_detected_model,
+    update_printer_detected_location, update_printer_detected_model,
 };
 use super::snmp::{PrinterPollDetails, poll_printer_details};
 use super::types::PrinterStatusEvent;
@@ -54,6 +54,7 @@ impl PrinterTracker {
             // supply table walk from completing, while still updating any fields that succeeded.
             let poll_succeeded = new_details.detected_make.is_some()
                 || new_details.detected_model.is_some()
+                || new_details.detected_location.is_some()
                 || new_details.printer_state.is_some()
                 || new_details.page_count.is_some()
                 || new_details.paper_jam
@@ -64,6 +65,9 @@ impl PrinterTracker {
             }
             if new_details.detected_model.is_some() {
                 self.cached_details.detected_model = new_details.detected_model;
+            }
+            if new_details.detected_location.is_some() {
+                self.cached_details.detected_location = new_details.detected_location;
             }
             if new_details.page_count.is_some() {
                 self.cached_details.page_count = new_details.page_count;
@@ -176,16 +180,26 @@ pub fn start_printer_worker(app: AppHandle) {
 
                 let db = app.state::<DbState>();
 
-                if let Some(ref details) = maybe_details
-                    && let Some(ref detected) = details.detected_model
-                {
-                    match db.0.lock() {
-                        Ok(conn) => {
-                            if let Err(e) = update_printer_detected_model(&conn, &printer_id, detected) {
-                                eprintln!("Failed to update detected model for printer {printer_id}: {e}");
+                if let Some(ref details) = maybe_details {
+                    if let Some(ref detected) = details.detected_model {
+                        match db.0.lock() {
+                            Ok(conn) => {
+                                if let Err(e) = update_printer_detected_model(&conn, &printer_id, detected) {
+                                    eprintln!("Failed to update detected model for printer {printer_id}: {e}");
+                                }
                             }
+                            Err(e) => eprintln!("Database lock error updating detected model: {e}"),
                         }
-                        Err(e) => eprintln!("Database lock error updating detected model: {e}"),
+                    }
+                    if let Some(ref detected_loc) = details.detected_location {
+                        match db.0.lock() {
+                            Ok(conn) => {
+                                if let Err(e) = update_printer_detected_location(&conn, &printer_id, detected_loc) {
+                                    eprintln!("Failed to update detected location for printer {printer_id}: {e}");
+                                }
+                            }
+                            Err(e) => eprintln!("Database lock error updating detected location: {e}"),
+                        }
                     }
                 }
 
@@ -289,6 +303,7 @@ pub fn start_printer_worker(app: AppHandle) {
                     toners: current.cached_details.toners.clone(),
                     detected_make: current.cached_details.detected_make.clone(),
                     detected_model: current.cached_details.detected_model.clone(),
+                    detected_location: current.cached_details.detected_location.clone(),
                     serial_number: current.cached_details.serial_number.clone(),
                     page_count: current.cached_details.page_count,
                     printer_state: current.cached_details.printer_state.clone(),

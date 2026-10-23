@@ -59,6 +59,7 @@ fn build_ipp_get_attributes_request(host: &str) -> Vec<u8> {
         "marker-high-levels",
         "printer-device-id",
         "printer-make-and-model",
+        "printer-location",
         "printer-state",
         "printer-state-reasons",
         "printer-state-message",
@@ -176,6 +177,12 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
                         details.detected_make = extract_printer_make(&s);
                     }
                     details.detected_model = Some(s);
+                }
+            }
+            "printer-location" => {
+                let s = String::from_utf8_lossy(val_bytes).trim().to_string();
+                if !s.is_empty() {
+                    details.detected_location = Some(s);
                 }
             }
             "printer-state" if val_len == IPP_INT32_VALUE_LEN => {
@@ -393,6 +400,7 @@ mod tests {
     fn test_parse_ipp_color_and_duplex_capabilities() {
         let attrs = vec![
             (0x44, "printer-make-and-model", b"Brother HL-L3240CDW" as &[u8]),
+            (0x44, "printer-location", b"Room 101" as &[u8]),
             (0x22, "color-supported", &[0x01]),
             (0x44, "sides-supported", b"one-sided"),
             (0x44, "", b"two-sided-long-edge"),
@@ -401,6 +409,7 @@ mod tests {
         let parsed = parse_ipp_response(&packet).expect("valid response");
 
         assert_eq!(parsed.detected_model, Some("Brother HL-L3240CDW".to_string()));
+        assert_eq!(parsed.detected_location, Some("Room 101".to_string()));
         assert_eq!(parsed.is_color, Some(true));
         assert_eq!(parsed.is_duplex, Some(true));
     }

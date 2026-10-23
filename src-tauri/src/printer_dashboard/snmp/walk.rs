@@ -29,6 +29,7 @@ pub async fn poll_general_info(
         OID_PRT_CONSOLE_LINE_1,
         OID_PRT_CONSOLE_LINE_2,
         OID_SYS_DESCR,
+        OID_SYS_LOCATION,
         OID_BROTHER_MAINTENANCE,
         OID_PRT_INPUT_VENDOR_NAME,
         OID_ENT_PHYSICAL_MFG_NAME,
@@ -92,6 +93,8 @@ pub async fn poll_general_info(
             }
         } else if oid_slice == OID_SYS_DESCR {
             sys_descr = v.as_str().filter(|s| !s.is_empty());
+        } else if oid_slice == OID_SYS_LOCATION {
+            details.detected_location = v.as_str().filter(|s| !s.is_empty());
         } else if oid_slice == OID_BROTHER_MAINTENANCE {
             if let Some(bytes) = v.as_bytes() {
                 brother_toner_pcts = parse_brother_maintenance_bytes(bytes);
