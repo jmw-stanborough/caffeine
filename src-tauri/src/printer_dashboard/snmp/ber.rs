@@ -327,8 +327,6 @@ pub async fn snmp_request(
     parse_snmp_response(&buf[..n])
 }
 
-/// Walks multiple columns of an SNMP conceptual table in parallel using `GetNextRequest` PDUs,
-/// invoking `on_cell(instance_suffix, column_id, value)` for each matching cell.
 pub async fn snmp_walk_columns<F>(
     sock: &UdpSocket,
     community: &str,
