@@ -136,24 +136,28 @@ fn migrate_printer_filter_tags_table(conn: &Connection) -> Result<(), String> {
 fn migrate_legacy_json(app: &AppHandle, conn: &Connection) -> Result<(), String> {
     let count: i64 = conn
         .query_row("SELECT count(*) FROM servers", [], |row| row.get(0))
-        .unwrap_or(0);
+        .map_err(|e| format!("Failed to query servers count: {e}"))?;
 
     if count > 0 {
         return Ok(());
     }
 
-    let Ok(config_dir) = app.path().config_dir() else {
-        return Ok(());
-    };
+    let config_dir = app
+        .path()
+        .config_dir()
+        .map_err(|e| format!("Failed to resolve config dir: {e}"))?;
 
     let json_path = config_dir
         .join(APP_DIR_NAME)
         .join(LEGACY_MONITOR_DIR)
         .join(LEGACY_SETTINGS_FILE);
 
-    let Ok(contents) = fs::read_to_string(&json_path) else {
+    if !json_path.exists() {
         return Ok(());
-    };
+    }
+
+    let contents = fs::read_to_string(&json_path)
+        .map_err(|e| format!("Failed to read legacy settings file {json_path:?}: {e}"))?;
 
     #[derive(serde::Deserialize)]
     struct LegacySettings {
@@ -161,26 +165,28 @@ fn migrate_legacy_json(app: &AppHandle, conn: &Connection) -> Result<(), String>
         servers: Vec<Server>,
     }
 
-    if let Ok(settings) = serde_json::from_str::<LegacySettings>(&contents) {
-        for (idx, srv) in settings.servers.into_iter().enumerate() {
-            let id = ensure_entity_id(&srv.id);
-            let agent_port = srv.agent.as_ref().map(|a| a.port as i64);
-            let agent_api = srv.agent.as_ref().map(|a| a.api_key.as_str());
+    let settings = serde_json::from_str::<LegacySettings>(&contents)
+        .map_err(|e| format!("Failed to parse legacy settings JSON: {e}"))?;
 
-            let _ = conn.execute(
-                "INSERT OR IGNORE INTO servers (id, host, label, description, agent_port, agent_api_key, sort_order)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    id,
-                    srv.host,
-                    srv.label,
-                    srv.description,
-                    agent_port,
-                    agent_api,
-                    idx as i64
-                ],
-            );
-        }
+    for (idx, srv) in settings.servers.into_iter().enumerate() {
+        let id = ensure_entity_id(&srv.id);
+        let agent_port = srv.agent.as_ref().map(|a| a.port as i64);
+        let agent_api = srv.agent.as_ref().map(|a| a.api_key.as_str());
+
+        conn.execute(
+            "INSERT OR IGNORE INTO servers (id, host, label, description, agent_port, agent_api_key, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                srv.host,
+                srv.label,
+                srv.description,
+                agent_port,
+                agent_api,
+                idx as i64
+            ],
+        )
+        .map_err(|e| format!("Failed to migrate legacy server record: {e}"))?;
     }
 
     Ok(())
@@ -194,9 +200,10 @@ pub fn ensure_entity_id(id: &str) -> String {
     }
 }
 
-pub fn next_sort_order(conn: &Connection, table: &str) -> i64 {
+pub fn next_sort_order(conn: &Connection, table: &str) -> Result<i64, String> {
     let query = format!("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM {table}");
-    conn.query_row(&query, [], |r| r.get(0)).unwrap_or(0)
+    conn.query_row(&query, [], |r| r.get(0))
+        .map_err(|e| format!("Failed to calculate next sort order for {table}: {e}"))
 }
 
 pub fn delete_by_id(conn: &Connection, table: &str, id: &str) -> Result<(), String> {
@@ -303,8 +310,6 @@ where
         .map_err(|e| e.to_string())
 }
 
-/// Retrieves the most recent persisted connection event for an entity, or records an initial
-/// event if none exists yet.
 pub fn resolve_initial_event(
     db: &DbState,
     table: &str,
@@ -312,22 +317,20 @@ pub fn resolve_initial_event(
     entity_id: &str,
     default_event: &str,
     latency_ms: Option<u64>,
-) -> (String, String) {
-    let Ok(conn) = db.0.lock() else {
-        return (default_event.to_string(), String::new());
-    };
+) -> Result<(String, String), String> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|e| format!("Database lock poisoned: {e}"))?;
 
-    if let Some((ev, at)) = get_latest_log_entry(&conn, table, fk_column, entity_id).unwrap_or(None)
-    {
-        (ev, at)
+    if let Some((ev, at)) = get_latest_log_entry(&conn, table, fk_column, entity_id)? {
+        Ok((ev, at))
     } else {
-        let at = insert_log_entry(&conn, table, fk_column, entity_id, default_event, latency_ms)
-            .unwrap_or_default();
-        (default_event.to_string(), at)
+        let at = insert_log_entry(&conn, table, fk_column, entity_id, default_event, latency_ms)?;
+        Ok((default_event.to_string(), at))
     }
 }
 
-/// Logs a connection state transition when an entity changes between reachable and offline.
 pub fn record_status_transition(
     db: &DbState,
     table: &str,
@@ -336,15 +339,18 @@ pub fn record_status_transition(
     previous_status: &HealthStatus,
     new_status: &HealthStatus,
     latency_ms: Option<u64>,
-) -> Option<(String, String)> {
+) -> Result<Option<(String, String)>, String> {
     let was_connected = *previous_status != HealthStatus::Offline;
     let is_connected = *new_status != HealthStatus::Offline;
     if was_connected == is_connected {
-        return None;
+        return Ok(None);
     }
 
     let new_event = event_name_for_status(new_status);
-    let conn = db.0.lock().ok()?;
-    let ts = insert_log_entry(&conn, table, fk_column, entity_id, new_event, latency_ms).ok()?;
-    Some((new_event.to_string(), ts))
+    let conn = db
+        .0
+        .lock()
+        .map_err(|e| format!("Database lock poisoned: {e}"))?;
+    let ts = insert_log_entry(&conn, table, fk_column, entity_id, new_event, latency_ms)?;
+    Ok(Some((new_event.to_string(), ts)))
 }

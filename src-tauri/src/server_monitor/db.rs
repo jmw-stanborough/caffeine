@@ -39,7 +39,7 @@ pub fn get_servers(conn: &Connection) -> Result<Vec<Server>, String> {
 
 pub fn insert_server(conn: &Connection, server: &Server) -> Result<(), String> {
     let id = ensure_entity_id(&server.id);
-    let next_order = next_sort_order(conn, SERVERS_TABLE);
+    let next_order = next_sort_order(conn, SERVERS_TABLE)?;
     let port = server.agent.as_ref().map(|a| a.port as i64);
     let key = server.agent.as_ref().map(|a| a.api_key.as_str());
 

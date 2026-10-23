@@ -36,10 +36,21 @@ pub fn start_ping_worker(app: AppHandle) {
         loop {
             let servers = {
                 let db = app.state::<DbState>();
-                db.0.lock()
-                    .ok()
-                    .and_then(|conn| get_servers(&conn).ok())
-                    .unwrap_or_default()
+                let result = {
+                    let conn = match db.0.lock() {
+                        Ok(c) => c,
+                        Err(e) => panic!("Database lock poisoned in server monitor worker: {e}"),
+                    };
+                    get_servers(&conn)
+                };
+                match result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to load servers in monitor worker: {e}");
+                        tokio::time::sleep(WORKER_POLL_INTERVAL).await;
+                        continue;
+                    }
+                }
             };
 
             let active_ids: HashSet<String> = servers.iter().map(|s| s.id.clone()).collect();
@@ -62,7 +73,7 @@ pub fn start_ping_worker(app: AppHandle) {
 
                 let db = app.state::<DbState>();
                 let current = if let Some(existing) = trackers.get_mut(&server_id) {
-                    if let Some((ev, ts)) = record_status_transition(
+                    match record_status_transition(
                         &db,
                         SERVER_LOGS_TABLE,
                         SERVER_ID_COLUMN,
@@ -71,22 +82,34 @@ pub fn start_ping_worker(app: AppHandle) {
                         &status,
                         latency_ms,
                     ) {
-                        existing.last_event = ev;
-                        existing.last_event_at = ts;
+                        Ok(Some((ev, ts))) => {
+                            existing.last_event = ev;
+                            existing.last_event_at = ts;
+                        }
+                        Ok(None) => {}
+                        Err(err) => {
+                            eprintln!("Failed to record status transition for server {server_id}: {err}");
+                        }
                     }
 
                     existing.status = status.clone();
                     existing
                 } else {
                     let event_name = event_name_for_status(&status);
-                    let (last_event, last_event_at) = resolve_initial_event(
+                    let (last_event, last_event_at) = match resolve_initial_event(
                         &db,
                         SERVER_LOGS_TABLE,
                         SERVER_ID_COLUMN,
                         &server_id,
                         event_name,
                         latency_ms,
-                    );
+                    ) {
+                        Ok(pair) => pair,
+                        Err(err) => {
+                            eprintln!("Failed to resolve initial event for server {server_id}: {err}");
+                            (event_name.to_string(), String::new())
+                        }
+                    };
 
                     trackers.entry(server_id.clone()).or_insert(ServerTracker {
                         status: status.clone(),
@@ -104,7 +127,9 @@ pub fn start_ping_worker(app: AppHandle) {
                     last_event_at: Some(current.last_event_at.clone()),
                 };
 
-                let _ = app.emit(SERVER_STATUS_EVENT_NAME, event);
+                if let Err(err) = app.emit(SERVER_STATUS_EVENT_NAME, event) {
+                    eprintln!("Failed to emit server status event: {err}");
+                }
             }
 
             tokio::time::sleep(WORKER_POLL_INTERVAL).await;
