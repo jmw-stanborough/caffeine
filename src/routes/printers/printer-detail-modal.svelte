@@ -53,6 +53,12 @@
   } = $props();
 
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
+  let isConnected = $derived(status === "online" || status === "degraded");
+  let connectionLabel = $derived(
+    lastEvent === "connected" || (isConnected && lastEvent !== "disconnected")
+      ? "Connected"
+      : "Disconnected",
+  );
   let displayModel = $derived(printer?.model || detectedModel);
   let statusChips = $derived(parseStatusChips(statusMessage));
 
@@ -184,9 +190,9 @@
             <span class="serial-tag selectable">SN: {serialNumber}</span>
           {/if}
         </div>
-        {#if lastEvent && lastEventAt}
+        {#if lastEventAt}
           <span class="card-since">
-            {lastEvent === "connected" ? "Connected" : "Disconnected"} {relativeTime}
+            {connectionLabel} {relativeTime}
           </span>
         {/if}
       </div>

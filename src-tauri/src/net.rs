@@ -28,13 +28,16 @@ pub async fn unprivileged_icmp_ping(host: &str) -> Option<u64> {
                 .ip()
         };
 
-        let pinger = Pinger::new().ok()?;
+        let mut pinger = Pinger::new().ok()?;
+        pinger.set_timeout(1000);
         let mut buffer = Buffer::new();
 
-        match pinger.send(ip, &mut buffer) {
-            Ok(rtt) => Some(rtt as u64),
-            Err(_) => None,
+        for _ in 0..2 {
+            if let Ok(rtt) = pinger.send(ip, &mut buffer) {
+                return Some(rtt as u64);
+            }
         }
+        None
     })
     .await
     .ok()?

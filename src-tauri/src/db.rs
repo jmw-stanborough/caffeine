@@ -273,6 +273,24 @@ pub fn get_latest_log_entry(
     .map_err(|e| e.to_string())
 }
 
+pub fn get_latest_connectivity_log_entry(
+    conn: &Connection,
+    table: &str,
+    fk_column: &str,
+    entity_id: &str,
+) -> Result<Option<(String, String)>, String> {
+    let sql = format!(
+        "SELECT event_type, timestamp FROM {table}
+         WHERE {fk_column} = ?1 AND event_type IN ('connected', 'disconnected')
+         ORDER BY id DESC LIMIT 1"
+    );
+    conn.query_row(&sql, params![entity_id], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
 pub fn query_log_entries<T, F>(
     conn: &Connection,
     table: &str,
@@ -315,7 +333,7 @@ pub fn resolve_initial_event(
     table: &str,
     fk_column: &str,
     entity_id: &str,
-    default_event: &str,
+    current_event: &str,
     latency_ms: Option<u64>,
 ) -> Result<(String, String), String> {
     let conn = db
@@ -323,12 +341,14 @@ pub fn resolve_initial_event(
         .lock()
         .map_err(|e| format!("Database lock poisoned: {e}"))?;
 
-    if let Some((ev, at)) = get_latest_log_entry(&conn, table, fk_column, entity_id)? {
-        Ok((ev, at))
-    } else {
-        let at = insert_log_entry(&conn, table, fk_column, entity_id, default_event, latency_ms)?;
-        Ok((default_event.to_string(), at))
+    if let Some((ev, at)) = get_latest_connectivity_log_entry(&conn, table, fk_column, entity_id)? {
+        if ev == current_event {
+            return Ok((ev, at));
+        }
     }
+
+    let at = insert_log_entry(&conn, table, fk_column, entity_id, current_event, latency_ms)?;
+    Ok((current_event.to_string(), at))
 }
 
 pub fn record_status_transition(
@@ -353,4 +373,37 @@ pub fn record_status_transition(
         .map_err(|e| format!("Database lock poisoned: {e}"))?;
     let ts = insert_log_entry(&conn, table, fk_column, entity_id, new_event, latency_ms)?;
     Ok(Some((new_event.to_string(), ts)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_initial_event_filters_non_connectivity_events() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE printer_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                printer_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                latency_ms INTEGER,
+                timestamp TEXT NOT NULL DEFAULT '2026-10-23T08:00:00Z'
+            );
+            ",
+        )
+        .unwrap();
+
+        insert_log_entry(&conn, "printer_logs", "printer_id", "p1", "connected", Some(5)).unwrap();
+        insert_log_entry(&conn, "printer_logs", "printer_id", "p1", "toner empty", None).unwrap();
+
+        let db = DbState(Mutex::new(conn));
+        let (ev, at) = resolve_initial_event(&db, "printer_logs", "printer_id", "p1", "connected", Some(3)).unwrap();
+        assert_eq!(ev, "connected");
+        assert_eq!(at, "2026-10-23T08:00:00Z");
+
+        let (ev2, _) = resolve_initial_event(&db, "printer_logs", "printer_id", "p1", "disconnected", None).unwrap();
+        assert_eq!(ev2, "disconnected");
+    }
 }
