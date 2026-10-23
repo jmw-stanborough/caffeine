@@ -49,7 +49,7 @@ pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
 
 pub fn insert_printer(conn: &Connection, printer: &Printer) -> Result<(), String> {
     let id = ensure_entity_id(&printer.id);
-    let next_order = next_sort_order(conn, PRINTERS_TABLE);
+    let next_order = next_sort_order(conn, PRINTERS_TABLE)?;
     let community = normalize_snmp_community(&printer.snmp_community);
 
     conn.execute(

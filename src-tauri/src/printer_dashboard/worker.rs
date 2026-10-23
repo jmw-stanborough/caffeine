@@ -104,13 +104,19 @@ fn record_alert_transitions(
     current: &PrinterPollDetails,
 ) {
     if !had_jam && current.paper_jam {
-        let _ = add_printer_log_entry(conn, printer_id, EVENT_PAPER_JAM, latency_ms);
+        if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_PAPER_JAM, latency_ms) {
+            eprintln!("Failed to record paper jam event for printer {printer_id}: {e}");
+        }
     }
     if !had_no_paper && current.out_of_paper {
-        let _ = add_printer_log_entry(conn, printer_id, EVENT_OUT_OF_PAPER, latency_ms);
+        if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_OUT_OF_PAPER, latency_ms) {
+            eprintln!("Failed to record out of paper event for printer {printer_id}: {e}");
+        }
     }
     if !had_empty_toner && has_empty_toner(current) {
-        let _ = add_printer_log_entry(conn, printer_id, EVENT_TONER_EMPTY, latency_ms);
+        if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_TONER_EMPTY, latency_ms) {
+            eprintln!("Failed to record toner empty event for printer {printer_id}: {e}");
+        }
     }
 }
 
@@ -122,10 +128,21 @@ pub fn start_printer_worker(app: AppHandle) {
         loop {
             let printers = {
                 let db = app.state::<DbState>();
-                db.0.lock()
-                    .ok()
-                    .and_then(|conn| get_printers(&conn).ok())
-                    .unwrap_or_default()
+                let result = {
+                    let conn = match db.0.lock() {
+                        Ok(c) => c,
+                        Err(e) => panic!("Database lock poisoned in printer worker: {e}"),
+                    };
+                    get_printers(&conn)
+                };
+                match result {
+                    Ok(p) => p,
+                    Err(e) => {
+                        eprintln!("Failed to load printers in worker: {e}");
+                        tokio::time::sleep(WORKER_POLL_INTERVAL).await;
+                        continue;
+                    }
+                }
             };
 
             let active_ids: HashSet<String> = printers.iter().map(|p| p.id.clone()).collect();
@@ -161,9 +178,15 @@ pub fn start_printer_worker(app: AppHandle) {
 
                 if let Some(ref details) = maybe_details
                     && let Some(ref detected) = details.detected_model
-                    && let Ok(conn) = db.0.lock()
                 {
-                    let _ = update_printer_detected_model(&conn, &printer_id, detected);
+                    match db.0.lock() {
+                        Ok(conn) => {
+                            if let Err(e) = update_printer_detected_model(&conn, &printer_id, detected) {
+                                eprintln!("Failed to update detected model for printer {printer_id}: {e}");
+                            }
+                        }
+                        Err(e) => eprintln!("Database lock error updating detected model: {e}"),
+                    }
                 }
 
                 let current = if let Some(existing) = trackers.get_mut(&printer_id) {
@@ -172,7 +195,7 @@ pub fn start_printer_worker(app: AppHandle) {
                     let had_no_paper = existing.cached_details.out_of_paper;
                     let had_empty_toner = has_empty_toner(&existing.cached_details);
 
-                    if let Some((ev, ts)) = record_status_transition(
+                    match record_status_transition(
                         &db,
                         PRINTER_LOGS_TABLE,
                         PRINTER_ID_COLUMN,
@@ -181,52 +204,70 @@ pub fn start_printer_worker(app: AppHandle) {
                         &status,
                         latency_ms,
                     ) {
-                        existing.last_event = ev;
-                        existing.last_event_at = ts;
+                        Ok(Some((ev, ts))) => {
+                            existing.last_event = ev;
+                            existing.last_event_at = ts;
+                        }
+                        Ok(None) => {}
+                        Err(err) => eprintln!("Failed to record status transition for printer {printer_id}: {err}"),
                     }
 
                     existing.status = status.clone();
                     if let Some(new_details) = maybe_details {
                         existing.merge_poll_details(new_details);
 
-                        if is_connected && let Ok(conn) = db.0.lock() {
-                            record_alert_transitions(
-                                &conn,
-                                &printer_id,
-                                latency_ms,
-                                had_jam,
-                                had_no_paper,
-                                had_empty_toner,
-                                &existing.cached_details,
-                            );
+                        if is_connected {
+                            match db.0.lock() {
+                                Ok(conn) => {
+                                    record_alert_transitions(
+                                        &conn,
+                                        &printer_id,
+                                        latency_ms,
+                                        had_jam,
+                                        had_no_paper,
+                                        had_empty_toner,
+                                        &existing.cached_details,
+                                    );
+                                }
+                                Err(e) => eprintln!("Database lock error recording alert transitions: {e}"),
+                            }
                         }
                     }
                     existing
                 } else {
                     let event_name = event_name_for_status(&status);
-                    let (last_event, last_event_at) = resolve_initial_event(
+                    let (last_event, last_event_at) = match resolve_initial_event(
                         &db,
                         PRINTER_LOGS_TABLE,
                         PRINTER_ID_COLUMN,
                         &printer_id,
                         event_name,
                         latency_ms,
-                    );
+                    ) {
+                        Ok(pair) => pair,
+                        Err(err) => {
+                            eprintln!("Failed to resolve initial event for printer {printer_id}: {err}");
+                            (event_name.to_string(), String::new())
+                        }
+                    };
 
                     let poll_time = maybe_details.as_ref().map(|_| Instant::now());
                     let initial_details = maybe_details.unwrap_or_default();
-                    if status != HealthStatus::Offline
-                        && let Ok(conn) = db.0.lock()
-                    {
-                        record_alert_transitions(
-                            &conn,
-                            &printer_id,
-                            latency_ms,
-                            false,
-                            false,
-                            false,
-                            &initial_details,
-                        );
+                    if status != HealthStatus::Offline {
+                        match db.0.lock() {
+                            Ok(conn) => {
+                                record_alert_transitions(
+                                    &conn,
+                                    &printer_id,
+                                    latency_ms,
+                                    false,
+                                    false,
+                                    false,
+                                    &initial_details,
+                                );
+                            }
+                            Err(e) => eprintln!("Database lock error recording initial alert transitions: {e}"),
+                        }
                     }
 
                     trackers.entry(printer_id.clone()).or_insert(PrinterTracker {
@@ -258,7 +299,9 @@ pub fn start_printer_worker(app: AppHandle) {
                     is_duplex: current.cached_details.is_duplex,
                 };
 
-                let _ = app.emit(PRINTER_STATUS_EVENT_NAME, event);
+                if let Err(err) = app.emit(PRINTER_STATUS_EVENT_NAME, event) {
+                    eprintln!("Failed to emit printer status event: {err}");
+                }
             }
 
             tokio::time::sleep(WORKER_POLL_INTERVAL).await;
