@@ -31,6 +31,7 @@ export interface PrinterStatusTick {
   toners: TonerSupply[];
   detected_make?: string;
   detected_model?: string;
+  detected_location?: string;
   serial_number?: string;
   page_count?: number;
   printer_state?: string;
@@ -49,6 +50,7 @@ export interface PrinterState {
   toners: TonerSupply[];
   detectedMake?: string;
   detectedModel?: string;
+  detectedLocation?: string;
   serialNumber?: string;
   pageCount?: number;
   printerState?: string;

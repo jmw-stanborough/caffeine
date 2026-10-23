@@ -16,6 +16,7 @@
     toners = [],
     detectedMake = undefined,
     detectedModel = undefined,
+    detectedLocation = undefined,
     serialNumber = undefined,
     pageCount = undefined,
     printerState = undefined,
@@ -37,6 +38,7 @@
     toners?: TonerSupply[];
     detectedMake?: string;
     detectedModel?: string;
+    detectedLocation?: string;
     serialNumber?: string;
     pageCount?: number;
     printerState?: string;
@@ -153,6 +155,7 @@
           {toners}
           {detectedMake}
           {detectedModel}
+          {detectedLocation}
           {printerState}
           {statusMessage}
           {paperJam}

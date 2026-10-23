@@ -15,6 +15,7 @@
     toners = [],
     detectedMake = undefined,
     detectedModel = undefined,
+    detectedLocation = undefined,
     printerState = undefined,
     statusMessage = undefined,
     paperJam = false,
@@ -26,6 +27,7 @@
     toners?: TonerSupply[];
     detectedMake?: string;
     detectedModel?: string;
+    detectedLocation?: string;
     printerState?: string;
     statusMessage?: string;
     paperJam?: boolean;
@@ -35,6 +37,7 @@
   } = $props();
 
   let makeTag = $derived(inferPrinterMake(printer, detectedModel, detectedMake));
+  let displayLocation = $derived(printer?.location || detectedLocation);
   let isJammed = $derived(hasPaperJam({ paperJam, printerState, statusMessage }));
   let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
   let hasEmptyToner = $derived(toners.some(isEmptyToner));
@@ -61,13 +64,13 @@
   );
 </script>
 
-{#if makeTag || printer?.location || printerState || isJammed || isNoPaper || hasEmptyToner || hasLowToner || colorTag || duplexTag}
+{#if makeTag || displayLocation || printerState || isJammed || isNoPaper || hasEmptyToner || hasLowToner || colorTag || duplexTag}
   <div class="tags-row">
     {#if makeTag}
       <span class="printer-tag tag-make" title="Make: {makeTag}">{makeTag}</span>
     {/if}
-    {#if printer?.location}
-      <span class="printer-tag tag-location" title={printer.location}>{printer.location}</span>
+    {#if displayLocation}
+      <span class="printer-tag tag-location" title={displayLocation}>{displayLocation}</span>
     {/if}
     {#if printerState}
       <span class="printer-tag tag-state">{printerState}</span>

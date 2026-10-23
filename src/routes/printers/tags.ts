@@ -110,8 +110,9 @@ export function getPrinterTags(
     tags.push(make);
   }
 
-  if (printer.location?.trim()) {
-    tags.push(printer.location.trim());
+  const locationTag = printer.location?.trim() || state?.detectedLocation?.trim();
+  if (locationTag) {
+    tags.push(locationTag);
   }
 
   if (state?.printerState?.trim()) {

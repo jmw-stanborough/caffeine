@@ -207,6 +207,7 @@
               toners={printerState?.toners ?? []}
               detectedMake={printerState?.detectedMake}
               detectedModel={printerState?.detectedModel}
+              detectedLocation={printerState?.detectedLocation}
               printerState={printerState?.printerState}
               statusMessage={printerState?.statusMessage}
               paperJam={printerState?.paperJam ?? false}
@@ -249,6 +250,7 @@
   toners={detailPrinterState?.toners ?? []}
   detectedMake={detailPrinterState?.detectedMake}
   detectedModel={detailPrinterState?.detectedModel}
+  detectedLocation={detailPrinterState?.detectedLocation}
   serialNumber={detailPrinterState?.serialNumber}
   pageCount={detailPrinterState?.pageCount}
   printerState={detailPrinterState?.printerState}

@@ -44,6 +44,7 @@ export class PrinterStore extends MonitorStore<
           toners,
           detected_make,
           detected_model,
+          detected_location,
           serial_number,
           page_count,
           printer_state,
@@ -63,6 +64,7 @@ export class PrinterStore extends MonitorStore<
           toners: toners ?? previousState?.toners ?? [],
           detectedMake: detected_make ?? previousState?.detectedMake,
           detectedModel: detected_model ?? previousState?.detectedModel,
+          detectedLocation: detected_location ?? previousState?.detectedLocation,
           serialNumber: serial_number ?? previousState?.serialNumber,
           pageCount: page_count ?? previousState?.pageCount,
           printerState: printer_state ?? previousState?.printerState,
@@ -72,6 +74,19 @@ export class PrinterStore extends MonitorStore<
           isColor: is_color ?? previousState?.isColor,
           isDuplex: is_duplex ?? previousState?.isDuplex,
         };
+
+        if (detected_location) {
+          const printer = this.items.find((p) => p.id === printer_id);
+          if (printer && (!printer.location || printer.location.trim() === "")) {
+            printer.location = detected_location;
+          }
+        }
+        if (detected_model) {
+          const printer = this.items.find((p) => p.id === printer_id);
+          if (printer && (!printer.model || printer.model.trim() === "")) {
+            printer.model = detected_model;
+          }
+        }
       });
     })().catch((err) => {
       this.initPromise = null;
