@@ -47,7 +47,7 @@
     showMake ? inferPrinterMake(printer, detectedModel, detectedMake) : undefined,
   );
   let displayLocation = $derived(
-    showLocation ? printer?.location || detectedLocation : undefined,
+    showLocation ? detectedLocation || printer?.location : undefined,
   );
   let stateTag = $derived.by(() => {
     if (!printerState) return undefined;

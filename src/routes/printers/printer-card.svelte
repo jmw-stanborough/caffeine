@@ -41,7 +41,7 @@
     onconfigure?: () => void;
   } = $props();
 
-  let displayModel = $derived(printer.model || detectedModel);
+  let displayModel = $derived(detectedModel || printer.model);
   let hasLowToner = $derived(toners.some(isLowToner));
 
   let effectiveVisualStatus = $derived(

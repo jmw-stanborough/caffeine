@@ -77,13 +77,13 @@ export class PrinterStore extends MonitorStore<
 
         if (detected_location) {
           const printer = this.items.find((p) => p.id === printer_id);
-          if (printer && (!printer.location || printer.location.trim() === "")) {
+          if (printer && printer.location !== detected_location) {
             printer.location = detected_location;
           }
         }
         if (detected_model) {
           const printer = this.items.find((p) => p.id === printer_id);
-          if (printer && (!printer.model || printer.model.trim() === "")) {
+          if (printer && printer.model !== detected_model) {
             printer.model = detected_model;
           }
         }

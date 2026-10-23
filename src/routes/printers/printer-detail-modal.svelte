@@ -59,7 +59,7 @@
       ? "Connected"
       : "Disconnected",
   );
-  let displayModel = $derived(printer?.model || detectedModel);
+  let displayModel = $derived(detectedModel || printer?.model);
   let statusChips = $derived(parseStatusChips(statusMessage));
 
   let effectiveVisualStatus = $derived(

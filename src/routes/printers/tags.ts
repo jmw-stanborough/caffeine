@@ -153,7 +153,7 @@ export function getPrinterTags(
     tags.push(make);
   }
 
-  const locationTag = printer.location?.trim() || state?.detectedLocation?.trim();
+  const locationTag = state?.detectedLocation?.trim() || printer.location?.trim();
   if (locationTag) {
     tags.push(locationTag);
   }

@@ -19,10 +19,7 @@
   let label = $state("");
   let host = $state("");
   let description = $state("");
-  let model = $state("");
-  let location = $state("");
   let snmpCommunity = $state(DEFAULT_SNMP_COMMUNITY);
-  let webUrl = $state("");
 
   let logs = $state<PrinterLog[]>([]);
   let logsLoading = $state(false);
@@ -34,19 +31,13 @@
         label = printer.label;
         host = printer.host;
         description = printer.description ?? "";
-        model = printer.model ?? "";
-        location = printer.location ?? "";
         snmpCommunity = printer.snmp_community || DEFAULT_SNMP_COMMUNITY;
-        webUrl = printer.web_url ?? "";
         fetchLogs(printer.id);
       } else {
         label = "";
         host = "";
         description = "";
-        model = "";
-        location = "";
         snmpCommunity = DEFAULT_SNMP_COMMUNITY;
-        webUrl = "";
         logs = [];
       }
     }
@@ -75,10 +66,10 @@
       host: host.trim(),
       label: label.trim(),
       description: description.trim() || undefined,
-      model: model.trim() || undefined,
-      location: location.trim() || undefined,
+      model: printer?.model,
+      location: printer?.location,
       snmp_community: snmpCommunity.trim() || DEFAULT_SNMP_COMMUNITY,
-      web_url: webUrl.trim() || undefined,
+      web_url: printer?.web_url,
     };
 
     await onsave(payload, printer?.id);
@@ -115,34 +106,15 @@
     </label>
   </div>
 
-  <div class="field-row">
-    <label class="form-field">
-      <span>Model (Optional — auto-detected via SNMP)</span>
-      <input type="text" bind:value={model} placeholder="e.g. HP LaserJet Enterprise M611" />
-    </label>
-
-    <label class="form-field">
-      <span>Location (Optional)</span>
-      <input type="text" bind:value={location} placeholder="e.g. Room 204 / Copy Room" />
-    </label>
-  </div>
-
   <label class="form-field">
     <span>Description / Notes (Optional)</span>
     <input type="text" bind:value={description} placeholder="e.g. Main duplex color printer" />
   </label>
 
-  <div class="field-row">
-    <label class="form-field">
-      <span>Web Interface URL (Optional)</span>
-      <input type="text" bind:value={webUrl} placeholder="Defaults to http://<host>" />
-    </label>
-
-    <label class="form-field">
-      <span>SNMP v2c Community</span>
-      <input type="text" bind:value={snmpCommunity} placeholder={DEFAULT_SNMP_COMMUNITY} />
-    </label>
-  </div>
+  <label class="form-field">
+    <span>SNMP v2c Community</span>
+    <input type="text" bind:value={snmpCommunity} placeholder={DEFAULT_SNMP_COMMUNITY} />
+  </label>
 </ConfigHistoryModal>
 
 <style>
