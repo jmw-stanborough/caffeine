@@ -164,6 +164,7 @@
           {isDuplex}
           showMake={true}
           showLocation={true}
+          showHiddenCount={false}
         />
 
         <div class="host-line">
