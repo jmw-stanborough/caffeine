@@ -1,25 +1,17 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
+  import {
+    CUSTOM_TAG_MIME,
+    DRAG_ACTIVATION_DISTANCE_PX,
+    hitTestDropZone,
+    parseDragPayload,
+    type DragSource,
+    type PointerDragState,
+  } from "./drag-drop";
   import type { PrinterStore } from "./printers.svelte";
   import TagFilterGroup from "./tag-filter-group.svelte";
   import { PREMADE_TAGS, isFailureTag, isWarningTag } from "./tags";
   import type { FilterMode } from "./types";
-
-  type DragSource = "suggested" | FilterMode;
-
-  const DROP_ZONE_HIT_MARGIN_PX = 6;
-  const DRAG_ACTIVATION_DISTANCE_PX = 4;
-  const CUSTOM_TAG_MIME = "application/x-caffeine-tag";
-
-  interface PointerDragState {
-    tag: string;
-    source: DragSource;
-    startX: number;
-    startY: number;
-    x: number;
-    y: number;
-    active: boolean;
-  }
 
   let {
     open = $bindable(false),
@@ -52,25 +44,8 @@
     }
   });
 
-  function isPointInsideBox(
-    el: HTMLElement | undefined,
-    clientX: number,
-    clientY: number,
-  ): boolean {
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
-    return (
-      clientX >= rect.left - DROP_ZONE_HIT_MARGIN_PX &&
-      clientX <= rect.right + DROP_ZONE_HIT_MARGIN_PX &&
-      clientY >= rect.top - DROP_ZONE_HIT_MARGIN_PX &&
-      clientY <= rect.bottom + DROP_ZONE_HIT_MARGIN_PX
-    );
-  }
-
-  function hitTestDropZone(clientX: number, clientY: number): FilterMode | null {
-    if (isPointInsideBox(allBoxEl, clientX, clientY)) return "all";
-    if (isPointInsideBox(anyBoxEl, clientX, clientY)) return "any";
-    return null;
+  function resolveDropZone(clientX: number, clientY: number): FilterMode | null {
+    return hitTestDropZone(allBoxEl, anyBoxEl, clientX, clientY);
   }
 
   function handleTagPointerDown(
@@ -113,7 +88,7 @@
     }
 
     if (pointerDrag.active) {
-      dropTarget = hitTestDropZone(e.clientX, e.clientY);
+      dropTarget = resolveDropZone(e.clientX, e.clientY);
     }
   }
 
@@ -121,7 +96,7 @@
     if (!pointerDrag) return;
     const current = pointerDrag;
     const resolvedTarget = current.active
-      ? (hitTestDropZone(e.clientX, e.clientY) ?? dropTarget)
+      ? (resolveDropZone(e.clientX, e.clientY) ?? dropTarget)
       : null;
 
     pointerDrag = null;
@@ -178,24 +153,7 @@
     e.preventDefault();
     e.stopPropagation();
 
-    let tag = htmlDrag?.tag ?? "";
-    let source: DragSource = htmlDrag?.source ?? "suggested";
-
-    if (!tag && e.dataTransfer) {
-      const customPayload = e.dataTransfer.getData(CUSTOM_TAG_MIME);
-      if (customPayload) {
-        try {
-          const parsed = JSON.parse(customPayload);
-          if (parsed?.tag) tag = String(parsed.tag);
-          if (parsed?.source) source = parsed.source;
-        } catch {
-          // Fall back to plain-text dataTransfer when custom MIME JSON cannot be parsed.
-        }
-      }
-      if (!tag) {
-        tag = e.dataTransfer.getData("text/plain") ?? "";
-      }
-    }
+    const { tag, source } = htmlDrag ?? parseDragPayload(e.dataTransfer);
 
     htmlDrag = null;
     dropTarget = null;

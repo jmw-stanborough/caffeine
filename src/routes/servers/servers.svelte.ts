@@ -8,7 +8,9 @@ const SERVER_STATUS_EVENT = "server-status-tick";
 function playAlertSound(audio: HTMLAudioElement | null) {
   if (!audio) return;
   audio.currentTime = 0;
-  audio.play().catch(() => {});
+  audio.play().catch((err: unknown) => {
+    console.warn("Audio playback failed:", err);
+  });
 }
 
 export class ServerStore extends MonitorStore<

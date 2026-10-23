@@ -123,7 +123,9 @@
   onDestroy(() => {
     resizeObserver?.disconnect();
     resizeObserver = null;
-    invoke("close_printer_webview").catch(() => {});
+    invoke("close_printer_webview").catch((err) => {
+      console.error("Failed to close printer webview on destroy:", err);
+    });
   });
 </script>
 

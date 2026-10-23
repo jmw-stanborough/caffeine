@@ -83,6 +83,7 @@ export abstract class MonitorStore<
       }
     } catch (err) {
       this.errorMessage = String(err);
+      throw err;
     }
   }
 
@@ -96,6 +97,7 @@ export abstract class MonitorStore<
     } catch (err) {
       this.errorMessage = String(err);
       this.items = backup;
+      throw err;
     }
   }
 
@@ -114,6 +116,7 @@ export abstract class MonitorStore<
     } catch (err) {
       this.errorMessage = String(err);
       this.items = previous;
+      throw err;
     }
   }
 }

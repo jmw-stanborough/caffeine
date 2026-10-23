@@ -78,7 +78,8 @@ export class PrinterStore extends MonitorStore<
       this.filterAllTags = saved?.all_tags ?? [];
       this.filterAnyTags = saved?.any_tags ?? [];
     } catch (err) {
-      console.error("Failed to load printer filter tags:", err);
+      this.errorMessage = String(err);
+      throw err;
     }
   };
 
@@ -89,7 +90,8 @@ export class PrinterStore extends MonitorStore<
         anyTags: [...this.filterAnyTags],
       });
     } catch (err) {
-      console.error("Failed to save printer filter tags:", err);
+      this.errorMessage = String(err);
+      throw err;
     }
   }
 
