@@ -17,21 +17,6 @@
     return `${Math.round(mean)} ms`;
   }
 
-  let serverAttention = $derived<AttentionItem[]>(
-    serverStore.items.flatMap((server) => {
-      const status = serverStore.statusMap[server.id]?.status;
-      if (status !== "offline" && status !== "degraded") return [];
-      return [
-        {
-          id: server.id,
-          label: server.label || server.host,
-          detail: status === "offline" ? "Error" : "Warning",
-          severity: status,
-        },
-      ];
-    }),
-  );
-
   let printerAttention = $derived<AttentionItem[]>(
     printerStore.items.flatMap((printer) => {
       const state = printerStore.statusMap[printer.id];
@@ -43,6 +28,21 @@
           label: printer.label || printer.host,
           detail: getPrinterIssues(state).join(", "),
           severity,
+        },
+      ];
+    }),
+  );
+
+  let serverAttention = $derived<AttentionItem[]>(
+    serverStore.items.flatMap((server) => {
+      const status = serverStore.statusMap[server.id]?.status;
+      if (status !== "offline" && status !== "degraded") return [];
+      return [
+        {
+          id: server.id,
+          label: server.label || server.host,
+          detail: status === "offline" ? "Error" : "Warning",
+          severity: status,
         },
       ];
     }),
@@ -60,6 +60,16 @@
 
   <section class="cards-grid">
     <StatusSummaryCard
+      title="Printers"
+      href="/printers"
+      noun="printer"
+      loading={printerStore.loading}
+      errorMessage={printerStore.errorMessage}
+      total={printerStore.items.length}
+      counts={printerStore.statusCounts}
+      attention={printerAttention}
+    />
+    <StatusSummaryCard
       title="Servers"
       href="/servers"
       noun="server"
@@ -69,16 +79,6 @@
       counts={serverStore.statusCounts}
       attention={serverAttention}
       extraStat={{ label: "Avg latency", value: serverLatency }}
-    />
-    <StatusSummaryCard
-      title="Printers"
-      href="/printers"
-      noun="printer"
-      loading={printerStore.loading}
-      errorMessage={printerStore.errorMessage}
-      total={printerStore.items.length}
-      counts={printerStore.statusCounts}
-      attention={printerAttention}
     />
   </section>
 </div>

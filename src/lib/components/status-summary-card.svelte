@@ -40,8 +40,8 @@
   ];
 </script>
 
-<div class="card">
-  <h2 class="card-header"><a {href}>{title}</a></h2>
+<a {href} class="card">
+  <h2 class="card-header">{title}</h2>
 
   {#if errorMessage}
     <div class="error-banner">{errorMessage}</div>
@@ -85,7 +85,7 @@
       </ul>
     {/if}
   {/if}
-</div>
+</a>
 
 <style>
   .card {
@@ -96,14 +96,24 @@
     border: solid var(--width-border) var(--color-border);
     border-radius: 8px;
     background-color: var(--color-surface);
+    color: var(--color-text);
+    text-decoration: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .card:hover {
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-primary);
+  }
+
+  .card:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   .card-header {
     margin: 0;
     font-size: 1.1rem;
-  }
-
-  .card-header a {
     color: var(--color-primary);
   }
 
