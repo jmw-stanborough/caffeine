@@ -1,5 +1,6 @@
 <script lang="ts">
   import { activateOnEnterOrSpace } from "$lib/format";
+  import Cog from "$lib/icons/Cog.svelte";
   import PrinterTagsRow from "./printer-tags-row.svelte";
   import { getEffectivePrinterStatus, isLowToner } from "./tags";
   import type { Printer, PrinterState, TonerSupply } from "./types";
@@ -113,7 +114,7 @@
           aria-label="Configure {printer.label}"
           title="Configure Printer & Event History"
         >
-          ⚙
+          <Cog size={15} />
         </button>
       </div>
     {/if}

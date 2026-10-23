@@ -1,5 +1,6 @@
 <script lang="ts">
   import DashboardHeader from "$lib/components/dashboard-header.svelte";
+  import Filter from "$lib/icons/Filter.svelte";
   import {
     DND_FLIP_DURATION_MS,
     PRINTER_CARD_MIN_WIDTH_REM,
@@ -150,7 +151,8 @@
             onclick={openFilterModal}
             title="Configure tag filters"
           >
-            <span>⚙ Filter</span>
+            <Filter size={14} />
+            <span>Filter</span>
             {#if isFiltered}
               <span class="count-badge filter-count-badge">{activeFilterCount}</span>
             {/if}
