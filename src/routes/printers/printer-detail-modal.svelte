@@ -3,7 +3,7 @@
   import { formatRelativeTime } from "$lib/format";
   import PrinterTagsRow from "./printer-tags-row.svelte";
   import PrinterTonerList from "./printer-toner-list.svelte";
-  import { getEffectivePrinterStatus } from "./tags";
+  import { getEffectivePrinterStatus, parseStatusChips } from "./tags";
   import type { Printer, PrinterState, TonerSupply } from "./types";
 
   let {
@@ -54,12 +54,7 @@
 
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
   let displayModel = $derived(printer?.model || detectedModel);
-  let displayStatusLines = $derived.by(() => {
-    if (!statusMessage) return undefined;
-    const normalized = statusMessage.replaceAll(" — ", "; ").trim();
-    if (!normalized) return undefined;
-    return normalized.replace(/^status:\s*/i, "");
-  });
+  let statusChips = $derived(parseStatusChips(statusMessage));
 
   let effectiveVisualStatus = $derived(
     getEffectivePrinterStatus({
@@ -139,10 +134,17 @@
       </div>
     </div>
 
-    {#if displayStatusLines || printer.description}
+    {#if statusChips.length > 0 || printer.description}
       <div class="modal-description-group">
-        {#if displayStatusLines}
-          <p class="card-status"><span class="status-label">Status:</span> {displayStatusLines}</p>
+        {#if statusChips.length > 0}
+          <div class="status-row">
+            <span class="status-label">Status:</span>
+            <div class="status-chips">
+              {#each statusChips as chip (chip.id)}
+                <span class="printer-tag {chip.className}">{chip.label}</span>
+              {/each}
+            </div>
+          </div>
         {/if}
         {#if printer.description}
           <p class="card-description">{printer.description}</p>
@@ -254,20 +256,46 @@
   .modal-description-group {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.35rem;
   }
 
-  .card-status,
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+
+  .status-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    user-select: none;
+  }
+
+  .status-chips {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+
+  .status-chips .printer-tag {
+    font-size: 0.72rem;
+    padding: 0.18rem 0.45rem;
+  }
+
+  .status-chips .tag-status {
+    background-color: color-mix(in srgb, var(--color-base) 65%, transparent);
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+
   .card-description {
     margin: 0;
     font-size: 0.85rem;
     color: var(--color-text);
     opacity: 0.9;
-  }
-
-  .status-label {
-    font-weight: 600;
-    color: var(--color-text-muted);
   }
 
   .card-footer {

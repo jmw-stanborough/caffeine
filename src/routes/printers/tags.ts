@@ -8,6 +8,8 @@ import {
   isLowToner,
   isOutOfPaperText,
   isPaperJamText,
+  parseStatusChips,
+  type StatusChip,
 } from "./status";
 import type { Printer, PrinterState } from "./types";
 import { extractPrinterMakeFromText, inferPrinterMake } from "./vendor";
@@ -24,6 +26,8 @@ export {
   isLowToner,
   isOutOfPaperText,
   isPaperJamText,
+  parseStatusChips,
+  type StatusChip,
 };
 
 export const PREMADE_TAGS = [

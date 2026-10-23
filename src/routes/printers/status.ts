@@ -136,3 +136,56 @@ export function getEffectivePrinterStatus(
   }
   return baseStatus;
 }
+
+export interface StatusChip {
+  id: string;
+  label: string;
+  className: string;
+}
+
+export function parseStatusChips(statusMessage?: string): StatusChip[] {
+  if (!statusMessage) return [];
+  const withoutPrefix = statusMessage.trim().replace(/^status:\s*/i, "");
+  if (!withoutPrefix) return [];
+
+  const rawParts = withoutPrefix
+    .split(/[;\n\r]+|(?:\s+—\s+)/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const chips: StatusChip[] = [];
+
+  for (let i = 0; i < rawParts.length; i++) {
+    const label = rawParts[i];
+    const lower = label.toLowerCase();
+    if (seen.has(lower)) continue;
+    seen.add(lower);
+
+    let className = "tag-status";
+    if (isPaperJamText(label) || isOutOfPaperText(label)) {
+      className = "tag-failure";
+    } else if (
+      lower.includes("error") ||
+      lower.includes("offline") ||
+      lower.includes("fatal")
+    ) {
+      className = "tag-failure";
+    } else if (
+      lower.includes("low") ||
+      lower.includes("warning") ||
+      lower.includes("attention") ||
+      lower.includes("empty")
+    ) {
+      className = "tag-warning";
+    }
+
+    chips.push({
+      id: `${i}-${lower}`,
+      label,
+      className,
+    });
+  }
+
+  return chips;
+}
