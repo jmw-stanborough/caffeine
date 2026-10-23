@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { LayoutDashboard, Printer, Server } from "$lib/components/icons";
+  import { Coffee, LayoutDashboard, Printer, Server } from "$lib/components/icons";
   import { printerStore } from "../routes/printers/printers.svelte";
   import { serverStore } from "../routes/servers/servers.svelte";
   import type { Component } from "svelte";
@@ -35,6 +35,7 @@
 
 <aside class="sidebar">
   <div class="brand">
+    <Coffee size={20} class="brand-icon" />
     <span class="brand-title">Caffeine</span>
   </div>
 
@@ -76,9 +77,15 @@
   .brand {
     display: flex;
     align-items: center;
+    gap: 8px;
     height: 48px;
     padding-inline: 16px;
     border-bottom: solid var(--width-border) var(--color-border);
+  }
+
+  :global(.brand-icon) {
+    color: var(--color-primary);
+    flex-shrink: 0;
   }
 
   .brand-title {
