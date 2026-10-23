@@ -12,14 +12,14 @@
   let navigationItems = $derived<NavigationItem[]>([
     { href: "/", label: "Dashboard" },
     {
-      href: "/servers",
-      label: "Servers",
-      badgeCount: serverStore.alertCount,
-    },
-    {
       href: "/printers",
       label: "Printers",
       badgeCount: printerStore.alertCount,
+    },
+    {
+      href: "/servers",
+      label: "Servers",
+      badgeCount: serverStore.alertCount,
     },
   ]);
 </script>
@@ -56,7 +56,7 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    width: var(--width-sidebar);
+    width: max-content;
     height: 100%;
     flex-shrink: 0;
     background-color: var(--color-surface);
