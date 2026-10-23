@@ -154,13 +154,10 @@
 
 {#if visibleTags.length > 0 || (showHiddenCount && hiddenCount > 0)}
   <div class="tags-row">
-    {#each visibleTags as tag, index (tag.id)}
+    {#each visibleTags as tag (tag.id)}
       <span class="printer-tag {tag.className}" title={tag.title}>{tag.label}</span>
-      {#if index === 0 && showHiddenCount && hiddenCount > 0}
-        <span class="tag-hidden-count" title={hiddenTitle}>+{hiddenCount}</span>
-      {/if}
     {/each}
-    {#if visibleTags.length === 0 && showHiddenCount && hiddenCount > 0}
+    {#if showHiddenCount && hiddenCount > 0}
       <span class="tag-hidden-count" title={hiddenTitle}>+{hiddenCount}</span>
     {/if}
   </div>
