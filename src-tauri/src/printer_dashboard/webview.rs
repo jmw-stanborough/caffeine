@@ -36,7 +36,9 @@ pub async fn open_printer_webview(
     let resolved_url_str = parsed_url.to_string();
 
     if let Some(existing) = app.get_webview(CHILD_WEBVIEW_LABEL) {
-        let _ = existing.close();
+        existing
+            .close()
+            .map_err(|e| format!("Failed to close existing webview: {e}"))?;
         // Allow Tauri's window manager to finish unregistering the existing webview handle
         // before creating a replacement with the same label.
         tokio::time::sleep(WEBVIEW_CLOSE_SETTLE_DELAY).await;
@@ -59,7 +61,9 @@ pub async fn open_printer_webview(
         )
         .map_err(|e| format!("Failed to create child webview: {e}"))?;
 
-    let _ = webview.set_focus();
+    if let Err(err) = webview.set_focus() {
+        eprintln!("Failed to focus child webview: {err}");
+    }
 
     Ok(resolved_url_str)
 }
@@ -101,7 +105,9 @@ pub async fn navigate_printer_webview(app: AppHandle, url: String) -> Result<Str
 #[tauri::command]
 pub async fn reload_printer_webview(app: AppHandle) -> Result<(), String> {
     if let Some(webview) = app.get_webview(CHILD_WEBVIEW_LABEL) {
-        let _ = webview.eval("window.location.reload()");
+        webview
+            .eval("window.location.reload()")
+            .map_err(|e| format!("Failed to reload child webview: {e}"))?;
     }
     Ok(())
 }
