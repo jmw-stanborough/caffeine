@@ -29,14 +29,14 @@ export {
 export const PREMADE_TAGS = [
   "Printing",
   "Idle",
+  "Colour",
+  "Mono",
+  "Duplex",
+  "Simplex",
+  "Toner Low",
   "Paper Jam",
   "Out of Paper",
   "Toner Empty",
-  "Toner Low",
-  "Colour",
-  "Mono",
-  "Simplex",
-  "Duplex",
 ] as const;
 
 export function isFailureTag(tag: string): boolean {
@@ -101,20 +101,6 @@ export function getPrinterTags(
 ): string[] {
   const tags: string[] = [];
 
-  const make = inferPrinterMake(
-    printer,
-    state?.detectedModel,
-    state?.detectedMake,
-  );
-  if (make) {
-    tags.push(make);
-  }
-
-  const locationTag = printer.location?.trim() || state?.detectedLocation?.trim();
-  if (locationTag) {
-    tags.push(locationTag);
-  }
-
   const stateLower = state?.printerState?.trim().toLowerCase();
   if (stateLower === "printing") {
     tags.push("Printing");
@@ -126,6 +112,20 @@ export function getPrinterTags(
     !isOutOfPaperText(state.printerState)
   ) {
     tags.push(state.printerState.trim());
+  }
+
+  const colorTag = getPrinterColorTag(printer, state);
+  if (colorTag) {
+    tags.push(colorTag);
+  }
+
+  const duplexTag = getPrinterDuplexTag(printer, state);
+  if (duplexTag) {
+    tags.push(duplexTag);
+  }
+
+  if (hasLowTonerSupply(state?.toners)) {
+    tags.push("Toner Low");
   }
 
   if (hasPaperJam(state)) {
@@ -140,18 +140,18 @@ export function getPrinterTags(
     tags.push("Toner Empty");
   }
 
-  if (hasLowTonerSupply(state?.toners)) {
-    tags.push("Toner Low");
+  const make = inferPrinterMake(
+    printer,
+    state?.detectedModel,
+    state?.detectedMake,
+  );
+  if (make) {
+    tags.push(make);
   }
 
-  const colorTag = getPrinterColorTag(printer, state);
-  if (colorTag) {
-    tags.push(colorTag);
-  }
-
-  const duplexTag = getPrinterDuplexTag(printer, state);
-  if (duplexTag) {
-    tags.push(duplexTag);
+  const locationTag = printer.location?.trim() || state?.detectedLocation?.trim();
+  if (locationTag) {
+    tags.push(locationTag);
   }
 
   return tags;

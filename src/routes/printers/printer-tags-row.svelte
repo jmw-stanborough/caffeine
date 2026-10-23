@@ -90,14 +90,17 @@
 
   let visibleTags = $derived.by(() => {
     const list: VisibleTag[] = [];
-    if (makeTag) {
-      list.push({ id: "make", label: makeTag, className: "tag-make", title: `Make: ${makeTag}` });
-    }
-    if (displayLocation) {
-      list.push({ id: "location", label: displayLocation, className: "tag-location", title: displayLocation });
-    }
     if (stateTag) {
       list.push({ id: "state", label: stateTag, className: "tag-state", title: stateTag });
+    }
+    if (colorTag) {
+      list.push({ id: "color", label: colorTag, className: "tag-capability", title: `Color capability: ${colorTag}` });
+    }
+    if (duplexTag) {
+      list.push({ id: "duplex", label: duplexTag, className: "tag-capability", title: `Duplex capability: ${duplexTag}` });
+    }
+    if (hasLowToner) {
+      list.push({ id: "toner-low", label: "Toner Low", className: "tag-warning", title: "One or more cartridges are low on toner" });
     }
     if (isJammed) {
       list.push({ id: "jam", label: "Paper Jam", className: "tag-failure", title: "Printer has a paper jam" });
@@ -108,14 +111,11 @@
     if (hasEmptyToner) {
       list.push({ id: "toner-empty", label: "Toner Empty", className: "tag-failure", title: "One or more cartridges have reached 0% toner" });
     }
-    if (hasLowToner) {
-      list.push({ id: "toner-low", label: "Toner Low", className: "tag-warning", title: "One or more cartridges are low on toner" });
+    if (makeTag) {
+      list.push({ id: "make", label: makeTag, className: "tag-make", title: `Make: ${makeTag}` });
     }
-    if (colorTag) {
-      list.push({ id: "color", label: colorTag, className: "tag-capability", title: `Color capability: ${colorTag}` });
-    }
-    if (duplexTag) {
-      list.push({ id: "duplex", label: duplexTag, className: "tag-capability", title: `Duplex capability: ${duplexTag}` });
+    if (displayLocation) {
+      list.push({ id: "location", label: displayLocation, className: "tag-location", title: displayLocation });
     }
     return list;
   });
