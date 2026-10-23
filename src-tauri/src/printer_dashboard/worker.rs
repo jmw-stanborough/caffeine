@@ -30,6 +30,9 @@ struct PrinterTracker {
     last_event_at: String,
     cached_details: PrinterPollDetails,
     last_snmp_poll: Option<Instant>,
+    active_empty_toners: HashSet<String>,
+    active_paper_jam: bool,
+    active_out_of_paper: bool,
 }
 
 impl PrinterTracker {
@@ -47,48 +50,78 @@ impl PrinterTracker {
     }
 
     fn merge_poll_details(&mut self, new_details: PrinterPollDetails) {
-        if !new_details.toners.is_empty() || self.cached_details.toners.is_empty() {
-            self.cached_details = new_details;
-        } else {
-            // Retain previously polled toners if a transient UDP packet drop prevented the
-            // supply table walk from completing, while still updating any fields that succeeded.
-            let poll_succeeded = new_details.detected_make.is_some()
-                || new_details.detected_model.is_some()
-                || new_details.detected_location.is_some()
-                || new_details.printer_state.is_some()
-                || new_details.page_count.is_some()
-                || new_details.paper_jam
-                || new_details.out_of_paper;
+        if !new_details.toners.is_empty() {
+            if self.cached_details.toners.is_empty()
+                || new_details.toners.len() >= self.cached_details.toners.len()
+            {
+                self.cached_details.toners = new_details.toners;
+            } else {
+                for new_toner in new_details.toners {
+                    if let Some(existing) = self.cached_details.toners.iter_mut().find(|t| {
+                        (!t.color.is_empty() && t.color.eq_ignore_ascii_case(&new_toner.color))
+                            || t.name.eq_ignore_ascii_case(&new_toner.name)
+                    }) {
+                        *existing = new_toner;
+                    }
+                }
+            }
+        }
 
-            if new_details.detected_make.is_some() {
-                self.cached_details.detected_make = new_details.detected_make;
-            }
-            if new_details.detected_model.is_some() {
-                self.cached_details.detected_model = new_details.detected_model;
-            }
-            if new_details.detected_location.is_some() {
-                self.cached_details.detected_location = new_details.detected_location;
-            }
-            if new_details.page_count.is_some() {
-                self.cached_details.page_count = new_details.page_count;
-            }
-            if new_details.printer_state.is_some() {
-                self.cached_details.printer_state = new_details.printer_state;
-            }
-            if new_details.is_color.is_some() {
-                self.cached_details.is_color = new_details.is_color;
-            }
-            if new_details.is_duplex.is_some() {
-                self.cached_details.is_duplex = new_details.is_duplex;
-            }
-            if poll_succeeded {
-                self.cached_details.status_message = new_details.status_message;
-                self.cached_details.paper_jam = new_details.paper_jam;
-                self.cached_details.out_of_paper = new_details.out_of_paper;
-            }
+        let poll_succeeded = new_details.detected_make.is_some()
+            || new_details.detected_model.is_some()
+            || new_details.detected_location.is_some()
+            || new_details.printer_state.is_some()
+            || new_details.page_count.is_some()
+            || new_details.paper_jam
+            || new_details.out_of_paper;
+
+        if new_details.detected_make.is_some() {
+            self.cached_details.detected_make = new_details.detected_make;
+        }
+        if new_details.detected_model.is_some() {
+            self.cached_details.detected_model = new_details.detected_model;
+        }
+        if new_details.detected_location.is_some() {
+            self.cached_details.detected_location = new_details.detected_location;
+        }
+        if new_details.page_count.is_some() {
+            self.cached_details.page_count = new_details.page_count;
+        }
+        if new_details.printer_state.is_some() {
+            self.cached_details.printer_state = new_details.printer_state;
+        }
+        if new_details.is_color.is_some() {
+            self.cached_details.is_color = new_details.is_color;
+        }
+        if new_details.is_duplex.is_some() {
+            self.cached_details.is_duplex = new_details.is_duplex;
+        }
+        if poll_succeeded {
+            self.cached_details.status_message = new_details.status_message;
+            self.cached_details.paper_jam = new_details.paper_jam;
+            self.cached_details.out_of_paper = new_details.out_of_paper;
         }
         self.last_snmp_poll = Some(Instant::now());
     }
+}
+
+fn get_empty_toner_keys(details: &PrinterPollDetails) -> HashSet<String> {
+    details
+        .toners
+        .iter()
+        .filter(|t| {
+            !matches!(t.supply_type.as_str(), "waste_toner" | "waste_ink")
+                && (t.percent == Some(0) || (t.percent.is_none() && t.level == 0))
+        })
+        .map(|t| {
+            let color = t.color.trim().to_lowercase();
+            if !color.is_empty() {
+                color
+            } else {
+                t.name.trim().to_lowercase()
+            }
+        })
+        .collect()
 }
 
 fn has_empty_toner(details: &PrinterPollDetails) -> bool {
@@ -98,30 +131,46 @@ fn has_empty_toner(details: &PrinterPollDetails) -> bool {
     })
 }
 
-fn record_alert_transitions(
+fn update_alert_transitions(
     conn: &Connection,
     printer_id: &str,
     latency_ms: Option<u64>,
-    had_jam: bool,
-    had_no_paper: bool,
-    had_empty_toner: bool,
-    current: &PrinterPollDetails,
+    tracker: &mut PrinterTracker,
 ) {
-    if !had_jam && current.paper_jam {
-        if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_PAPER_JAM, latency_ms) {
-            eprintln!("Failed to record paper jam event for printer {printer_id}: {e}");
+    let current = &tracker.cached_details;
+
+    if current.paper_jam {
+        if !tracker.active_paper_jam {
+            tracker.active_paper_jam = true;
+            if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_PAPER_JAM, latency_ms) {
+                eprintln!("Failed to record paper jam event for printer {printer_id}: {e}");
+            }
         }
+    } else {
+        tracker.active_paper_jam = false;
     }
-    if !had_no_paper && current.out_of_paper {
-        if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_OUT_OF_PAPER, latency_ms) {
-            eprintln!("Failed to record out of paper event for printer {printer_id}: {e}");
+
+    if current.out_of_paper {
+        if !tracker.active_out_of_paper {
+            tracker.active_out_of_paper = true;
+            if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_OUT_OF_PAPER, latency_ms) {
+                eprintln!("Failed to record out of paper event for printer {printer_id}: {e}");
+            }
         }
+    } else {
+        tracker.active_out_of_paper = false;
     }
-    if !had_empty_toner && has_empty_toner(current) {
+
+    let current_empty = get_empty_toner_keys(current);
+    let has_newly_empty = current_empty
+        .iter()
+        .any(|k| !tracker.active_empty_toners.contains(k));
+    if has_newly_empty {
         if let Err(e) = add_printer_log_entry(conn, printer_id, EVENT_TONER_EMPTY, latency_ms) {
             eprintln!("Failed to record toner empty event for printer {printer_id}: {e}");
         }
     }
+    tracker.active_empty_toners = current_empty;
 }
 
 pub fn start_printer_worker(app: AppHandle) {
@@ -205,9 +254,6 @@ pub fn start_printer_worker(app: AppHandle) {
 
                 let current = if let Some(existing) = trackers.get_mut(&printer_id) {
                     let is_connected = status != HealthStatus::Offline;
-                    let had_jam = existing.cached_details.paper_jam;
-                    let had_no_paper = existing.cached_details.out_of_paper;
-                    let had_empty_toner = has_empty_toner(&existing.cached_details);
 
                     match record_status_transition(
                         &db,
@@ -233,17 +279,14 @@ pub fn start_printer_worker(app: AppHandle) {
                         if is_connected {
                             match db.0.lock() {
                                 Ok(conn) => {
-                                    record_alert_transitions(
+                                    update_alert_transitions(
                                         &conn,
                                         &printer_id,
                                         latency_ms,
-                                        had_jam,
-                                        had_no_paper,
-                                        had_empty_toner,
-                                        &existing.cached_details,
+                                        existing,
                                     );
                                 }
-                                Err(e) => eprintln!("Database lock error recording alert transitions: {e}"),
+                                Err(e) => eprintln!("Database lock error updating alert transitions: {e}"),
                             }
                         }
                     }
@@ -267,22 +310,9 @@ pub fn start_printer_worker(app: AppHandle) {
 
                     let poll_time = maybe_details.as_ref().map(|_| Instant::now());
                     let initial_details = maybe_details.unwrap_or_default();
-                    if status != HealthStatus::Offline {
-                        match db.0.lock() {
-                            Ok(conn) => {
-                                record_alert_transitions(
-                                    &conn,
-                                    &printer_id,
-                                    latency_ms,
-                                    false,
-                                    false,
-                                    false,
-                                    &initial_details,
-                                );
-                            }
-                            Err(e) => eprintln!("Database lock error recording initial alert transitions: {e}"),
-                        }
-                    }
+                    let active_empty_toners = get_empty_toner_keys(&initial_details);
+                    let active_paper_jam = initial_details.paper_jam;
+                    let active_out_of_paper = initial_details.out_of_paper;
 
                     trackers.entry(printer_id.clone()).or_insert(PrinterTracker {
                         status: status.clone(),
@@ -290,6 +320,9 @@ pub fn start_printer_worker(app: AppHandle) {
                         last_event_at,
                         cached_details: initial_details,
                         last_snmp_poll: poll_time,
+                        active_empty_toners,
+                        active_paper_jam,
+                        active_out_of_paper,
                     })
                 };
 

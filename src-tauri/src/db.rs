@@ -93,8 +93,31 @@ pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
 
     migrate_printer_filter_tags_table(&conn)?;
     migrate_legacy_json(app, &conn)?;
+    deduplicate_consecutive_printer_logs(&conn)?;
 
     Ok(DbState(Mutex::new(conn)))
+}
+
+fn deduplicate_consecutive_printer_logs(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM printer_logs
+         WHERE id IN (
+             SELECT l2.id
+             FROM printer_logs l1
+             JOIN printer_logs l2
+               ON l1.printer_id = l2.printer_id
+              AND l1.event_type = l2.event_type
+              AND l2.id = (
+                  SELECT MIN(l3.id)
+                  FROM printer_logs l3
+                  WHERE l3.printer_id = l1.printer_id
+                    AND l3.id > l1.id
+              )
+         )",
+        [],
+    )
+    .map_err(|e| format!("Failed to clean up duplicate logs: {e}"))?;
+    Ok(())
 }
 
 /// Earlier versions stored `printer_filter_tags` with `tag` as the sole primary key.
@@ -405,5 +428,42 @@ mod tests {
 
         let (ev2, _) = resolve_initial_event(&db, "printer_logs", "printer_id", "p1", "disconnected", None).unwrap();
         assert_eq!(ev2, "disconnected");
+    }
+
+    #[test]
+    fn test_deduplicate_consecutive_printer_logs() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE printer_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                printer_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                latency_ms INTEGER,
+                timestamp TEXT NOT NULL DEFAULT '2026-10-23T08:00:00Z'
+            );
+            ",
+        )
+        .unwrap();
+
+        insert_log_entry(&conn, "printer_logs", "printer_id", "p1", "toner empty", None).unwrap();
+        insert_log_entry(&conn, "printer_logs", "printer_id", "p1", "toner empty", None).unwrap();
+        insert_log_entry(&conn, "printer_logs", "printer_id", "p1", "out of paper", None).unwrap();
+        insert_log_entry(&conn, "printer_logs", "printer_id", "p1", "toner empty", None).unwrap();
+
+        deduplicate_consecutive_printer_logs(&conn).unwrap();
+
+        let remaining: Vec<(i64, String)> = conn
+            .prepare("SELECT id, event_type FROM printer_logs ORDER BY id ASC")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert_eq!(remaining.len(), 3);
+        assert_eq!(remaining[0].1, "toner empty");
+        assert_eq!(remaining[1].1, "out of paper");
+        assert_eq!(remaining[2].1, "toner empty");
     }
 }
