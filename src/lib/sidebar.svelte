@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Coffee, LayoutDashboard, Printer, Server } from "$lib/components/icons";
+  import { Coffee, DesktopPc, LayoutDashboard, Printer, Server } from "$lib/components/icons";
   import { printerStore } from "../routes/printers/printers.svelte";
   import { serverStore } from "../routes/servers/servers.svelte";
   import type { Component } from "svelte";
@@ -29,6 +29,11 @@
       label: "Servers",
       badgeCount: serverStore.alertCount,
       icon: Server,
+    },
+    {
+      href: "/endpoint",
+      label: "Endpoint",
+      icon: DesktopPc,
     },
   ]);
 </script>
