@@ -1,11 +1,33 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import { printerStore } from "../routes/printers/printers.svelte";
+  import { serverStore } from "../routes/servers/servers.svelte";
 
-  const navigationItems = [
+  interface NavigationItem {
+    href: string;
+    label: string;
+    badgeCount?: number;
+    hasError?: boolean;
+    hasWarning?: boolean;
+  }
+
+  let navigationItems = $derived<NavigationItem[]>([
     { href: "/", label: "Dashboard" },
-    { href: "/servers", label: "Servers" },
-    { href: "/printers", label: "Printers" }
-  ];
+    {
+      href: "/servers",
+      label: "Servers",
+      badgeCount: serverStore.alertCount,
+      hasError: serverStore.hasError,
+      hasWarning: serverStore.hasWarning,
+    },
+    {
+      href: "/printers",
+      label: "Printers",
+      badgeCount: printerStore.alertCount,
+      hasError: printerStore.hasError,
+      hasWarning: printerStore.hasWarning,
+    },
+  ]);
 </script>
 
 <aside class="sidebar">
@@ -14,7 +36,7 @@
   </div>
 
   <nav class="nav-list">
-    {#each navigationItems as { href, label }}
+    {#each navigationItems as { href, label, badgeCount = 0, hasError = false, hasWarning = false }}
       {@const isActive = href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href)}
       <a
         class="nav-item"
@@ -22,7 +44,17 @@
         aria-current={isActive ? "page" : undefined}
         {href}
       >
-        {label}
+        <span class="nav-label">{label}</span>
+        {#if badgeCount > 0}
+          <span
+            class="notification-badge"
+            class:error={hasError}
+            class:warning={!hasError && hasWarning}
+            aria-label="{badgeCount} {hasError ? 'errors' : 'warnings'}"
+          >
+            {badgeCount}
+          </span>
+        {/if}
       </a>
     {/each}
   </nav>
@@ -64,6 +96,8 @@
   .nav-item {
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 8px 12px;
     border-radius: 6px;
     color: var(--color-text);
@@ -79,5 +113,36 @@
     background-color: var(--color-surface-active);
     color: var(--color-primary);
     font-weight: 600;
+  }
+
+  .nav-label {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .notification-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #1c1917;
+    background-color: var(--color-warning);
+    box-sizing: border-box;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .notification-badge.error {
+    background-color: var(--color-failure);
+  }
+
+  .notification-badge.warning {
+    background-color: var(--color-warning);
   }
 </style>
