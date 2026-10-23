@@ -1,25 +1,34 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import { LayoutDashboard, Printer, Server } from "$lib/components/icons";
   import { printerStore } from "../routes/printers/printers.svelte";
   import { serverStore } from "../routes/servers/servers.svelte";
+  import type { Component } from "svelte";
 
   interface NavigationItem {
     href: string;
     label: string;
     badgeCount?: number;
+    icon: Component<{ size?: number | string; class?: string }>;
   }
 
   let navigationItems = $derived<NavigationItem[]>([
-    { href: "/", label: "Dashboard" },
+    {
+      href: "/",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+    },
     {
       href: "/printers",
       label: "Printers",
       badgeCount: printerStore.alertCount,
+      icon: Printer,
     },
     {
       href: "/servers",
       label: "Servers",
       badgeCount: serverStore.alertCount,
+      icon: Server,
     },
   ]);
 </script>
@@ -30,7 +39,7 @@
   </div>
 
   <nav class="nav-list">
-    {#each navigationItems as { href, label, badgeCount = 0 }}
+    {#each navigationItems as { href, label, badgeCount = 0, icon: Icon }}
       {@const isActive = href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href)}
       <a
         class="nav-item"
@@ -38,6 +47,7 @@
         aria-current={isActive ? "page" : undefined}
         {href}
       >
+        <Icon size={16} />
         <span>{label}</span>
         {#if badgeCount > 0}
           <span
@@ -88,7 +98,7 @@
   .nav-item {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.5rem;
     padding: 8px 32px 8px 12px;
     border-radius: 6px;
     color: var(--color-text);
