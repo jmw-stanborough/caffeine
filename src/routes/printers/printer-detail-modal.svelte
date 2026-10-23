@@ -54,6 +54,12 @@
 
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
   let displayModel = $derived(printer?.model || detectedModel);
+  let displayStatusLines = $derived.by(() => {
+    if (!statusMessage) return undefined;
+    const normalized = statusMessage.replaceAll(" — ", "; ").trim();
+    if (!normalized) return undefined;
+    return normalized.replace(/^status:\s*/i, "");
+  });
 
   let effectiveVisualStatus = $derived(
     getEffectivePrinterStatus({
@@ -133,12 +139,15 @@
       </div>
     </div>
 
-    {#if printer.description || statusMessage}
-      <p class="card-description">
-        {statusMessage
-          ? `${statusMessage}${printer.description ? ` — ${printer.description}` : ""}`
-          : printer.description}
-      </p>
+    {#if displayStatusLines || printer.description}
+      <div class="modal-description-group">
+        {#if displayStatusLines}
+          <p class="card-status"><span class="status-label">Status:</span> {displayStatusLines}</p>
+        {/if}
+        {#if printer.description}
+          <p class="card-description">{printer.description}</p>
+        {/if}
+      </div>
     {/if}
 
     <PrinterTonerList
@@ -242,11 +251,23 @@
     flex-shrink: 0;
   }
 
+  .modal-description-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .card-status,
   .card-description {
     margin: 0;
     font-size: 0.85rem;
     color: var(--color-text);
     opacity: 0.9;
+  }
+
+  .status-label {
+    font-weight: 600;
+    color: var(--color-text-muted);
   }
 
   .card-footer {
