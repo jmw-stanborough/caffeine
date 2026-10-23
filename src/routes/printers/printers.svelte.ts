@@ -1,6 +1,7 @@
 import { DEFAULT_SNMP_COMMUNITY } from "$lib/constants";
 import { MonitorStore } from "$lib/monitor-store.svelte";
 import { invoke } from "@tauri-apps/api/core";
+import { getEffectivePrinterStatus } from "./status";
 import {
   PREMADE_TAGS,
   getPrinterTags,
@@ -23,49 +24,98 @@ export class PrinterStore extends MonitorStore<
 > {
   filterAllTags = $state<string[]>([]);
   filterAnyTags = $state<string[]>([]);
+  private initPromise: Promise<void> | null = null;
 
-  async init() {
-    this.destroyed = false;
-    await Promise.all([this.fetchPrinters(), this.fetchFilterTags()]);
-    await this.startTickSubscription(PRINTER_STATUS_EVENT, (payload) => {
-      const {
-        printer_id,
-        status,
-        latency_ms,
-        last_event,
-        last_event_at,
-        toners,
-        detected_make,
-        detected_model,
-        serial_number,
-        page_count,
-        printer_state,
-        status_message,
-        paper_jam,
-        out_of_paper,
-        is_color,
-        is_duplex,
-      } = payload;
-      const previousState = this.statusMap[printer_id];
+  async init(): Promise<void> {
+    if (this.initPromise) {
+      return this.initPromise;
+    }
 
-      this.statusMap[printer_id] = {
-        status,
-        latencyMs: latency_ms,
-        lastEvent: last_event ?? previousState?.lastEvent,
-        lastEventAt: last_event_at ?? previousState?.lastEventAt,
-        toners: toners ?? previousState?.toners ?? [],
-        detectedMake: detected_make ?? previousState?.detectedMake,
-        detectedModel: detected_model ?? previousState?.detectedModel,
-        serialNumber: serial_number ?? previousState?.serialNumber,
-        pageCount: page_count ?? previousState?.pageCount,
-        printerState: printer_state ?? previousState?.printerState,
-        statusMessage: status_message,
-        paperJam: paper_jam ?? false,
-        outOfPaper: out_of_paper ?? false,
-        isColor: is_color ?? previousState?.isColor,
-        isDuplex: is_duplex ?? previousState?.isDuplex,
-      };
+    this.initPromise = (async () => {
+      this.destroyed = false;
+      await Promise.all([this.fetchPrinters(), this.fetchFilterTags()]);
+      await this.startTickSubscription(PRINTER_STATUS_EVENT, (payload) => {
+        const {
+          printer_id,
+          status,
+          latency_ms,
+          last_event,
+          last_event_at,
+          toners,
+          detected_make,
+          detected_model,
+          serial_number,
+          page_count,
+          printer_state,
+          status_message,
+          paper_jam,
+          out_of_paper,
+          is_color,
+          is_duplex,
+        } = payload;
+        const previousState = this.statusMap[printer_id];
+
+        this.statusMap[printer_id] = {
+          status,
+          latencyMs: latency_ms,
+          lastEvent: last_event ?? previousState?.lastEvent,
+          lastEventAt: last_event_at ?? previousState?.lastEventAt,
+          toners: toners ?? previousState?.toners ?? [],
+          detectedMake: detected_make ?? previousState?.detectedMake,
+          detectedModel: detected_model ?? previousState?.detectedModel,
+          serialNumber: serial_number ?? previousState?.serialNumber,
+          pageCount: page_count ?? previousState?.pageCount,
+          printerState: printer_state ?? previousState?.printerState,
+          statusMessage: status_message,
+          paperJam: paper_jam ?? false,
+          outOfPaper: out_of_paper ?? false,
+          isColor: is_color ?? previousState?.isColor,
+          isDuplex: is_duplex ?? previousState?.isDuplex,
+        };
+      });
+    })().catch((err) => {
+      this.initPromise = null;
+      throw err;
     });
+
+    return this.initPromise;
+  }
+
+  override destroy() {
+    super.destroy();
+    this.initPromise = null;
+  }
+
+  get errorCount(): number {
+    let count = 0;
+    for (const printer of this.items) {
+      if (getEffectivePrinterStatus(this.statusMap[printer.id]) === "offline") {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  get warningCount(): number {
+    let count = 0;
+    for (const printer of this.items) {
+      if (getEffectivePrinterStatus(this.statusMap[printer.id]) === "degraded") {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  get alertCount(): number {
+    return this.errorCount + this.warningCount;
+  }
+
+  get hasError(): boolean {
+    return this.errorCount > 0;
+  }
+
+  get hasWarning(): boolean {
+    return this.warningCount > 0;
   }
 
   fetchPrinters = async () => {
@@ -232,3 +282,5 @@ export class PrinterStore extends MonitorStore<
     await this.reorderEntities("reorder_printers", "printers", sanitized);
   }
 }
+
+export const printerStore = new PrinterStore();

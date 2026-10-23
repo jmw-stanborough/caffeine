@@ -14,11 +14,11 @@
   import PrinterFilterModal from "./printer-filter-modal.svelte";
   import PrinterModal from "./printer-modal.svelte";
   import PrinterWebview from "./printer-webview.svelte";
-  import { PrinterStore } from "./printers.svelte";
+  import { printerStore } from "./printers.svelte";
   import { filterPrintersByTags } from "./tags";
   import type { Printer } from "./types";
 
-  const store = new PrinterStore();
+  const store = printerStore;
 
   let isModalOpen = $state(false);
   let editingPrinter = $state<Printer | undefined>(undefined);
@@ -109,7 +109,6 @@
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      store.destroy();
       window.removeEventListener("keydown", handleKeyDown);
       noc.cleanup();
     };
