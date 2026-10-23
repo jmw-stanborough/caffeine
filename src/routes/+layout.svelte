@@ -1,9 +1,21 @@
-<script>
+<script lang="ts">
   import "@fontsource-variable/roboto";
   import "../app.css";
   import Sidebar from "$lib/sidebar.svelte";
+  import { serverStore } from "./servers/servers.svelte";
+  import { printerStore } from "./printers/printers.svelte";
+  import { onMount } from "svelte";
 
   let { children } = $props();
+
+  onMount(() => {
+    serverStore.init().catch((err) => {
+      console.error("Failed to initialize server monitor on startup:", err);
+    });
+    printerStore.init().catch((err) => {
+      console.error("Failed to initialize printer monitor on startup:", err);
+    });
+  });
 </script>
 
 <div class="app-shell">
