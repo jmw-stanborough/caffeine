@@ -1,12 +1,15 @@
 <script lang="ts">
   import DashboardHeader from "$lib/components/dashboard-header.svelte";
-  import Filter from "$lib/icons/Filter.svelte";
+  import SortModal from "$lib/components/sort-modal.svelte";
+  import { Filter, Sort } from "$lib/icons";
   import {
     DND_FLIP_DURATION_MS,
     PRINTER_CARD_MIN_WIDTH_REM,
     PRINTER_NOC_MIN_WIDTH_REM,
   } from "$lib/constants";
   import { createNocController } from "$lib/noc.svelte";
+  import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";
+  import type { SortRule } from "$lib/sort/types";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
@@ -16,6 +19,7 @@
   import PrinterModal from "./printer-modal.svelte";
   import PrinterWebview from "./printer-webview.svelte";
   import { printerStore } from "./printers.svelte";
+  import { PRINTER_SORT_FIELDS, PRINTER_SORT_STORAGE_KEY } from "./sort";
   import { filterPrintersByTags } from "./tags";
   import type { Printer } from "./types";
 
@@ -26,12 +30,19 @@
   let isDetailModalOpen = $state(false);
   let detailPrinterId = $state<string | null>(null);
   let isFilterModalOpen = $state(false);
+  let isSortModalOpen = $state(false);
+  let sortRules = $state<SortRule[]>(loadSavedSortRules(PRINTER_SORT_STORAGE_KEY));
   let activeWebPrinter = $state<Printer | null>(null);
+
+  $effect(() => {
+    saveSortRules(PRINTER_SORT_STORAGE_KEY, sortRules);
+  });
 
   const noc = createNocController(() => {
     isDetailModalOpen = false;
     isModalOpen = false;
     isFilterModalOpen = false;
+    isSortModalOpen = false;
     activeWebPrinter = null;
   });
 
@@ -46,6 +57,17 @@
       store.filterAllTags,
       store.filterAnyTags,
     ),
+  );
+  let isSorted = $derived(sortRules.length > 0);
+  let displayPrinters = $derived(
+    isSorted
+      ? sortEntities(
+          filteredPrinters,
+          sortRules,
+          PRINTER_SORT_FIELDS,
+          store.statusMap,
+        )
+      : filteredPrinters,
   );
 
   let detailPrinter = $derived(
@@ -66,6 +88,7 @@
   function openDetailModal(printer: Printer) {
     if (noc.isNocMode) return;
     isFilterModalOpen = false;
+    isSortModalOpen = false;
     detailPrinterId = printer.id;
     isDetailModalOpen = true;
   }
@@ -74,13 +97,23 @@
     if (noc.isNocMode) return;
     isDetailModalOpen = false;
     isModalOpen = false;
+    isSortModalOpen = false;
     isFilterModalOpen = true;
+  }
+
+  function openSortModal() {
+    if (noc.isNocMode) return;
+    isDetailModalOpen = false;
+    isModalOpen = false;
+    isFilterModalOpen = false;
+    isSortModalOpen = true;
   }
 
   function openEditModal(printer?: Printer) {
     if (noc.isNocMode) return;
     isDetailModalOpen = false;
     isFilterModalOpen = false;
+    isSortModalOpen = false;
     activeWebPrinter = null;
     editingPrinter = printer;
     isModalOpen = true;
@@ -97,6 +130,8 @@
           isDetailModalOpen = false;
         } else if (isFilterModalOpen) {
           isFilterModalOpen = false;
+        } else if (isSortModalOpen) {
+          isSortModalOpen = false;
         } else if (activeWebPrinter) {
           activeWebPrinter = null;
         } else if (noc.isNocMode) {
@@ -134,7 +169,7 @@
     <DashboardHeader
       title={noc.isNocMode ? "Printer NOC Monitor" : "Printers"}
       countText={isFiltered
-        ? `${filteredPrinters.length} of ${store.items.length} shown`
+        ? `${displayPrinters.length} of ${store.items.length} shown`
         : `${store.items.length} configured`}
       isNocMode={noc.isNocMode}
       errorMessage={store.errorMessage}
@@ -144,6 +179,20 @@
     >
       {#snippet extraActions()}
         {#if !noc.isNocMode}
+          <button
+            type="button"
+            class="btn-sort"
+            class:active={isSorted}
+            onclick={openSortModal}
+            title={isSorted ? `Sorting by ${sortRules.length} rule(s)` : "Configure sort rules"}
+          >
+            <Sort size={14} />
+            <span>Sort</span>
+            {#if isSorted}
+              <span class="count-badge sort-count-badge">{sortRules.length}</span>
+            {/if}
+          </button>
+
           <button
             type="button"
             class="btn-filter"
@@ -164,7 +213,7 @@
     {#if store.loading}
       <p class="status-message">Reading printer configuration...</p>
     {:else}
-      {#if isFiltered && store.items.length > 0 && filteredPrinters.length === 0}
+      {#if isFiltered && store.items.length > 0 && displayPrinters.length === 0}
         <div class="empty-filter-banner">
           <span>No printers match the active filter tags.</span>
           <button
@@ -181,23 +230,23 @@
         class="printer-grid"
         class:noc-grid={noc.isNocMode}
         use:dndzone={{
-          items: filteredPrinters,
+          items: displayPrinters,
           flipDurationMs: DND_FLIP_DURATION_MS,
-          dragDisabled: noc.isNocMode || isFiltered,
+          dragDisabled: noc.isNocMode || isFiltered || isSorted,
           dropTargetStyle: {},
         }}
         onconsider={(e) => {
-          if (!isFiltered) {
+          if (!isFiltered && !isSorted) {
             store.items = e.detail.items;
           }
         }}
         onfinalize={(e) => {
-          if (!isFiltered) {
+          if (!isFiltered && !isSorted) {
             store.reorderPrinters(e.detail.items);
           }
         }}
       >
-        {#each filteredPrinters as printer (printer.id)}
+        {#each displayPrinters as printer (printer.id)}
           {@const printerState = store.statusMap[printer.id]}
           <div animate:flip={{ duration: DND_FLIP_DURATION_MS }} class="drag-wrapper">
             <PrinterCard
@@ -264,6 +313,17 @@
   onconfigure={(p) => openEditModal(p)}
 />
 
+<SortModal
+  bind:open={isSortModalOpen}
+  title="Sort Printers"
+  bind:rules={sortRules}
+  fields={PRINTER_SORT_FIELDS}
+  onApplyToOrder={async () => {
+    await store.reorderPrinters(displayPrinters);
+    sortRules = [];
+  }}
+/>
+
 <PrinterFilterModal
   bind:open={isFilterModalOpen}
   {store}
@@ -277,40 +337,6 @@
 />
 
 <style>
-  .btn-filter {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    background-color: transparent;
-    border: solid var(--width-border) var(--color-border);
-    color: var(--color-text-muted);
-    padding: 0.35rem 0.75rem;
-    border-radius: 0.375rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-    transition: all 0.15s ease;
-  }
-
-  .btn-filter:hover {
-    background-color: var(--color-surface);
-    color: var(--color-text);
-    border-color: var(--color-text-muted);
-  }
-
-  .btn-filter.active {
-    border-color: var(--color-primary);
-    color: var(--color-text);
-    background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
-  }
-
-  .filter-count-badge {
-    background-color: var(--color-primary);
-    color: var(--color-base);
-  }
-
   .empty-filter-banner {
     display: flex;
     align-items: center;
