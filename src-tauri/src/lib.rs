@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 pub mod db;
+pub mod endpoint;
 pub mod net;
 pub mod printer_dashboard;
 pub mod server_monitor;
@@ -44,6 +45,13 @@ pub fn run() {
             printer_dashboard::webview::navigate_printer_webview,
             printer_dashboard::webview::reload_printer_webview,
             printer_dashboard::webview::close_printer_webview,
+            endpoint::endpoint_check_os_support,
+            endpoint::endpoint_get_machine_info,
+            endpoint::endpoint_check_updates,
+            endpoint::endpoint_download_updates,
+            endpoint::endpoint_install_updates,
+            endpoint::endpoint_detect_shell,
+            endpoint::endpoint_execute_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
