@@ -13,6 +13,7 @@ import type {
   PrinterFilterConfig,
   PrinterState,
   PrinterStatusTick,
+  StatusKind,
 } from "./types";
 
 const PRINTER_STATUS_EVENT = "printer-status-tick";
@@ -101,36 +102,8 @@ export class PrinterStore extends MonitorStore<
     this.initPromise = null;
   }
 
-  get errorCount(): number {
-    let count = 0;
-    for (const printer of this.items) {
-      if (getEffectivePrinterStatus(this.statusMap[printer.id]) === "offline") {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  get warningCount(): number {
-    let count = 0;
-    for (const printer of this.items) {
-      if (getEffectivePrinterStatus(this.statusMap[printer.id]) === "degraded") {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  get alertCount(): number {
-    return this.errorCount + this.warningCount;
-  }
-
-  get hasError(): boolean {
-    return this.errorCount > 0;
-  }
-
-  get hasWarning(): boolean {
-    return this.warningCount > 0;
+  protected effectiveStatus(printer: Printer): StatusKind {
+    return getEffectivePrinterStatus(this.statusMap[printer.id]);
   }
 
   fetchPrinters = async () => {

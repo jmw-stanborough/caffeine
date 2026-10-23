@@ -1,5 +1,5 @@
 import { MonitorStore } from "$lib/monitor-store.svelte";
-import type { HostState, Server, ServerStatusTick } from "./types";
+import type { HostState, Server, ServerStatusTick, StatusKind } from "./types";
 
 const SOUND_DOWN_PATH = "/sound-files/servers/down.mp3";
 const SOUND_UP_PATH = "/sound-files/servers/up.mp3";
@@ -67,36 +67,8 @@ export class ServerStore extends MonitorStore<
     this.initPromise = null;
   }
 
-  get errorCount(): number {
-    let count = 0;
-    for (const server of this.items) {
-      if (this.statusMap[server.id]?.status === "offline") {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  get warningCount(): number {
-    let count = 0;
-    for (const server of this.items) {
-      if (this.statusMap[server.id]?.status === "degraded") {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  get alertCount(): number {
-    return this.errorCount + this.warningCount;
-  }
-
-  get hasError(): boolean {
-    return this.errorCount > 0;
-  }
-
-  get hasWarning(): boolean {
-    return this.warningCount > 0;
+  protected effectiveStatus(server: Server): StatusKind {
+    return this.statusMap[server.id]?.status ?? "checking";
   }
 
   fetchServers = async () => {

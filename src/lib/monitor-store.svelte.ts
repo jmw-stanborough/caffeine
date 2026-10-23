@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { RELATIVE_TIME_TICK_MS } from "./constants";
 
+export type MonitorStatus = "online" | "offline" | "degraded" | "checking";
+
 export abstract class MonitorStore<
   TItem extends { id: string },
   TState,
@@ -16,6 +18,41 @@ export abstract class MonitorStore<
   private unlistenStatus: UnlistenFn | null = null;
   private timer: number | null = null;
   protected destroyed = false;
+
+  protected abstract effectiveStatus(item: TItem): MonitorStatus;
+
+  get statusCounts(): Record<MonitorStatus, number> {
+    const counts: Record<MonitorStatus, number> = {
+      online: 0,
+      offline: 0,
+      degraded: 0,
+      checking: 0,
+    };
+    for (const item of this.items) {
+      counts[this.effectiveStatus(item)]++;
+    }
+    return counts;
+  }
+
+  get errorCount(): number {
+    return this.statusCounts.offline;
+  }
+
+  get warningCount(): number {
+    return this.statusCounts.degraded;
+  }
+
+  get alertCount(): number {
+    return this.errorCount + this.warningCount;
+  }
+
+  get hasError(): boolean {
+    return this.errorCount > 0;
+  }
+
+  get hasWarning(): boolean {
+    return this.warningCount > 0;
+  }
 
   protected async startTickSubscription(
     eventName: string,
