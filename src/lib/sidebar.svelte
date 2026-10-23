@@ -38,10 +38,10 @@
         aria-current={isActive ? "page" : undefined}
         {href}
       >
-        <span class="nav-label">{label}</span>
+        <span>{label}</span>
         {#if badgeCount > 0}
           <span
-            class="notification-badge"
+            class="count-badge notification-badge"
             aria-label="{badgeCount} {badgeCount === 1 ? 'alert' : 'alerts'}"
           >
             {badgeCount}
@@ -88,8 +88,7 @@
   .nav-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    gap: 0.4rem;
     padding: 8px 12px;
     border-radius: 6px;
     color: var(--color-text);
@@ -107,26 +106,8 @@
     font-weight: 600;
   }
 
-  .nav-label {
-    flex: 1;
-    min-width: 0;
-  }
-
   .notification-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.25rem;
-    height: 1.25rem;
-    padding: 0 0.35rem;
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--color-base);
     background-color: var(--color-secondary);
-    box-sizing: border-box;
-    margin-left: auto;
-    flex-shrink: 0;
+    color: var(--color-base);
   }
 </style>

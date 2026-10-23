@@ -152,7 +152,7 @@
           >
             <span>⚙ Filter</span>
             {#if isFiltered}
-              <span class="filter-count-badge">{activeFilterCount}</span>
+              <span class="count-badge filter-count-badge">{activeFilterCount}</span>
             {/if}
           </button>
         {/if}
@@ -303,19 +303,8 @@
   }
 
   .filter-count-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0.85rem;
-    height: 0.85rem;
-    padding: 1px 0.2rem 0;
-    border-radius: 999px;
     background-color: var(--color-primary);
     color: var(--color-base);
-    font-size: 0.62rem;
-    font-weight: 700;
-    line-height: 1;
-    box-sizing: border-box;
   }
 
   .empty-filter-banner {
