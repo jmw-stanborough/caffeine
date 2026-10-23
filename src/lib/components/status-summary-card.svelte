@@ -33,9 +33,9 @@
   }: Props = $props();
 
   const STAT_ORDER: { key: MonitorStatus; label: string }[] = [
-    { key: "online", label: "Online" },
+    { key: "online", label: "Healthy" },
     { key: "degraded", label: "Warning" },
-    { key: "offline", label: "Offline" },
+    { key: "offline", label: "Error" },
     { key: "checking", label: "Checking" },
   ];
 </script>

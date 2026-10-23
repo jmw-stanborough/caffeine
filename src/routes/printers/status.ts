@@ -192,7 +192,8 @@ export function parseStatusChips(statusMessage?: string): StatusChip[] {
 
 export function getPrinterIssues(state?: Partial<PrinterState>): string[] {
   const issues: string[] = [];
-  if (state?.status === "offline") issues.push("Offline");
+  if (state?.status === "offline") issues.push("Error");
+  if (state?.status === "degraded") issues.push("Warning");
   if (hasPaperJam(state)) issues.push("Paper jam");
   if (hasOutOfPaper(state)) issues.push("Out of paper");
   if (hasEmptyTonerSupply(state?.toners)) issues.push("Toner empty");

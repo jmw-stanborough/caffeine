@@ -25,7 +25,7 @@
         {
           id: server.id,
           label: server.label || server.host,
-          detail: status === "offline" ? "Offline" : "Degraded",
+          detail: status === "offline" ? "Error" : "Warning",
           severity: status,
         },
       ];
