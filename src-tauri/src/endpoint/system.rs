@@ -7,6 +7,9 @@ use super::types::{
     NetworkInterfaceInfo, OsSupportInfo, SystemMetaInfo, TemperatureReading,
 };
 
+static PERSISTENT_SYSTEM: LazyLock<Mutex<System>> =
+    LazyLock::new(|| Mutex::new(System::new_all()));
+
 static CACHED_STATIC_HARDWARE: LazyLock<Mutex<Option<StaticHardwareInfo>>> =
     LazyLock::new(|| Mutex::new(None));
 
@@ -15,6 +18,7 @@ struct StaticHardwareInfo {
     domain: String,
     motherboard: Option<MotherboardInfo>,
     gpus: Vec<GpuInfo>,
+    build_number: String,
 }
 
 pub fn check_os_support() -> OsSupportInfo {
@@ -47,34 +51,66 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
         return Err("The Endpoint module is currently only supported on Windows.".to_string());
     }
 
-    let mut sys = System::new_all();
-    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-    sys.refresh_cpu_usage();
-    sys.refresh_memory();
+    let (
+        model_name,
+        vendor_id,
+        frequency_mhz,
+        physical_cores,
+        logical_cores,
+        global_usage_percent,
+        core_usages,
+        total_bytes,
+        used_bytes,
+        free_bytes,
+        available_bytes,
+        usage_percent,
+    ) = {
+        let mut sys = PERSISTENT_SYSTEM
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let cpus = sys.cpus();
-    let model_name = cpus
-        .first()
-        .map(|c| c.brand().trim().to_string())
-        .unwrap_or_else(|| "Unknown Processor".to_string());
-    let vendor_id = cpus
-        .first()
-        .map(|c| c.vendor_id().trim().to_string())
-        .unwrap_or_default();
-    let frequency_mhz = cpus.first().map(|c| c.frequency()).unwrap_or(0);
-    let physical_cores = System::physical_core_count().unwrap_or(cpus.len());
-    let logical_cores = cpus.len();
-    let global_usage_percent = sys.global_cpu_usage();
-    let core_usages: Vec<f32> = cpus.iter().map(|c| c.cpu_usage()).collect();
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
 
-    let total_bytes = sys.total_memory();
-    let used_bytes = sys.used_memory();
-    let free_bytes = sys.free_memory();
-    let available_bytes = sys.available_memory();
-    let usage_percent = if total_bytes > 0 {
-        ((used_bytes as f64 / total_bytes as f64) * 100.0) as f32
-    } else {
-        0.0
+        let cpus = sys.cpus();
+        let model = cpus
+            .first()
+            .map(|c| c.brand().trim().to_string())
+            .unwrap_or_else(|| "Unknown Processor".to_string());
+        let vendor = cpus
+            .first()
+            .map(|c| c.vendor_id().trim().to_string())
+            .unwrap_or_default();
+        let freq = cpus.first().map(|c| c.frequency()).unwrap_or(0);
+        let phys_cores = System::physical_core_count().unwrap_or(cpus.len());
+        let log_cores = cpus.len();
+        let global_usage = sys.global_cpu_usage();
+        let core_u: Vec<f32> = cpus.iter().map(|c| c.cpu_usage()).collect();
+
+        let total = sys.total_memory();
+        let used = sys.used_memory();
+        let free = sys.free_memory();
+        let available = sys.available_memory();
+        let usage = if total > 0 {
+            ((used as f64 / total as f64) * 100.0) as f32
+        } else {
+            0.0
+        };
+
+        (
+            model,
+            vendor,
+            freq,
+            phys_cores,
+            log_cores,
+            global_usage,
+            core_u,
+            total,
+            used,
+            free,
+            available,
+            usage,
+        )
     };
 
     let memory = MemoryInfo {
@@ -135,7 +171,6 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
     let mut networks = Vec::new();
     for (name, net) in &networks_list {
         let mac = net.mac_address().to_string();
-        // Ignore loopback or adapters with empty mac address if inactive
         if mac == "00:00:00:00:00:00" && net.total_received() == 0 && net.total_transmitted() == 0 {
             continue;
         }
@@ -167,7 +202,7 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
         domain_or_workgroup: static_info.domain,
         os_name: System::name().unwrap_or_else(|| "Windows".to_string()),
         os_version: System::os_version().unwrap_or_default(),
-        build_number: get_windows_build_number(),
+        build_number: static_info.build_number,
         architecture: System::cpu_arch(),
         uptime_seconds: System::uptime(),
         boot_timestamp: System::boot_time(),
@@ -219,11 +254,16 @@ fn query_static_windows_hardware() -> StaticHardwareInfo {
 
     let gpus = query_gpus();
     let motherboard = query_motherboard();
+    let build_number = query_powershell_scalar(
+        "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').CurrentBuildNumber",
+    )
+    .unwrap_or_default();
 
     StaticHardwareInfo {
         domain,
         motherboard,
         gpus,
+        build_number,
     }
 }
 
@@ -350,9 +390,4 @@ fn query_powershell_scalar(script: &str) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-fn get_windows_build_number() -> String {
-    query_powershell_scalar("(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').CurrentBuildNumber")
-        .unwrap_or_default()
 }

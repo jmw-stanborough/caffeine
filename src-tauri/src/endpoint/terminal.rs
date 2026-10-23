@@ -1,6 +1,18 @@
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use std::io::{Read, Write};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
-use super::types::{ShellDetectionResult, TerminalCommandResult};
+use tauri::{AppHandle, Emitter};
+
+use super::types::ShellDetectionResult;
+
+struct ActiveTerminalSession {
+    writer: Box<dyn Write + Send>,
+    master: Box<dyn MasterPty + Send>,
+}
+
+static ACTIVE_SESSION: LazyLock<Mutex<Option<ActiveTerminalSession>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 static DETECTED_SHELL: LazyLock<Mutex<Option<ShellDetectionResult>>> =
     LazyLock::new(|| Mutex::new(None));
@@ -71,65 +83,135 @@ fn detect_shell_internal() -> ShellDetectionResult {
     }
 }
 
-pub fn execute_terminal_command(
-    command_str: &str,
-    working_dir: Option<String>,
-) -> Result<TerminalCommandResult, String> {
+pub fn start_terminal_session(
+    app: AppHandle,
+    cols: u16,
+    rows: u16,
+) -> Result<ShellDetectionResult, String> {
     if !cfg!(target_os = "windows") {
         return Err("Terminal is only supported on Windows.".to_string());
     }
 
     let shell = detect_shell();
-    let exec = shell.executable_path;
+    let exec = shell.executable_path.clone();
 
-    let initial_cwd = working_dir
-        .filter(|d| !d.trim().is_empty())
-        .unwrap_or_else(|| {
-            std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".to_string())
-        });
+    // Kill any existing session before starting a fresh one
+    close_terminal_session();
 
-    let wrapped_script = format!(
-        r#"
-$ProgressPreference = 'SilentlyContinue'
-Set-Location -LiteralPath '{initial_cwd}'
-try {{
-    {command_str}
-}} finally {{
-    [Console]::Out.Flush()
-    Write-Host ('__CAFFEINE_PWD__:' + (Get-Location).Path)
-}}
-"#
-    );
+    let pty_system = native_pty_system();
+    let size = PtySize {
+        rows: rows.max(10),
+        cols: cols.max(20),
+        pixel_width: 0,
+        pixel_height: 0,
+    };
 
-    let output = Command::new(&exec)
-        .args(["-NoProfile", "-NonInteractive", "-Command", &wrapped_script])
-        .output()
-        .map_err(|e| format!("Failed to execute terminal process {exec}: {e}"))?;
+    let pair = pty_system
+        .openpty(size)
+        .map_err(|e| format!("Failed to open ConPTY pseudo-terminal: {e}"))?;
 
-    let raw_stdout = String::from_utf8_lossy(&output.stdout);
-    let raw_stderr = String::from_utf8_lossy(&output.stderr);
+    let mut cmd = CommandBuilder::new(&exec);
+    cmd.args(["-NoLogo"]);
 
-    let mut clean_stdout_lines = Vec::new();
-    let mut updated_dir = initial_cwd;
-
-    for line in raw_stdout.lines() {
-        if let Some(pwd_suffix) = line.strip_prefix("__CAFFEINE_PWD__:") {
-            let candidate = pwd_suffix.trim();
-            if !candidate.is_empty() {
-                updated_dir = candidate.to_string();
-            }
-        } else {
-            clean_stdout_lines.push(line);
-        }
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        cmd.cwd(home);
     }
 
-    let exit_code = output.status.code().unwrap_or(if output.status.success() { 0 } else { 1 });
+    pair.slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("Failed to spawn {exec} in PTY: {e}"))?;
 
-    Ok(TerminalCommandResult {
-        command: command_str.to_string(),
-        exit_code,
-        stdout: clean_stdout_lines.join("\n"),
-        stderr: raw_stderr.trim().to_string(),
-        working_dir: updated_dir,
-    })
+    // Drop slave in parent process so EOF propagates when child terminates
+    drop(pair.slave);
+
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
+
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("Failed to obtain PTY writer: {e}"))?;
+
+    let session = ActiveTerminalSession {
+        writer,
+        master: pair.master,
+    };
+
+    {
+        let mut active = ACTIVE_SESSION
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *active = Some(session);
+    }
+
+    // Spawn reader thread that streams output in real-time to xterm frontend
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 2048];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                    if app.emit("terminal://data", chunk).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        let _ = app.emit("terminal://exit", ());
+    });
+
+    Ok(shell)
+}
+
+pub fn write_to_terminal(data: &str) -> Result<(), String> {
+    let mut active = ACTIVE_SESSION
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if let Some(session) = active.as_mut() {
+        session
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|e| format!("Failed to write to terminal: {e}"))?;
+        session
+            .writer
+            .flush()
+            .map_err(|e| format!("Failed to flush terminal input: {e}"))?;
+        Ok(())
+    } else {
+        Err("No active terminal session".to_string())
+    }
+}
+
+pub fn resize_terminal(cols: u16, rows: u16) -> Result<(), String> {
+    let mut active = ACTIVE_SESSION
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    if let Some(session) = active.as_mut() {
+        let size = PtySize {
+            rows: rows.max(5),
+            cols: cols.max(10),
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        session
+            .master
+            .resize(size)
+            .map_err(|e| format!("Failed to resize terminal: {e}"))?;
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn close_terminal_session() {
+    let mut active = ACTIVE_SESSION
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *active = None;
 }

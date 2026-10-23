@@ -51,7 +51,10 @@ pub fn run() {
             endpoint::endpoint_download_updates,
             endpoint::endpoint_install_updates,
             endpoint::endpoint_detect_shell,
-            endpoint::endpoint_execute_command,
+            endpoint::endpoint_start_terminal,
+            endpoint::endpoint_write_terminal,
+            endpoint::endpoint_resize_terminal,
+            endpoint::endpoint_close_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

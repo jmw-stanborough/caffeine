@@ -3,8 +3,6 @@ import type {
   EndpointMachineInfo,
   OsSupportInfo,
   ShellDetectionResult,
-  TerminalCommandResult,
-  TerminalEntry,
   UpdateCheckResult,
   UpdateOperationResult,
 } from "./types";
@@ -25,12 +23,10 @@ export class EndpointStore {
   operationStatus = $state<string | null>(null);
 
   shell = $state<ShellDetectionResult | null>(null);
-  terminalWorkingDir = $state<string>("~");
-  terminalEntries = $state<TerminalEntry[]>([]);
-  isCommandRunning = $state(false);
 
   private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private isDestroyed = false;
+  private isRefreshing = false;
 
   async init(): Promise<void> {
     this.isDestroyed = false;
@@ -55,10 +51,10 @@ export class EndpointStore {
       return;
     }
 
+    // Load initial hardware metrics and detect shell asynchronously
     await Promise.allSettled([
-      this.fetchMachineInfo(),
+      this.fetchMachineInfo(true),
       this.detectShell(),
-      this.checkForUpdates(),
     ]);
 
     this.startAutoRefresh();
@@ -69,12 +65,12 @@ export class EndpointStore {
     this.stopAutoRefresh();
   }
 
-  startAutoRefresh(intervalMs = 3000): void {
+  startAutoRefresh(intervalMs = 3500): void {
     this.stopAutoRefresh();
     this.autoRefreshTimer = setInterval(() => {
-      if (!this.isDestroyed && this.osSupport?.is_windows && !this.machineLoading) {
+      if (!this.isDestroyed && this.osSupport?.is_windows && !this.machineLoading && !this.isRefreshing) {
         this.fetchMachineInfo(false).catch((err) => {
-          console.warn("Endpoint metrics refresh failed:", err);
+          console.warn("Endpoint telemetry refresh failed:", err);
         });
       }
     }, intervalMs);
@@ -88,6 +84,9 @@ export class EndpointStore {
   }
 
   async fetchMachineInfo(showSpinner = true): Promise<void> {
+    if (this.isRefreshing) return;
+    this.isRefreshing = true;
+
     if (showSpinner) {
       this.machineLoading = true;
     }
@@ -99,6 +98,7 @@ export class EndpointStore {
       this.machineError = String(err);
       throw err;
     } finally {
+      this.isRefreshing = false;
       if (showSpinner) {
         this.machineLoading = false;
       }
@@ -106,6 +106,7 @@ export class EndpointStore {
   }
 
   async checkForUpdates(): Promise<void> {
+    if (this.updatesChecking) return;
     this.updatesChecking = true;
     this.updatesError = null;
     this.operationStatus = null;
@@ -122,7 +123,7 @@ export class EndpointStore {
 
   async downloadUpdates(targetId?: string): Promise<UpdateOperationResult> {
     this.downloadingId = targetId ?? "ALL";
-    this.operationStatus = "Downloading updates...";
+    this.operationStatus = "Downloading updates in background...";
     this.updatesError = null;
 
     try {
@@ -143,7 +144,7 @@ export class EndpointStore {
 
   async installUpdates(targetId?: string): Promise<UpdateOperationResult> {
     this.installingId = targetId ?? "ALL";
-    this.operationStatus = "Installing updates...";
+    this.operationStatus = "Installing updates in background...";
     this.updatesError = null;
 
     try {
@@ -174,59 +175,6 @@ export class EndpointStore {
         is_pwsh: false,
       };
     }
-  }
-
-  async executeCommand(rawCommand: string): Promise<void> {
-    const trimmed = rawCommand.trim();
-    if (!trimmed || this.isCommandRunning) return;
-
-    if (trimmed === "cls" || trimmed === "clear") {
-      this.clearTerminal();
-      return;
-    }
-
-    const entryId = crypto.randomUUID();
-    const workingDir = this.terminalWorkingDir;
-
-    const entry: TerminalEntry = {
-      id: entryId,
-      command: trimmed,
-      working_dir: workingDir,
-      timestamp: new Date().toLocaleTimeString(),
-      is_running: true,
-    };
-
-    this.terminalEntries.push(entry);
-    this.isCommandRunning = true;
-
-    try {
-      const result = await invoke<TerminalCommandResult>("endpoint_execute_command", {
-        command: trimmed,
-        workingDir: workingDir === "~" ? null : workingDir,
-      });
-
-      entry.result = result;
-      entry.is_running = false;
-      if (result.working_dir) {
-        this.terminalWorkingDir = result.working_dir;
-      }
-    } catch (err: unknown) {
-      entry.is_running = false;
-      entry.result = {
-        command: trimmed,
-        exit_code: 1,
-        stdout: "",
-        stderr: String(err),
-        working_dir: workingDir,
-      };
-      throw err;
-    } finally {
-      this.isCommandRunning = false;
-    }
-  }
-
-  clearTerminal(): void {
-    this.terminalEntries = [];
   }
 }
 

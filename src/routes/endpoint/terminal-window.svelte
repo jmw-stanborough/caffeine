@@ -1,87 +1,166 @@
 <script lang="ts">
-  import { tick } from "svelte";
-  import type { ShellDetectionResult, TerminalEntry } from "./types";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { FitAddon } from "@xterm/addon-fit";
+  import { Terminal } from "@xterm/xterm";
+  import "@xterm/xterm/css/xterm.css";
+  import { onDestroy, onMount } from "svelte";
+  import type { ShellDetectionResult } from "./types";
 
   interface Props {
     shell: ShellDetectionResult | null;
-    workingDir: string;
-    entries: TerminalEntry[];
-    isRunning: boolean;
-    onExecute: (cmd: string) => void;
-    onClear: () => void;
   }
 
-  let {
-    shell,
-    workingDir,
-    entries,
-    isRunning,
-    onExecute,
-    onClear,
-  }: Props = $props();
+  let { shell }: Props = $props();
 
-  let inputVal = $state("");
-  let inputElement = $state<HTMLInputElement | null>(null);
-  let scrollContainer = $state<HTMLDivElement | null>(null);
+  let terminalContainer = $state<HTMLDivElement | null>(null);
+  let term: Terminal | null = null;
+  let fitAddon: FitAddon | null = null;
+  let resizeObserver: ResizeObserver | null = null;
+  let unlistenData: UnlistenFn | null = null;
+  let unlistenExit: UnlistenFn | null = null;
+  let isConnecting = $state(true);
 
-  let commandHistory = $state<string[]>([]);
-  let historyIndex = $state<number>(-1);
+  async function initTerminal() {
+    if (!terminalContainer) return;
 
-  async function scrollToBottom() {
-    await tick();
-    if (scrollContainer) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    term = new Terminal({
+      cursorBlink: true,
+      cursorStyle: "bar",
+      fontSize: 13,
+      lineHeight: 1.25,
+      fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
+      theme: {
+        background: "#1d2021",
+        foreground: "#ebdbb2",
+        cursor: "#fabd2f",
+        cursorAccent: "#1d2021",
+        selectionBackground: "#504945",
+        black: "#282828",
+        red: "#cc241d",
+        green: "#98971a",
+        yellow: "#d79921",
+        blue: "#458588",
+        magenta: "#b16286",
+        cyan: "#689d6a",
+        white: "#a89984",
+        brightBlack: "#928374",
+        brightRed: "#fb4934",
+        brightGreen: "#b8bb26",
+        brightYellow: "#fabd2f",
+        brightBlue: "#83a598",
+        brightMagenta: "#d3869b",
+        brightCyan: "#8ec07c",
+        brightWhite: "#ebdbb2",
+      },
+      convertEol: true,
+      allowProposedApi: true,
+    });
+
+    fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(terminalContainer);
+
+    try {
+      fitAddon.fit();
+    } catch {
+      // Container may still be settling dimensions
     }
-  }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const cmd = inputVal.trim();
-      if (!cmd || isRunning) return;
+    const cols = term.cols || 80;
+    const rows = term.rows || 24;
 
-      commandHistory.push(cmd);
-      historyIndex = -1;
-      inputVal = "";
+    try {
+      await invoke("endpoint_start_terminal", { cols, rows });
+      isConnecting = false;
+    } catch (err: unknown) {
+      term.writeln(`\r\n\x1b[31mFailed to launch embedded terminal: ${err}\x1b[0m\r\n`);
+      isConnecting = false;
+      return;
+    }
 
-      onExecute(cmd);
-      scrollToBottom();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (commandHistory.length === 0) return;
+    unlistenData = await listen<string>("terminal://data", (event) => {
+      term?.write(event.payload);
+    });
 
-      if (historyIndex === -1) {
-        historyIndex = commandHistory.length - 1;
-      } else if (historyIndex > 0) {
-        historyIndex--;
+    unlistenExit = await listen("terminal://exit", () => {
+      term?.writeln("\r\n\x1b[33m[Process completed]\x1b[0m\r\n");
+    });
+
+    term.onData((data) => {
+      invoke("endpoint_write_terminal", { data }).catch((err) => {
+        console.warn("Failed to send terminal input:", err);
+      });
+    });
+
+    resizeObserver = new ResizeObserver(() => {
+      if (fitAddon && term && terminalContainer && terminalContainer.clientWidth > 0) {
+        try {
+          fitAddon.fit();
+          invoke("endpoint_resize_terminal", {
+            cols: term.cols,
+            rows: term.rows,
+          }).catch(() => {});
+        } catch {
+          // ignore transient resize calculations
+        }
       }
-      inputVal = commandHistory[historyIndex] ?? "";
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (historyIndex === -1) return;
+    });
 
-      if (historyIndex < commandHistory.length - 1) {
-        historyIndex++;
-        inputVal = commandHistory[historyIndex] ?? "";
-      } else {
-        historyIndex = -1;
-        inputVal = "";
-      }
+    resizeObserver.observe(terminalContainer);
+    term.focus();
+  }
+
+  function sendData(data: string) {
+    invoke("endpoint_write_terminal", { data }).catch((err) => {
+      console.warn("Failed to write to terminal:", err);
+    });
+  }
+
+  function handleInterrupt() {
+    sendData("\x03");
+  }
+
+  function handleClear() {
+    term?.clear();
+    sendData("Clear-Host\r");
+  }
+
+  async function handleRestart() {
+    cleanup();
+    if (terminalContainer) {
+      terminalContainer.innerHTML = "";
+    }
+    isConnecting = true;
+    await initTerminal();
+  }
+
+  function cleanup() {
+    if (unlistenData) {
+      unlistenData();
+      unlistenData = null;
+    }
+    if (unlistenExit) {
+      unlistenExit();
+      unlistenExit = null;
+    }
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      resizeObserver = null;
+    }
+    invoke("endpoint_close_terminal").catch(() => {});
+    if (term) {
+      term.dispose();
+      term = null;
     }
   }
 
-  function runQuickCommand(cmd: string) {
-    if (isRunning) return;
-    commandHistory.push(cmd);
-    onExecute(cmd);
-    scrollToBottom();
-  }
+  onMount(() => {
+    initTerminal();
+  });
 
-  $effect(() => {
-    // Whenever entries change, scroll down
-    if (entries.length > 0) {
-      scrollToBottom();
-    }
+  onDestroy(() => {
+    cleanup();
   });
 </script>
 
@@ -114,97 +193,63 @@
           {shell.shell_name} {shell.version}
         </span>
       {/if}
+      {#if isConnecting}
+        <span class="connecting-label">Connecting PTY...</span>
+      {/if}
     </div>
 
     <div class="header-actions">
       <div class="quick-commands">
         <button
           class="btn-quick"
-          onclick={() => runQuickCommand("Get-Process | Select-Object -First 5")}
-          disabled={isRunning}
+          onclick={() => sendData("ping 8.8.8.8\r")}
+          title="Run ping 8.8.8.8"
         >
-          ps
+          ping
         </button>
         <button
           class="btn-quick"
-          onclick={() => runQuickCommand("ipconfig")}
-          disabled={isRunning}
+          onclick={() => sendData("ipconfig\r")}
+          title="Run ipconfig"
         >
           ipconfig
         </button>
         <button
           class="btn-quick"
-          onclick={() => runQuickCommand("Get-Date")}
-          disabled={isRunning}
+          onclick={() => sendData("Get-Process | Select-Object -First 5\r")}
+          title="Show top 5 processes"
         >
-          date
+          ps
         </button>
       </div>
 
       <button
-        class="btn-clear"
-        onclick={onClear}
-        title="Clear terminal buffer"
-        disabled={entries.length === 0}
+        class="btn-interrupt"
+        onclick={handleInterrupt}
+        title="Send Ctrl+C to cancel running process"
+      >
+        Ctrl+C
+      </button>
+
+      <button
+        class="btn-action"
+        onclick={handleClear}
+        title="Clear terminal screen"
       >
         Clear
+      </button>
+
+      <button
+        class="btn-action"
+        onclick={handleRestart}
+        title="Restart terminal session"
+      >
+        Restart
       </button>
     </div>
   </div>
 
-  <div class="terminal-body" bind:this={scrollContainer}>
-    <div class="terminal-welcome">
-      <span>Windows PowerShell Terminal Session &bull; Detected shell: <strong>{shell?.shell_name || "PowerShell"}</strong></span>
-      <span class="sub-welcome">Type any command or use the quick buttons above. Directory changes (`cd`) persist.</span>
-    </div>
-
-    {#each entries as entry (entry.id)}
-      <div class="log-entry">
-        <div class="prompt-line">
-          <span class="prompt-prefix">PS {entry.working_dir}&gt;</span>
-          <span class="prompt-cmd">{entry.command}</span>
-          <span class="entry-time">{entry.timestamp}</span>
-        </div>
-
-        {#if entry.is_running}
-          <div class="running-indicator">
-            <span class="mini-spin"></span>
-            <span>Executing...</span>
-          </div>
-        {:else if entry.result}
-          {#if entry.result.stdout}
-            <pre class="stream-stdout">{entry.result.stdout}</pre>
-          {/if}
-          {#if entry.result.stderr}
-            <pre class="stream-stderr">{entry.result.stderr}</pre>
-          {/if}
-          {#if entry.result.exit_code !== 0}
-            <div class="exit-badge">Exit Code: {entry.result.exit_code}</div>
-          {/if}
-        {/if}
-      </div>
-    {/each}
-
-    <!-- Interactive Active Prompt Line -->
-    <div class="active-prompt-row">
-      <span class="prompt-prefix">PS {workingDir}&gt;</span>
-      <input
-        type="text"
-        bind:this={inputElement}
-        bind:value={inputVal}
-        onkeydown={handleKeydown}
-        disabled={isRunning}
-        placeholder={isRunning ? "Command is running..." : "Type PowerShell command and press Enter..."}
-        class="prompt-input"
-        spellcheck="false"
-        autocomplete="off"
-        autocapitalize="off"
-      />
-      {#if isRunning}
-        <span class="mini-spin prompt-spin"></span>
-      {/if}
-    </div>
-  </div>
+  <div class="terminal-body" bind:this={terminalContainer}></div>
 </div>
 
 <style>
@@ -223,7 +268,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.65rem 1rem;
+    padding: 0.55rem 0.85rem;
     background-color: #282828;
     border-bottom: solid var(--width-border) #3c3836;
     flex-shrink: 0;
@@ -232,7 +277,7 @@
   .header-left {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.5rem;
   }
 
   .header-icon-wrap {
@@ -265,10 +310,16 @@
     border-color: var(--color-primary);
   }
 
+  .connecting-label {
+    font-size: 0.75rem;
+    color: #fabd2f;
+    font-style: italic;
+  }
+
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.35rem;
   }
 
   .quick-commands {
@@ -281,7 +332,7 @@
     background-color: #3c3836;
     border: solid 1px #504945;
     color: #ebdbb2;
-    padding: 0.2rem 0.45rem;
+    padding: 0.18rem 0.45rem;
     border-radius: 0.25rem;
     font-size: 0.75rem;
     font-family: monospace;
@@ -289,15 +340,33 @@
     transition: background-color 0.12s ease;
   }
 
-  .btn-quick:hover:not(:disabled) {
+  .btn-quick:hover {
     background-color: #504945;
   }
 
-  .btn-clear {
+  .btn-interrupt {
+    background-color: color-mix(in srgb, var(--color-failure) 20%, #282828);
+    border: solid 1px var(--color-failure);
+    color: var(--color-failure);
+    padding: 0.18rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: monospace;
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+
+  .btn-interrupt:hover {
+    background-color: var(--color-failure);
+    color: var(--color-base);
+  }
+
+  .btn-action {
     background-color: transparent;
     border: solid 1px #504945;
     color: #a89984;
-    padding: 0.2rem 0.55rem;
+    padding: 0.18rem 0.5rem;
     border-radius: 0.25rem;
     font-size: 0.75rem;
     font-weight: 600;
@@ -305,148 +374,24 @@
     transition: all 0.12s ease;
   }
 
-  .btn-clear:hover:not(:disabled) {
+  .btn-action:hover {
     background-color: #3c3836;
     color: #ebdbb2;
   }
 
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .terminal-body {
     flex: 1;
-    overflow-y: auto;
-    padding: 0.85rem 1rem;
-    font-family: "Cascadia Code", "Consolas", monospace;
-    font-size: 0.85rem;
-    color: #ebdbb2;
-    line-height: 1.45;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+    min-height: 0;
+    padding: 0.4rem 0.5rem;
+    background-color: #1d2021;
+    overflow: hidden;
   }
 
-  .terminal-welcome {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    padding-bottom: 0.65rem;
-    border-bottom: solid 1px #3c3836;
-    color: #a89984;
-    font-size: 0.8rem;
+  :global(.terminal-body .xterm) {
+    height: 100%;
   }
 
-  .sub-welcome {
-    font-size: 0.72rem;
-    color: #7c6f64;
-  }
-
-  .log-entry {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-
-  .prompt-line {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    color: #83a598;
-  }
-
-  .prompt-prefix {
-    color: #fabd2f;
-    font-weight: 600;
-    flex-shrink: 0;
-    user-select: none;
-  }
-
-  .prompt-cmd {
-    color: #ebdbb2;
-    font-weight: 600;
-    word-break: break-all;
-  }
-
-  .entry-time {
-    margin-left: auto;
-    font-size: 0.7rem;
-    color: #7c6f64;
-    flex-shrink: 0;
-  }
-
-  .running-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: #d79921;
-    font-size: 0.78rem;
-  }
-
-  .mini-spin {
-    width: 12px;
-    height: 12px;
-    border: 2px solid #504945;
-    border-top-color: #fabd2f;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    display: inline-block;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .stream-stdout {
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: #ebdbb2;
-    font-family: inherit;
-    font-size: 0.82rem;
-  }
-
-  .stream-stderr {
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: var(--color-failure);
-    font-family: inherit;
-    font-size: 0.82rem;
-  }
-
-  .exit-badge {
-    font-size: 0.7rem;
-    color: var(--color-failure);
-    font-weight: 600;
-  }
-
-  .active-prompt-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: auto;
-    padding-top: 0.5rem;
-  }
-
-  .prompt-input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: #ebdbb2;
-    font-family: inherit;
-    font-size: 0.85rem;
-    padding: 0;
-  }
-
-  .prompt-input::placeholder {
-    color: #7c6f64;
-    font-style: italic;
-  }
-
-  .prompt-spin {
-    flex-shrink: 0;
+  :global(.terminal-body .xterm-viewport) {
+    overflow-y: auto !important;
   }
 </style>

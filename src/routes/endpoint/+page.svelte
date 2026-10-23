@@ -62,14 +62,7 @@
 
         <!-- Bottom Window: Terminal -->
         <div class="bottom-window-wrap">
-          <TerminalWindow
-            shell={store.shell}
-            workingDir={store.terminalWorkingDir}
-            entries={store.terminalEntries}
-            isRunning={store.isCommandRunning}
-            onExecute={(cmd) => store.executeCommand(cmd)}
-            onClear={() => store.clearTerminal()}
-          />
+          <TerminalWindow shell={store.shell} />
         </div>
       </section>
     </div>
