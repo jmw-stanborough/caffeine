@@ -89,7 +89,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 8px 12px;
+    padding: 8px 32px 8px 12px;
     border-radius: 6px;
     color: var(--color-text);
     font-size: 0.95rem;
