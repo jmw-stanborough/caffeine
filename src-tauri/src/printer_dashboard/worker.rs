@@ -356,3 +356,172 @@ pub fn start_printer_worker(app: AppHandle) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::printer_dashboard::types::TonerSupply;
+
+    #[test]
+    fn test_get_empty_toner_keys() {
+        let details = PrinterPollDetails {
+            toners: vec![
+                TonerSupply {
+                    name: "Black Cartridge".to_string(),
+                    color: "black".to_string(),
+                    level: 11,
+                    max_capacity: 100,
+                    percent: Some(11),
+                    supply_type: "toner".to_string(),
+                },
+                TonerSupply {
+                    name: "Yellow Cartridge".to_string(),
+                    color: "yellow".to_string(),
+                    level: 0,
+                    max_capacity: 100,
+                    percent: Some(0),
+                    supply_type: "toner".to_string(),
+                },
+                TonerSupply {
+                    name: "Waste Toner Box".to_string(),
+                    color: "waste".to_string(),
+                    level: 0,
+                    max_capacity: 100,
+                    percent: Some(0),
+                    supply_type: "waste_toner".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let empty = get_empty_toner_keys(&details);
+        assert_eq!(empty.len(), 1);
+        assert!(empty.contains("yellow"));
+    }
+
+    #[test]
+    fn test_merge_poll_details_preserves_cartridges_on_partial_walk() {
+        let mut tracker = PrinterTracker {
+            status: HealthStatus::Online,
+            last_event: "connected".to_string(),
+            last_event_at: "2026-10-23T08:00:00Z".to_string(),
+            cached_details: PrinterPollDetails {
+                toners: vec![
+                    TonerSupply {
+                        name: "Black Cartridge".to_string(),
+                        color: "black".to_string(),
+                        level: 50,
+                        max_capacity: 100,
+                        percent: Some(50),
+                        supply_type: "toner".to_string(),
+                    },
+                    TonerSupply {
+                        name: "Yellow Cartridge".to_string(),
+                        color: "yellow".to_string(),
+                        level: 0,
+                        max_capacity: 100,
+                        percent: Some(0),
+                        supply_type: "toner".to_string(),
+                    },
+                ],
+                ..Default::default()
+            },
+            last_snmp_poll: None,
+            active_empty_toners: HashSet::new(),
+            active_paper_jam: false,
+            active_out_of_paper: false,
+        };
+
+        // Partial poll that only received black toner
+        let partial = PrinterPollDetails {
+            toners: vec![TonerSupply {
+                name: "Black Cartridge".to_string(),
+                color: "black".to_string(),
+                level: 48,
+                max_capacity: 100,
+                percent: Some(48),
+                supply_type: "toner".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        tracker.merge_poll_details(partial);
+        assert_eq!(tracker.cached_details.toners.len(), 2);
+        assert_eq!(tracker.cached_details.toners[0].percent, Some(48));
+        assert_eq!(tracker.cached_details.toners[1].percent, Some(0));
+    }
+
+    #[test]
+    fn test_update_alert_transitions_deduplicates_toner_empty() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE printer_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                printer_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                latency_ms INTEGER,
+                timestamp TEXT NOT NULL DEFAULT '2026-10-23T08:00:00Z'
+            );
+            ",
+        )
+        .unwrap();
+
+        let mut tracker = PrinterTracker {
+            status: HealthStatus::Online,
+            last_event: "connected".to_string(),
+            last_event_at: "2026-10-23T08:00:00Z".to_string(),
+            cached_details: PrinterPollDetails {
+                toners: vec![TonerSupply {
+                    name: "Yellow Cartridge".to_string(),
+                    color: "yellow".to_string(),
+                    level: 0,
+                    max_capacity: 100,
+                    percent: Some(0),
+                    supply_type: "toner".to_string(),
+                }],
+                ..Default::default()
+            },
+            last_snmp_poll: None,
+            active_empty_toners: HashSet::new(),
+            active_paper_jam: false,
+            active_out_of_paper: false,
+        };
+
+        // First transition: yellow is empty
+        update_alert_transitions(&conn, "p1", Some(5), &mut tracker);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM printer_logs WHERE event_type = 'toner empty'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // Second poll with yellow still empty: must NOT duplicate
+        update_alert_transitions(&conn, "p1", Some(5), &mut tracker);
+        let count2: i64 = conn
+            .query_row("SELECT COUNT(*) FROM printer_logs WHERE event_type = 'toner empty'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count2, 1);
+
+        // A second cartridge (cyan) becomes empty: must record new transition
+        tracker.cached_details.toners.push(TonerSupply {
+            name: "Cyan Cartridge".to_string(),
+            color: "cyan".to_string(),
+            level: 0,
+            max_capacity: 100,
+            percent: Some(0),
+            supply_type: "toner".to_string(),
+        });
+        update_alert_transitions(&conn, "p1", Some(5), &mut tracker);
+        let count3: i64 = conn
+            .query_row("SELECT COUNT(*) FROM printer_logs WHERE event_type = 'toner empty'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count3, 2);
+
+        // Yellow is replaced (>0%): should be removed from active_empty_toners
+        tracker.cached_details.toners[0].percent = Some(100);
+        tracker.cached_details.toners[0].level = 100;
+        update_alert_transitions(&conn, "p1", Some(5), &mut tracker);
+        assert!(!tracker.active_empty_toners.contains("yellow"));
+        assert!(tracker.active_empty_toners.contains("cyan"));
+    }
+}
