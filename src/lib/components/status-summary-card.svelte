@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { MonitorStatus } from "$lib/monitor-store.svelte";
+  import type { Component } from "svelte";
 
   export interface AttentionItem {
     id: string;
@@ -17,6 +18,7 @@
     total: number;
     counts: Record<MonitorStatus, number>;
     attention: AttentionItem[];
+    icon?: Component<{ size?: number | string; class?: string }>;
     extraStat?: { label: string; value: string };
   }
 
@@ -29,6 +31,7 @@
     total,
     counts,
     attention,
+    icon: Icon = undefined,
     extraStat,
   }: Props = $props();
 
@@ -41,7 +44,12 @@
 </script>
 
 <a {href} class="card">
-  <h2 class="card-header">{title}</h2>
+  <h2 class="card-header">
+    {#if Icon}
+      <Icon size={20} />
+    {/if}
+    <span>{title}</span>
+  </h2>
 
   {#if errorMessage}
     <div class="error-banner">{errorMessage}</div>
@@ -112,6 +120,9 @@
   }
 
   .card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin: 0;
     font-size: 1.1rem;
     color: var(--color-primary);

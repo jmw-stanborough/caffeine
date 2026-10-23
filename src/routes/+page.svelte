@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Printer, Server } from "$lib/components/icons";
   import StatusSummaryCard, {
     type AttentionItem,
   } from "$lib/components/status-summary-card.svelte";
@@ -63,6 +64,7 @@
       title="Printers"
       href="/printers"
       noun="printer"
+      icon={Printer}
       loading={printerStore.loading}
       errorMessage={printerStore.errorMessage}
       total={printerStore.items.length}
@@ -73,6 +75,7 @@
       title="Servers"
       href="/servers"
       noun="server"
+      icon={Server}
       loading={serverStore.loading}
       errorMessage={serverStore.errorMessage}
       total={serverStore.items.length}
