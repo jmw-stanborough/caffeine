@@ -22,6 +22,8 @@
     outOfPaper = false,
     isColor = undefined,
     isDuplex = undefined,
+    showMake = false,
+    showLocation = false,
   }: {
     printer?: Printer;
     toners?: TonerSupply[];
@@ -34,10 +36,23 @@
     outOfPaper?: boolean;
     isColor?: boolean;
     isDuplex?: boolean;
+    showMake?: boolean;
+    showLocation?: boolean;
   } = $props();
 
-  let makeTag = $derived(inferPrinterMake(printer, detectedModel, detectedMake));
-  let displayLocation = $derived(printer?.location || detectedLocation);
+  let makeTag = $derived(
+    showMake ? inferPrinterMake(printer, detectedModel, detectedMake) : undefined,
+  );
+  let displayLocation = $derived(
+    showLocation ? printer?.location || detectedLocation : undefined,
+  );
+  let stateTag = $derived.by(() => {
+    if (!printerState) return undefined;
+    const normalized = printerState.trim().toLowerCase();
+    if (normalized === "idle") return "Idle";
+    if (normalized === "printing") return "Printing";
+    return undefined;
+  });
   let isJammed = $derived(hasPaperJam({ paperJam, printerState, statusMessage }));
   let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
   let hasEmptyToner = $derived(toners.some(isEmptyToner));
@@ -64,7 +79,7 @@
   );
 </script>
 
-{#if makeTag || displayLocation || printerState || isJammed || isNoPaper || hasEmptyToner || hasLowToner || colorTag || duplexTag}
+{#if makeTag || displayLocation || stateTag || isJammed || isNoPaper || hasEmptyToner || hasLowToner || colorTag || duplexTag}
   <div class="tags-row">
     {#if makeTag}
       <span class="printer-tag tag-make" title="Make: {makeTag}">{makeTag}</span>
@@ -72,8 +87,8 @@
     {#if displayLocation}
       <span class="printer-tag tag-location" title={displayLocation}>{displayLocation}</span>
     {/if}
-    {#if printerState}
-      <span class="printer-tag tag-state">{printerState}</span>
+    {#if stateTag}
+      <span class="printer-tag tag-state">{stateTag}</span>
     {/if}
     {#if isJammed}
       <span class="printer-tag tag-failure" title="Printer has a paper jam">Paper Jam</span>

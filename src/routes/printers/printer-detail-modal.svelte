@@ -162,6 +162,8 @@
           {outOfPaper}
           {isColor}
           {isDuplex}
+          showMake={true}
+          showLocation={true}
         />
 
         <div class="host-line">

@@ -115,7 +115,16 @@ export function getPrinterTags(
     tags.push(locationTag);
   }
 
-  if (state?.printerState?.trim()) {
+  const stateLower = state?.printerState?.trim().toLowerCase();
+  if (stateLower === "printing") {
+    tags.push("Printing");
+  } else if (stateLower === "idle") {
+    tags.push("Idle");
+  } else if (
+    state?.printerState?.trim() &&
+    !isPaperJamText(state.printerState) &&
+    !isOutOfPaperText(state.printerState)
+  ) {
     tags.push(state.printerState.trim());
   }
 
