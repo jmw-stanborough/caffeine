@@ -318,10 +318,6 @@
   title="Sort Printers"
   bind:rules={sortRules}
   fields={PRINTER_SORT_FIELDS}
-  onApplyToOrder={async () => {
-    await store.reorderPrinters(displayPrinters);
-    sortRules = [];
-  }}
 />
 
 <PrinterFilterModal

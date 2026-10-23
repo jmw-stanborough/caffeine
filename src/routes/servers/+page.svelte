@@ -184,10 +184,6 @@
   title="Sort Servers"
   bind:rules={sortRules}
   fields={SERVER_SORT_FIELDS}
-  onApplyToOrder={async () => {
-    await store.reorderServers(displayServers);
-    sortRules = [];
-  }}
 />
 
 <ServerModal

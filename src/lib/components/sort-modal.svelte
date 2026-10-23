@@ -17,13 +17,11 @@
     title = "Sort by",
     rules = $bindable<SortRule[]>([]),
     fields,
-    onApplyToOrder = undefined,
   }: {
     open: boolean;
     title?: string;
     rules: SortRule[];
     fields: readonly SortFieldDefinition<T, TContext>[];
-    onApplyToOrder?: () => void;
   } = $props();
 
   function getField(fieldId: string): SortFieldDefinition<T, TContext> | undefined {
@@ -102,7 +100,7 @@
     rules = updated;
   }
 
-  function resetRules() {
+  function clearRules() {
     rules = [];
   }
 </script>
@@ -128,7 +126,7 @@
   <div class="modal-body sort-modal-body">
     {#if rules.length === 0}
       <div class="sort-empty-state">
-        <p class="empty-text">No active sort rules. Items are in custom manual order.</p>
+        <p class="empty-text">No active sort rules.</p>
         <button type="button" class="btn-add-initial" onclick={addRule}>
           + Add sort rule
         </button>
@@ -211,22 +209,9 @@
   <div class="modal-footer">
     <div class="footer-left">
       {#if rules.length > 0}
-        <button type="button" class="btn-cancel" onclick={resetRules}>
-          Reset to manual order
+        <button type="button" class="btn-clear" onclick={clearRules}>
+          Clear all
         </button>
-        {#if onApplyToOrder}
-          <button
-            type="button"
-            class="btn-apply-order"
-            onclick={() => {
-              onApplyToOrder();
-              open = false;
-            }}
-            title="Set current sorted order as default manual order"
-          >
-            Save as manual order
-          </button>
-        {/if}
       {/if}
     </div>
 
@@ -404,22 +389,22 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    flex-wrap: wrap;
   }
 
-  .btn-apply-order {
+  .btn-clear {
     background-color: transparent;
     border: solid var(--width-border) var(--color-border);
     color: var(--color-text);
     padding: 0.45rem 0.85rem;
     border-radius: 0.375rem;
     font-size: 0.85rem;
+    font-weight: 500;
     cursor: pointer;
     transition: border-color 0.15s ease, color 0.15s ease;
   }
 
-  .btn-apply-order:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
+  .btn-clear:hover {
+    border-color: var(--color-failure);
+    color: var(--color-failure);
   }
 </style>
