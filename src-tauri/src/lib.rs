@@ -10,6 +10,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    window.set_icon(icon.clone())?;
+                }
+            }
+
             let db_state =
                 db::init_db(app.handle()).expect("failed to initialize sqlite database");
             app.manage(db_state);
