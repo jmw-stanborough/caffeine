@@ -12,10 +12,10 @@
   import { flip } from "svelte/animate";
   import ServerCard from "./server-card.svelte";
   import ServerModal from "./server-modal.svelte";
-  import { ServerStore } from "./servers.svelte";
+  import { serverStore } from "./servers.svelte";
   import type { Server } from "./types";
 
-  const store = new ServerStore();
+  const store = serverStore;
   const noc = createNocController();
 
   let isModalOpen = $state(false);
@@ -32,7 +32,6 @@
     window.addEventListener("keydown", noc.handleKeyDown);
 
     return () => {
-      store.destroy();
       window.removeEventListener("keydown", noc.handleKeyDown);
       noc.cleanup();
     };

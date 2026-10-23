@@ -22,32 +22,81 @@ export class ServerStore extends MonitorStore<
     typeof Audio !== "undefined" ? new Audio(SOUND_DOWN_PATH) : null;
   private soundUp =
     typeof Audio !== "undefined" ? new Audio(SOUND_UP_PATH) : null;
+  private initPromise: Promise<void> | null = null;
 
-  async init() {
-    this.destroyed = false;
-    await this.fetchServers();
-    await this.startTickSubscription(SERVER_STATUS_EVENT, (payload) => {
-      const { server_id, status, latency_ms, last_event, last_event_at } =
-        payload;
-      const previousState = this.statusMap[server_id];
+  async init(): Promise<void> {
+    if (this.initPromise) {
+      return this.initPromise;
+    }
 
-      if (previousState && previousState.status !== "checking") {
-        if (previousState.status === "online" && status === "offline") {
-          playAlertSound(this.soundDown);
-        } else if (previousState.status === "offline" && status === "online") {
-          playAlertSound(this.soundUp);
+    this.initPromise = (async () => {
+      this.destroyed = false;
+      await this.fetchServers();
+      await this.startTickSubscription(SERVER_STATUS_EVENT, (payload) => {
+        const { server_id, status, latency_ms, last_event, last_event_at } =
+          payload;
+        const previousState = this.statusMap[server_id];
+
+        if (previousState && previousState.status !== "checking") {
+          if (previousState.status === "online" && status === "offline") {
+            playAlertSound(this.soundDown);
+          } else if (previousState.status === "offline" && status === "online") {
+            playAlertSound(this.soundUp);
+          }
         }
-      }
 
-      this.statusMap[server_id] = {
-        status,
-        latencyMs: latency_ms,
-        lastEvent:
-          (last_event as "connected" | "disconnected") ??
-          previousState?.lastEvent,
-        lastEventAt: last_event_at ?? previousState?.lastEventAt,
-      };
+        this.statusMap[server_id] = {
+          status,
+          latencyMs: latency_ms,
+          lastEvent:
+            (last_event as "connected" | "disconnected") ??
+            previousState?.lastEvent,
+          lastEventAt: last_event_at ?? previousState?.lastEventAt,
+        };
+      });
+    })().catch((err) => {
+      this.initPromise = null;
+      throw err;
     });
+
+    return this.initPromise;
+  }
+
+  override destroy() {
+    super.destroy();
+    this.initPromise = null;
+  }
+
+  get errorCount(): number {
+    let count = 0;
+    for (const server of this.items) {
+      if (this.statusMap[server.id]?.status === "offline") {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  get warningCount(): number {
+    let count = 0;
+    for (const server of this.items) {
+      if (this.statusMap[server.id]?.status === "degraded") {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  get alertCount(): number {
+    return this.errorCount + this.warningCount;
+  }
+
+  get hasError(): boolean {
+    return this.errorCount > 0;
+  }
+
+  get hasWarning(): boolean {
+    return this.warningCount > 0;
   }
 
   fetchServers = async () => {
@@ -86,3 +135,5 @@ export class ServerStore extends MonitorStore<
     await this.reorderEntities("reorder_servers", "servers", sanitized);
   }
 }
+
+export const serverStore = new ServerStore();
