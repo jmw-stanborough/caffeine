@@ -11,6 +11,14 @@ const MAX_COLORANT_WALK_STEPS: usize = 8;
 const MAX_ALERT_WALK_STEPS: usize = 8;
 const MAX_MEDIA_PATH_WALK_STEPS: usize = 8;
 
+pub fn format_console_lines(lines: &[String]) -> Option<String> {
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("; "))
+    }
+}
+
 pub async fn poll_general_info(
     sock: &UdpSocket,
     community: &str,
@@ -107,8 +115,7 @@ pub async fn poll_general_info(
         }
     }
 
-    if !console_lines.is_empty() {
-        let joined = console_lines.join(" — ");
+    if let Some(joined) = format_console_lines(&console_lines) {
         if is_paper_jam_text(&joined) {
             details.paper_jam = true;
         }
@@ -448,5 +455,23 @@ pub async fn poll_media_paths(
         details.is_duplex = Some(true);
     } else if has_simplex {
         details.is_duplex = Some(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_console_lines() {
+        assert_eq!(format_console_lines(&[]), None);
+        assert_eq!(
+            format_console_lines(&["Ready".to_string()]),
+            Some("Ready".to_string())
+        );
+        assert_eq!(
+            format_console_lines(&["Ready".to_string(), "Secure".to_string()]),
+            Some("Ready; Secure".to_string())
+        );
     }
 }
