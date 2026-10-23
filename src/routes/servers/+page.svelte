@@ -1,14 +1,12 @@
 <script lang="ts">
   import DashboardHeader from "$lib/components/dashboard-header.svelte";
   import {
-    DEFAULT_CARD_SCALE,
     DND_FLIP_DURATION_MS,
     SERVER_CARD_MIN_HEIGHT_REM,
     SERVER_CARD_MIN_WIDTH_REM,
     SERVER_NOC_MIN_WIDTH_REM,
   } from "$lib/constants";
-  import { clampCardScale } from "$lib/format";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { createNocController } from "$lib/noc.svelte";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
@@ -17,65 +15,45 @@
   import { ServerStore } from "./servers.svelte";
   import type { Server } from "./types";
 
-  const appWindow = getCurrentWindow();
   const store = new ServerStore();
+  const noc = createNocController();
 
   let isModalOpen = $state(false);
   let editingServer = $state<Server | undefined>(undefined);
-  let isNocMode = $state(false);
-  let cardScale = $state(DEFAULT_CARD_SCALE);
-
-  function adjustScale(delta: number) {
-    cardScale = clampCardScale(cardScale, delta);
-  }
-
-  async function setNocMode(active: boolean) {
-    isNocMode = active;
-    try {
-      await appWindow.setFullscreen(active);
-    } catch (err) {
-      console.error("Failed to set fullscreen:", err);
-    }
-  }
 
   function openEditModal(server: Server) {
-    if (isNocMode) return;
+    if (noc.isNocMode) return;
     editingServer = server;
     isModalOpen = true;
   }
 
   onMount(() => {
     store.init();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isNocMode) setNocMode(false);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", noc.handleKeyDown);
 
     return () => {
       store.destroy();
-      window.removeEventListener("keydown", handleKeyDown);
-      appWindow.setFullscreen(false).catch(() => {});
+      window.removeEventListener("keydown", noc.handleKeyDown);
+      noc.cleanup();
     };
   });
 </script>
 
 <div
   class="page-container"
-  class:noc-layout={isNocMode}
-  style:--card-min-width="{SERVER_CARD_MIN_WIDTH_REM * cardScale}rem"
-  style:--noc-min-width="{SERVER_NOC_MIN_WIDTH_REM * cardScale}rem"
-  style:--card-min-height="{SERVER_CARD_MIN_HEIGHT_REM * cardScale}rem"
-  style:--card-font-scale={cardScale}
+  class:noc-layout={noc.isNocMode}
+  style:--card-min-width="{SERVER_CARD_MIN_WIDTH_REM * noc.cardScale}rem"
+  style:--noc-min-width="{SERVER_NOC_MIN_WIDTH_REM * noc.cardScale}rem"
+  style:--card-min-height="{SERVER_CARD_MIN_HEIGHT_REM * noc.cardScale}rem"
+  style:--card-font-scale={noc.cardScale}
 >
   <DashboardHeader
-    title={isNocMode ? "NOC Monitor" : "Servers"}
+    title={noc.isNocMode ? "NOC Monitor" : "Servers"}
     countText="{store.items.length} configured"
-    {isNocMode}
+    isNocMode={noc.isNocMode}
     errorMessage={store.errorMessage}
-    onAdjustScale={adjustScale}
-    onToggleNoc={() => setNocMode(!isNocMode)}
+    onAdjustScale={noc.adjustScale}
+    onToggleNoc={() => noc.setNocMode(!noc.isNocMode)}
     onRetry={store.fetchServers}
   />
 
@@ -84,11 +62,11 @@
   {:else}
     <section
       class="server-grid"
-      class:noc-grid={isNocMode}
+      class:noc-grid={noc.isNocMode}
       use:dndzone={{
         items: store.items,
         flipDurationMs: DND_FLIP_DURATION_MS,
-        dragDisabled: isNocMode,
+        dragDisabled: noc.isNocMode,
         dropTargetStyle: {},
       }}
       onconsider={(e) => (store.items = e.detail.items)}
@@ -99,7 +77,7 @@
         <div animate:flip={{ duration: DND_FLIP_DURATION_MS }} class="drag-wrapper">
           <ServerCard
             {server}
-            nocMode={isNocMode}
+            nocMode={noc.isNocMode}
             status={hostState?.status ?? "checking"}
             latencyMs={hostState?.latencyMs}
             lastEvent={hostState?.lastEvent}
@@ -110,7 +88,7 @@
         </div>
       {/each}
 
-      {#if !isNocMode}
+      {#if !noc.isNocMode}
         <div class="add-card-wrapper" aria-disabled="true">
           <button
             class="add-server-card"

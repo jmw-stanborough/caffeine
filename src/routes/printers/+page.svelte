@@ -1,13 +1,11 @@
 <script lang="ts">
   import DashboardHeader from "$lib/components/dashboard-header.svelte";
   import {
-    DEFAULT_CARD_SCALE,
     DND_FLIP_DURATION_MS,
     PRINTER_CARD_MIN_WIDTH_REM,
     PRINTER_NOC_MIN_WIDTH_REM,
   } from "$lib/constants";
-  import { clampCardScale } from "$lib/format";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { createNocController } from "$lib/noc.svelte";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
@@ -20,7 +18,6 @@
   import { filterPrintersByTags } from "./tags";
   import type { Printer } from "./types";
 
-  const appWindow = getCurrentWindow();
   const store = new PrinterStore();
 
   let isModalOpen = $state(false);
@@ -28,9 +25,14 @@
   let isDetailModalOpen = $state(false);
   let detailPrinterId = $state<string | null>(null);
   let isFilterModalOpen = $state(false);
-  let isNocMode = $state(false);
-  let cardScale = $state(DEFAULT_CARD_SCALE);
   let activeWebPrinter = $state<Printer | null>(null);
+
+  const noc = createNocController(() => {
+    isDetailModalOpen = false;
+    isModalOpen = false;
+    isFilterModalOpen = false;
+    activeWebPrinter = null;
+  });
 
   let activeFilterCount = $derived(
     store.filterAllTags.length + store.filterAnyTags.length,
@@ -54,47 +56,28 @@
     detailPrinterId ? store.statusMap[detailPrinterId] : undefined,
   );
 
-  function adjustScale(delta: number) {
-    cardScale = clampCardScale(cardScale, delta);
-  }
-
-  async function setNocMode(active: boolean) {
-    if (active) {
-      isDetailModalOpen = false;
-      isModalOpen = false;
-      isFilterModalOpen = false;
-      activeWebPrinter = null;
-    }
-    isNocMode = active;
-    try {
-      await appWindow.setFullscreen(active);
-    } catch (err) {
-      console.error("Failed to set fullscreen:", err);
-    }
-  }
-
   function openWebInterface(printer: Printer) {
-    if (isNocMode) return;
+    if (noc.isNocMode) return;
     isDetailModalOpen = false;
     activeWebPrinter = printer;
   }
 
   function openDetailModal(printer: Printer) {
-    if (isNocMode) return;
+    if (noc.isNocMode) return;
     isFilterModalOpen = false;
     detailPrinterId = printer.id;
     isDetailModalOpen = true;
   }
 
   function openFilterModal() {
-    if (isNocMode) return;
+    if (noc.isNocMode) return;
     isDetailModalOpen = false;
     isModalOpen = false;
     isFilterModalOpen = true;
   }
 
   function openEditModal(printer?: Printer) {
-    if (isNocMode) return;
+    if (noc.isNocMode) return;
     isDetailModalOpen = false;
     isFilterModalOpen = false;
     activeWebPrinter = null;
@@ -115,8 +98,10 @@
           isFilterModalOpen = false;
         } else if (activeWebPrinter) {
           activeWebPrinter = null;
-        } else if (isNocMode) {
-          setNocMode(false);
+        } else if (noc.isNocMode) {
+          noc.setNocMode(false).catch((err) => {
+            console.error("Failed to exit NOC mode:", err);
+          });
         }
       }
     };
@@ -126,7 +111,7 @@
     return () => {
       store.destroy();
       window.removeEventListener("keydown", handleKeyDown);
-      appWindow.setFullscreen(false).catch(() => {});
+      noc.cleanup();
     };
   });
 </script>
@@ -141,24 +126,24 @@
 {:else}
   <div
     class="page-container"
-    class:noc-layout={isNocMode}
-    style:--card-min-width="{PRINTER_CARD_MIN_WIDTH_REM * cardScale}rem"
-    style:--noc-min-width="{PRINTER_NOC_MIN_WIDTH_REM * cardScale}rem"
-    style:--card-font-scale={cardScale}
+    class:noc-layout={noc.isNocMode}
+    style:--card-min-width="{PRINTER_CARD_MIN_WIDTH_REM * noc.cardScale}rem"
+    style:--noc-min-width="{PRINTER_NOC_MIN_WIDTH_REM * noc.cardScale}rem"
+    style:--card-font-scale={noc.cardScale}
   >
     <DashboardHeader
-      title={isNocMode ? "Printer NOC Monitor" : "Printers"}
+      title={noc.isNocMode ? "Printer NOC Monitor" : "Printers"}
       countText={isFiltered
         ? `${filteredPrinters.length} of ${store.items.length} shown`
         : `${store.items.length} configured`}
-      {isNocMode}
+      isNocMode={noc.isNocMode}
       errorMessage={store.errorMessage}
-      onAdjustScale={adjustScale}
-      onToggleNoc={() => setNocMode(!isNocMode)}
+      onAdjustScale={noc.adjustScale}
+      onToggleNoc={() => noc.setNocMode(!noc.isNocMode)}
       onRetry={store.fetchPrinters}
     >
       {#snippet extraActions()}
-        {#if !isNocMode}
+        {#if !noc.isNocMode}
           <button
             type="button"
             class="btn-filter"
@@ -193,11 +178,11 @@
 
       <section
         class="printer-grid"
-        class:noc-grid={isNocMode}
+        class:noc-grid={noc.isNocMode}
         use:dndzone={{
           items: filteredPrinters,
           flipDurationMs: DND_FLIP_DURATION_MS,
-          dragDisabled: isNocMode || isFiltered,
+          dragDisabled: noc.isNocMode || isFiltered,
           dropTargetStyle: {},
         }}
         onconsider={(e) => {
@@ -216,7 +201,7 @@
           <div animate:flip={{ duration: DND_FLIP_DURATION_MS }} class="drag-wrapper">
             <PrinterCard
               {printer}
-              nocMode={isNocMode}
+              nocMode={noc.isNocMode}
               status={printerState?.status ?? "checking"}
               toners={printerState?.toners ?? []}
               detectedMake={printerState?.detectedMake}
@@ -234,7 +219,7 @@
           </div>
         {/each}
 
-        {#if !isNocMode}
+        {#if !noc.isNocMode}
           <div class="add-card-wrapper" aria-disabled="true">
             <button
               class="add-printer-card"
