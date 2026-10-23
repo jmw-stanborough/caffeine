@@ -23,9 +23,18 @@ export abstract class MonitorStore<
   ) {
     if (this.destroyed) return;
 
+    if (this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
     this.timer = window.setInterval(() => {
       this.now = Date.now();
     }, RELATIVE_TIME_TICK_MS);
+
+    if (this.unlistenStatus !== null) {
+      this.unlistenStatus();
+      this.unlistenStatus = null;
+    }
 
     const unlisten = await listen<TTick>(eventName, (event) => {
       onTick(event.payload);
