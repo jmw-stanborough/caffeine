@@ -1,3 +1,4 @@
+export { default as Coffee } from "$lib/icons/Coffee.svelte";
 export { default as Cog } from "$lib/icons/Cog.svelte";
 export { default as Filter } from "$lib/icons/Filter.svelte";
 export { default as LayoutDashboard } from "./LayoutDashboard.svelte";
