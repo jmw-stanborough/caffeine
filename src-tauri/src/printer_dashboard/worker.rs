@@ -25,6 +25,7 @@ const EVENT_OUT_OF_PAPER: &str = "out of paper";
 const EVENT_TONER_EMPTY: &str = "toner empty";
 
 struct PrinterTracker {
+    host: String,
     status: HealthStatus,
     last_event: String,
     last_event_at: String,
@@ -83,6 +84,9 @@ impl PrinterTracker {
         }
         if new_details.detected_location.is_some() {
             self.cached_details.detected_location = new_details.detected_location;
+        }
+        if new_details.serial_number.is_some() {
+            self.cached_details.serial_number = new_details.serial_number;
         }
         if new_details.page_count.is_some() {
             self.cached_details.page_count = new_details.page_count;
@@ -206,7 +210,7 @@ pub fn start_printer_worker(app: AppHandle) {
                 .map(|printer| {
                     let should_poll_details = trackers
                         .get(&printer.id)
-                        .is_none_or(PrinterTracker::should_poll_snmp);
+                        .is_none_or(|t| t.host != printer.host || t.should_poll_snmp());
 
                     tokio::spawn(async move {
                         let (status, latency_ms) =
@@ -230,29 +234,35 @@ pub fn start_printer_worker(app: AppHandle) {
                 let db = app.state::<DbState>();
 
                 if let Some(ref details) = maybe_details {
-                    if let Some(ref detected) = details.detected_model {
+                    if details.detected_model.is_some() || details.detected_location.is_some() {
                         match db.0.lock() {
                             Ok(conn) => {
-                                if let Err(e) = update_printer_detected_model(&conn, &printer_id, detected) {
-                                    eprintln!("Failed to update detected model for printer {printer_id}: {e}");
+                                if let Some(ref detected) = details.detected_model {
+                                    if let Err(e) = update_printer_detected_model(&conn, &printer_id, detected) {
+                                        eprintln!("Failed to update detected model for printer {printer_id}: {e}");
+                                    }
+                                }
+                                if let Some(ref detected_loc) = details.detected_location {
+                                    if let Err(e) = update_printer_detected_location(&conn, &printer_id, detected_loc) {
+                                        eprintln!("Failed to update detected location for printer {printer_id}: {e}");
+                                    }
                                 }
                             }
-                            Err(e) => eprintln!("Database lock error updating detected model: {e}"),
-                        }
-                    }
-                    if let Some(ref detected_loc) = details.detected_location {
-                        match db.0.lock() {
-                            Ok(conn) => {
-                                if let Err(e) = update_printer_detected_location(&conn, &printer_id, detected_loc) {
-                                    eprintln!("Failed to update detected location for printer {printer_id}: {e}");
-                                }
-                            }
-                            Err(e) => eprintln!("Database lock error updating detected location: {e}"),
+                            Err(e) => eprintln!("Database lock error updating detected printer metadata: {e}"),
                         }
                     }
                 }
 
                 let current = if let Some(existing) = trackers.get_mut(&printer_id) {
+                    if existing.host != host {
+                        existing.host = host.clone();
+                        existing.cached_details = PrinterPollDetails::default();
+                        existing.last_snmp_poll = None;
+                        existing.active_empty_toners.clear();
+                        existing.active_paper_jam = false;
+                        existing.active_out_of_paper = false;
+                    }
+
                     let is_connected = status != HealthStatus::Offline;
 
                     match record_status_transition(
@@ -315,6 +325,7 @@ pub fn start_printer_worker(app: AppHandle) {
                     let active_out_of_paper = initial_details.out_of_paper;
 
                     trackers.entry(printer_id.clone()).or_insert(PrinterTracker {
+                        host: host.clone(),
                         status: status.clone(),
                         last_event,
                         last_event_at,
@@ -402,6 +413,7 @@ mod tests {
     #[test]
     fn test_merge_poll_details_preserves_cartridges_on_partial_walk() {
         let mut tracker = PrinterTracker {
+            host: "192.168.1.50".to_string(),
             status: HealthStatus::Online,
             last_event: "connected".to_string(),
             last_event_at: "2026-10-23T08:00:00Z".to_string(),
@@ -468,6 +480,7 @@ mod tests {
         .unwrap();
 
         let mut tracker = PrinterTracker {
+            host: "192.168.1.50".to_string(),
             status: HealthStatus::Online,
             last_event: "connected".to_string(),
             last_event_at: "2026-10-23T08:00:00Z".to_string(),

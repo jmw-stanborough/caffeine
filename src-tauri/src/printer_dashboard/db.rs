@@ -77,16 +77,13 @@ pub fn update_printer_entry(conn: &Connection, id: &str, printer: &Printer) -> R
 
     conn.execute(
         "UPDATE printers
-         SET host = ?1, label = ?2, description = ?3, model = ?4, location = ?5, snmp_community = ?6, web_url = ?7
-         WHERE id = ?8",
+         SET host = ?1, label = ?2, description = ?3, snmp_community = ?4
+         WHERE id = ?5",
         params![
             printer.host,
             printer.label,
             printer.description,
-            printer.model,
-            printer.location,
             community,
-            printer.web_url,
             id
         ],
     )
@@ -147,7 +144,7 @@ pub fn query_printer_logs(
     )
 }
 
-fn update_printer_field_if_empty(
+fn update_printer_detected_field(
     conn: &Connection,
     id: &str,
     column: &str,
@@ -158,7 +155,7 @@ fn update_printer_field_if_empty(
         return Ok(());
     }
     let sql = format!(
-        "UPDATE printers SET {column} = ?1 WHERE id = ?2 AND ({column} IS NULL OR trim({column}) = '')"
+        "UPDATE printers SET {column} = ?1 WHERE id = ?2 AND ({column} IS NULL OR {column} != ?1)"
     );
     conn.execute(&sql, params![trimmed, id])
         .map_err(|e| e.to_string())?;
@@ -170,7 +167,7 @@ pub fn update_printer_detected_model(
     id: &str,
     detected_model: &str,
 ) -> Result<(), String> {
-    update_printer_field_if_empty(conn, id, "model", detected_model)
+    update_printer_detected_field(conn, id, "model", detected_model)
 }
 
 pub fn update_printer_detected_location(
@@ -178,7 +175,7 @@ pub fn update_printer_detected_location(
     id: &str,
     detected_location: &str,
 ) -> Result<(), String> {
-    update_printer_field_if_empty(conn, id, "location", detected_location)
+    update_printer_detected_field(conn, id, "location", detected_location)
 }
 
 pub fn get_printer_filter_tags(conn: &Connection) -> Result<PrinterFilterConfig, String> {
@@ -336,7 +333,30 @@ mod tests {
 
         update_printer_detected_location(&conn, "p2", "Overridden Room").unwrap();
         let p2_after_loc_attempt = get_printers(&conn).unwrap();
-        assert_eq!(p2_after_loc_attempt[0].location.as_deref(), Some("Room 302"));
+        assert_eq!(p2_after_loc_attempt[0].location.as_deref(), Some("Overridden Room"));
+
+        update_printer_detected_model(&conn, "p2", "SHARP BP-70C45").unwrap();
+        let p2_after_model_update = get_printers(&conn).unwrap();
+        assert_eq!(p2_after_model_update[0].model.as_deref(), Some("SHARP BP-70C45"));
+
+        let mut p2_config_update = p2_after_loc_attempt[0].clone();
+        p2_config_update.label = "Accounting Colour".to_string();
+        p2_config_update.model = Some("Ignored Model".to_string());
+        p2_config_update.location = Some("Ignored Location".to_string());
+        p2_config_update.web_url = Some("http://ignored".to_string());
+        update_printer_entry(&conn, "p2", &p2_config_update).unwrap();
+        let p2_after_config = get_printers(&conn)
+            .unwrap()
+            .into_iter()
+            .find(|p| p.id == "p2")
+            .unwrap();
+        assert_eq!(p2_after_config.label, "Accounting Colour");
+        assert_eq!(p2_after_config.model.as_deref(), Some("SHARP BP-70C45"));
+        assert_eq!(p2_after_config.location.as_deref(), Some("Overridden Room"));
+        assert_eq!(
+            p2_after_config.web_url.as_deref(),
+            Some("https://192.168.1.51:8443")
+        );
 
         let p3 = Printer {
             id: "p3".to_string(),
