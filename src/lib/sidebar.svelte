@@ -7,8 +7,6 @@
     href: string;
     label: string;
     badgeCount?: number;
-    hasError?: boolean;
-    hasWarning?: boolean;
   }
 
   let navigationItems = $derived<NavigationItem[]>([
@@ -17,15 +15,11 @@
       href: "/servers",
       label: "Servers",
       badgeCount: serverStore.alertCount,
-      hasError: serverStore.hasError,
-      hasWarning: serverStore.hasWarning,
     },
     {
       href: "/printers",
       label: "Printers",
       badgeCount: printerStore.alertCount,
-      hasError: printerStore.hasError,
-      hasWarning: printerStore.hasWarning,
     },
   ]);
 </script>
@@ -36,7 +30,7 @@
   </div>
 
   <nav class="nav-list">
-    {#each navigationItems as { href, label, badgeCount = 0, hasError = false, hasWarning = false }}
+    {#each navigationItems as { href, label, badgeCount = 0 }}
       {@const isActive = href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href)}
       <a
         class="nav-item"
@@ -48,9 +42,7 @@
         {#if badgeCount > 0}
           <span
             class="notification-badge"
-            class:error={hasError}
-            class:warning={!hasError && hasWarning}
-            aria-label="{badgeCount} {hasError ? 'errors' : 'warnings'}"
+            aria-label="{badgeCount} {badgeCount === 1 ? 'alert' : 'alerts'}"
           >
             {badgeCount}
           </span>
@@ -131,18 +123,10 @@
     font-size: 0.72rem;
     font-weight: 700;
     line-height: 1;
-    color: #1c1917;
-    background-color: var(--color-warning);
+    color: var(--color-base);
+    background-color: var(--color-secondary);
     box-sizing: border-box;
     margin-left: auto;
     flex-shrink: 0;
-  }
-
-  .notification-badge.error {
-    background-color: var(--color-failure);
-  }
-
-  .notification-badge.warning {
-    background-color: var(--color-warning);
   }
 </style>
