@@ -1,38 +1,84 @@
 <script lang="ts">
   import DashboardHeader from "$lib/components/dashboard-header.svelte";
+  import SortModal from "$lib/components/sort-modal.svelte";
   import {
     DND_FLIP_DURATION_MS,
     SERVER_CARD_MIN_HEIGHT_REM,
     SERVER_CARD_MIN_WIDTH_REM,
     SERVER_NOC_MIN_WIDTH_REM,
   } from "$lib/constants";
+  import { Sort } from "$lib/icons";
   import { createNocController } from "$lib/noc.svelte";
+  import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";
+  import type { SortRule } from "$lib/sort/types";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
   import ServerCard from "./server-card.svelte";
   import ServerModal from "./server-modal.svelte";
   import { serverStore } from "./servers.svelte";
+  import { SERVER_SORT_FIELDS, SERVER_SORT_STORAGE_KEY } from "./sort";
   import type { Server } from "./types";
 
   const store = serverStore;
-  const noc = createNocController();
+  const noc = createNocController(() => {
+    isModalOpen = false;
+    isSortModalOpen = false;
+  });
 
   let isModalOpen = $state(false);
+  let isSortModalOpen = $state(false);
   let editingServer = $state<Server | undefined>(undefined);
+  let sortRules = $state<SortRule[]>(loadSavedSortRules(SERVER_SORT_STORAGE_KEY));
+
+  $effect(() => {
+    saveSortRules(SERVER_SORT_STORAGE_KEY, sortRules);
+  });
+
+  let isSorted = $derived(sortRules.length > 0);
+  let displayServers = $derived(
+    isSorted
+      ? sortEntities(
+          store.items,
+          sortRules,
+          SERVER_SORT_FIELDS,
+          store.statusMap,
+        )
+      : store.items,
+  );
 
   function openEditModal(server: Server) {
     if (noc.isNocMode) return;
+    isSortModalOpen = false;
     editingServer = server;
     isModalOpen = true;
   }
 
+  function openSortModal() {
+    if (noc.isNocMode) return;
+    isModalOpen = false;
+    isSortModalOpen = true;
+  }
+
   onMount(() => {
     store.init();
-    window.addEventListener("keydown", noc.handleKeyDown);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isModalOpen) {
+          isModalOpen = false;
+        } else if (isSortModalOpen) {
+          isSortModalOpen = false;
+        } else {
+          noc.handleKeyDown(e);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener("keydown", noc.handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
       noc.cleanup();
     };
   });
@@ -48,13 +94,31 @@
 >
   <DashboardHeader
     title={noc.isNocMode ? "NOC Monitor" : "Servers"}
-    countText="{store.items.length} configured"
+    countText="{displayServers.length} configured"
     isNocMode={noc.isNocMode}
     errorMessage={store.errorMessage}
     onAdjustScale={noc.adjustScale}
     onToggleNoc={() => noc.setNocMode(!noc.isNocMode)}
     onRetry={store.fetchServers}
-  />
+  >
+    {#snippet extraActions()}
+      {#if !noc.isNocMode}
+        <button
+          type="button"
+          class="btn-sort"
+          class:active={isSorted}
+          onclick={openSortModal}
+          title={isSorted ? `Sorting by ${sortRules.length} rule(s)` : "Configure sort rules"}
+        >
+          <Sort size={14} />
+          <span>Sort</span>
+          {#if isSorted}
+            <span class="count-badge sort-count-badge">{sortRules.length}</span>
+          {/if}
+        </button>
+      {/if}
+    {/snippet}
+  </DashboardHeader>
 
   {#if store.loading}
     <p class="status-message">Reading configuration...</p>
@@ -63,15 +127,23 @@
       class="server-grid"
       class:noc-grid={noc.isNocMode}
       use:dndzone={{
-        items: store.items,
+        items: displayServers,
         flipDurationMs: DND_FLIP_DURATION_MS,
-        dragDisabled: noc.isNocMode,
+        dragDisabled: noc.isNocMode || isSorted,
         dropTargetStyle: {},
       }}
-      onconsider={(e) => (store.items = e.detail.items)}
-      onfinalize={(e) => store.reorderServers(e.detail.items)}
+      onconsider={(e) => {
+        if (!isSorted) {
+          store.items = e.detail.items;
+        }
+      }}
+      onfinalize={(e) => {
+        if (!isSorted) {
+          store.reorderServers(e.detail.items);
+        }
+      }}
     >
-      {#each store.items as server (server.id)}
+      {#each displayServers as server (server.id)}
         {@const hostState = store.statusMap[server.id]}
         <div animate:flip={{ duration: DND_FLIP_DURATION_MS }} class="drag-wrapper">
           <ServerCard
@@ -106,6 +178,17 @@
     </section>
   {/if}
 </div>
+
+<SortModal
+  bind:open={isSortModalOpen}
+  title="Sort Servers"
+  bind:rules={sortRules}
+  fields={SERVER_SORT_FIELDS}
+  onApplyToOrder={async () => {
+    await store.reorderServers(displayServers);
+    sortRules = [];
+  }}
+/>
 
 <ServerModal
   bind:open={isModalOpen}
