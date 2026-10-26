@@ -360,31 +360,29 @@ async fn read_http_response<R: AsyncReadExt + Unpin>(
         }
         buf.extend_from_slice(&temp[..n]);
 
-        if header_end.is_none() {
-            if let Some(pos) = buf
+        if header_end.is_none()
+            && let Some(pos) = buf
                 .windows(HTTP_HEADER_DELIMITER.len())
                 .position(|w| w == HTTP_HEADER_DELIMITER)
-            {
-                let end = pos + HTTP_HEADER_DELIMITER.len();
-                header_end = Some(end);
+        {
+            let end = pos + HTTP_HEADER_DELIMITER.len();
+            header_end = Some(end);
 
-                let headers = String::from_utf8_lossy(&buf[..pos]);
-                for line in headers.lines() {
-                    if let Some((k, v)) = line.split_once(':') {
-                        if k.trim().eq_ignore_ascii_case("content-length") {
-                            if let Ok(len) = v.trim().parse::<usize>() {
-                                body_expected = Some(len);
-                            }
-                        }
-                    }
+            let headers = String::from_utf8_lossy(&buf[..pos]);
+            for line in headers.lines() {
+                if let Some((k, v)) = line.split_once(':')
+                    && k.trim().eq_ignore_ascii_case("content-length")
+                    && let Ok(len) = v.trim().parse::<usize>()
+                {
+                    body_expected = Some(len);
                 }
             }
         }
 
-        if let (Some(end), Some(expected)) = (header_end, body_expected) {
-            if buf.len() >= end + expected {
-                break;
-            }
+        if let (Some(end), Some(expected)) = (header_end, body_expected)
+            && buf.len() >= end + expected
+        {
+            break;
         }
     }
 

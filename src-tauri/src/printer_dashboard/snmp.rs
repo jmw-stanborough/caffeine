@@ -11,7 +11,7 @@ pub use parsers::{
 };
 
 use super::types::{TonerSupply, normalize_snmp_community};
-use ber::{SNMP_VERSION_1, SNMP_VERSION_2C};
+use ber::{SNMP_VERSION_1, SNMP_VERSION_2C, SnmpSession};
 use ipp::poll_ipp;
 use std::net::ToSocketAddrs;
 use tokio::net::UdpSocket;
@@ -105,21 +105,24 @@ async fn poll_snmp_with_version(
     community: &str,
     req_id: &mut i32,
 ) -> Option<PrinterPollDetails> {
-    let mut details = PrinterPollDetails::default();
-
-    let brother_toner_pcts =
-        poll_general_info(sock, version, community, req_id, &mut details).await?;
-    poll_supplies(
+    let session = SnmpSession {
         sock,
         version,
         community,
+    };
+    let mut details = PrinterPollDetails::default();
+
+    let brother_toner_pcts =
+        poll_general_info(&session, req_id, &mut details).await?;
+    poll_supplies(
+        &session,
         req_id,
         &brother_toner_pcts,
         &mut details,
     )
     .await;
-    poll_media_paths(sock, version, community, req_id, &mut details).await;
-    poll_alerts(sock, version, community, req_id, &mut details).await;
+    poll_media_paths(&session, req_id, &mut details).await;
+    poll_alerts(&session, req_id, &mut details).await;
 
     Some(details)
 }

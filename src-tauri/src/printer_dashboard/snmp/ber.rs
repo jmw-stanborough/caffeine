@@ -330,18 +330,23 @@ pub fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVa
     Some(pdu.varbinds)
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SnmpSession<'a> {
+    pub sock: &'a UdpSocket,
+    pub version: i32,
+    pub community: &'a str,
+}
+
 pub async fn snmp_request_raw(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: i32,
     pdu_tag: u8,
     oids: &[Vec<u32>],
 ) -> Option<SnmpPduResponse> {
-    let pkt = build_snmp_packet(version, community, req_id, pdu_tag, oids);
-    sock.send(&pkt).await.ok()?;
+    let pkt = build_snmp_packet(session.version, session.community, req_id, pdu_tag, oids);
+    session.sock.send(&pkt).await.ok()?;
     let mut buf = [0u8; SNMP_UDP_BUFFER_SIZE];
-    let n = timeout(SNMP_TIMEOUT, sock.recv(&mut buf))
+    let n = timeout(SNMP_TIMEOUT, session.sock.recv(&mut buf))
         .await
         .ok()?
         .ok()?;
@@ -349,14 +354,12 @@ pub async fn snmp_request_raw(
 }
 
 pub async fn snmp_request(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: i32,
     pdu_tag: u8,
     oids: &[Vec<u32>],
 ) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>> {
-    let pdu = snmp_request_raw(sock, version, community, req_id, pdu_tag, oids).await?;
+    let pdu = snmp_request_raw(session, req_id, pdu_tag, oids).await?;
     if pdu.error_status != 0 {
         return None;
     }
@@ -364,9 +367,7 @@ pub async fn snmp_request(
 }
 
 pub async fn snmp_walk_columns<F>(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: &mut i32,
     entry_prefix: &[u32],
     columns: &[u32],
@@ -387,7 +388,7 @@ pub async fn snmp_walk_columns<F>(
 
     for _ in 0..max_steps {
         let Some(step_resp) =
-            snmp_request(sock, version, community, *req_id, PDU_GET_NEXT_REQUEST, &current_oids).await
+            snmp_request(session, *req_id, PDU_GET_NEXT_REQUEST, &current_oids).await
         else {
             break;
         };

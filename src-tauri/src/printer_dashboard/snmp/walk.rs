@@ -1,12 +1,12 @@
 use super::PrinterPollDetails;
 use super::ber::{
-    PDU_GET_NEXT_REQUEST, PDU_GET_REQUEST, snmp_request, snmp_request_raw, snmp_walk_columns,
+    PDU_GET_NEXT_REQUEST, PDU_GET_REQUEST, SnmpSession, snmp_request, snmp_request_raw,
+    snmp_walk_columns,
 };
 use super::oids::*;
 use super::parsers::*;
 use crate::printer_dashboard::types::TonerSupply;
 use std::collections::BTreeMap;
-use tokio::net::UdpSocket;
 
 const MAX_SUPPLY_WALK_STEPS: usize = 16;
 const MAX_COLORANT_WALK_STEPS: usize = 8;
@@ -22,9 +22,7 @@ pub fn format_console_lines(lines: &[String]) -> Option<String> {
 }
 
 pub async fn poll_general_info(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: &mut i32,
     details: &mut PrinterPollDetails,
 ) -> Option<BTreeMap<String, u8>> {
@@ -54,9 +52,7 @@ pub async fn poll_general_info(
             return None;
         }
         let pdu = snmp_request_raw(
-            sock,
-            version,
-            community,
+            session,
             *req_id,
             PDU_GET_REQUEST,
             &general_oids,
@@ -184,9 +180,7 @@ pub async fn poll_general_info(
 }
 
 pub async fn poll_colorants(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: &mut i32,
 ) -> BTreeMap<u32, String> {
     let mut colorant_oid = vec![OID_PRT_MARKER_COLORANT_VALUE.to_vec()];
@@ -194,7 +188,7 @@ pub async fn poll_colorants(
 
     for _ in 0..MAX_COLORANT_WALK_STEPS {
         let Some(c_resp) =
-            snmp_request(sock, version, community, *req_id, PDU_GET_NEXT_REQUEST, &colorant_oid).await
+            snmp_request(session, *req_id, PDU_GET_NEXT_REQUEST, &colorant_oid).await
         else {
             break;
         };
@@ -221,9 +215,7 @@ pub async fn poll_colorants(
 }
 
 pub async fn poll_supplies(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: &mut i32,
     brother_toner_pcts: &BTreeMap<String, u8>,
     details: &mut PrinterPollDetails,
@@ -239,9 +231,7 @@ pub async fn poll_supplies(
 
     let mut supplies_map: BTreeMap<Vec<u32>, RawSupply> = BTreeMap::new();
     snmp_walk_columns(
-        sock,
-        version,
-        community,
+        session,
         req_id,
         OID_PRT_MARKER_SUPPLIES_ENTRY,
         SUPPLY_WALK_COLUMNS,
@@ -260,7 +250,7 @@ pub async fn poll_supplies(
     )
     .await;
 
-    let colorants = poll_colorants(sock, version, community, req_id).await;
+    let colorants = poll_colorants(session, req_id).await;
 
     for (_instance, raw) in supplies_map {
         let mut level = raw.level.unwrap_or(SUPPLY_LEVEL_UNKNOWN);
@@ -361,9 +351,7 @@ pub async fn poll_supplies(
 }
 
 pub async fn poll_alerts(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: &mut i32,
     details: &mut PrinterPollDetails,
 ) {
@@ -377,9 +365,7 @@ pub async fn poll_alerts(
 
     let mut alerts_map: BTreeMap<Vec<u32>, RawAlert> = BTreeMap::new();
     snmp_walk_columns(
-        sock,
-        version,
-        community,
+        session,
         req_id,
         OID_PRT_ALERT_ENTRY,
         ALERT_WALK_COLUMNS,
@@ -429,9 +415,7 @@ pub async fn poll_alerts(
 }
 
 pub async fn poll_media_paths(
-    sock: &UdpSocket,
-    version: i32,
-    community: &str,
+    session: &SnmpSession<'_>,
     req_id: &mut i32,
     details: &mut PrinterPollDetails,
 ) {
@@ -443,9 +427,7 @@ pub async fn poll_media_paths(
 
     let mut paths_map: BTreeMap<Vec<u32>, RawMediaPath> = BTreeMap::new();
     snmp_walk_columns(
-        sock,
-        version,
-        community,
+        session,
         req_id,
         OID_PRT_MEDIA_PATH_ENTRY,
         MEDIA_PATH_WALK_COLUMNS,
