@@ -6,11 +6,14 @@
   import { printerStore } from "./printers/printers.svelte";
   import { applyTheme } from "$lib/theme";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
 
   let { children } = $props();
 
   onMount(() => {
+    let unlistenSync: UnlistenFn | null = null;
+
     invoke<{ theme?: string }>("get_app_settings_cmd")
       .then((settings) => {
         if (settings?.theme) {
@@ -27,6 +30,19 @@
     printerStore.init().catch((err) => {
       console.error("Failed to initialize printer monitor on startup:", err);
     });
+
+    listen("snapshot-synced", () => {
+      serverStore.fetchServers();
+      printerStore.fetchPrinters();
+    }).then((unlisten) => {
+      unlistenSync = unlisten;
+    }).catch((err) => {
+      console.error("Failed to listen for snapshot sync events:", err);
+    });
+
+    return () => {
+      unlistenSync?.();
+    };
   });
 </script>
 

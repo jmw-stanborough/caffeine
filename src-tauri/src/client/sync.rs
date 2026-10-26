@@ -60,6 +60,8 @@ pub fn start_client_sync_worker(app: AppHandle) {
                 Ok(snapshot) => {
                     if let Err(err) = write_snapshot_to_replica(&replica_path, snapshot) {
                         eprintln!("Failed to write snapshot to replica DB: {err}");
+                    } else {
+                        let _ = app.emit("snapshot-synced", ());
                     }
                 }
                 Err(err) => {
