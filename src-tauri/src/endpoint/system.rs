@@ -280,5 +280,6 @@ mod tests {
         assert!(!info.system.computer_name.is_empty());
         assert!(!info.cpu.model_name.is_empty());
         assert!(info.memory.total_bytes > 0);
+        assert_eq!(info.system.fast_startup_enabled, true);
     }
 }
