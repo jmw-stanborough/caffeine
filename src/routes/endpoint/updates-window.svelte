@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { formatBytes } from "./metrics";
   import type { UpdateCheckResult } from "./types";
+  import UpdateCard from "./update-card.svelte";
 
   interface Props {
     updates: UpdateCheckResult | null;
@@ -130,7 +130,9 @@
         stroke-linecap="round"
         stroke-linejoin="round"
       >
-        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+        <path
+          d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"
+        />
         <line x1="12" y1="9" x2="12" y2="13" />
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
@@ -170,7 +172,9 @@
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+          <path
+            d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"
+          />
           <path d="m9 12 2 2 4-4" />
         </svg>
         <span class="clean-title">System is up to date</span>
@@ -179,62 +183,14 @@
     {:else if updates && updates.updates.length > 0}
       <div class="updates-list">
         {#each updates.updates as update}
-          {@const isThisDownloading = downloadingId === update.id || downloadingId === "ALL"}
-          {@const isThisInstalling = installingId === update.id || installingId === "ALL"}
-          <div class="update-card" class:downloaded={update.is_downloaded}>
-            <div class="update-main">
-              <div class="update-badge-row">
-                {#if update.kb_article_id}
-                  <span class="kb-badge">{update.kb_article_id}</span>
-                {/if}
-                {#if update.severity}
-                  <span class="severity-badge">{update.severity}</span>
-                {/if}
-                {#if update.size_bytes}
-                  <span class="size-badge">{formatBytes(update.size_bytes)}</span>
-                {/if}
-                {#if update.is_downloaded}
-                  <span class="status-pill ready">Downloaded</span>
-                {:else}
-                  <span class="status-pill pending">Pending Download</span>
-                {/if}
-              </div>
-
-              <div class="update-title" title={update.title}>{update.title}</div>
-
-              {#if update.description}
-                <div class="update-desc">{update.description}</div>
-              {/if}
-
-              {#if update.categories.length > 0}
-                <div class="category-tags">
-                  {#each update.categories as cat}
-                    <span class="cat-pill">{cat}</span>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-
-            <div class="update-card-actions">
-              {#if !update.is_downloaded}
-                <button
-                  class="btn-card-action"
-                  onclick={() => onDownload(update.id)}
-                  disabled={isBusy}
-                >
-                  {isThisDownloading ? "Downloading..." : "Download"}
-                </button>
-              {:else}
-                <button
-                  class="btn-card-action accent"
-                  onclick={() => onInstall(update.id)}
-                  disabled={isBusy}
-                >
-                  {isThisInstalling ? "Installing..." : "Install"}
-                </button>
-              {/if}
-            </div>
-          </div>
+          <UpdateCard
+            {update}
+            {isBusy}
+            isDownloading={downloadingId === update.id || downloadingId === "ALL"}
+            isInstalling={installingId === update.id || installingId === "ALL"}
+            onDownload={(id) => onDownload(id)}
+            onInstall={(id) => onInstall(id)}
+          />
         {/each}
       </div>
     {:else}
@@ -286,6 +242,13 @@
     color: var(--color-text);
   }
 
+  .count-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+  }
+
   .badge-has-updates {
     background-color: var(--color-secondary);
     color: var(--color-base);
@@ -302,18 +265,38 @@
     gap: 0.4rem;
   }
 
-  .btn-window-action,
   .btn-action-primary,
-  .btn-action-accent {
+  .btn-action-accent,
+  .btn-window-action {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.3rem 0.65rem;
-    border-radius: 0.35rem;
-    font-size: 0.8rem;
+    padding: 0.28rem 0.65rem;
+    border-radius: 0.3rem;
+    font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.12s ease;
+  }
+
+  .btn-action-primary {
+    background-color: var(--color-primary);
+    border: solid 1px var(--color-primary);
+    color: var(--color-base);
+  }
+
+  .btn-action-primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .btn-action-accent {
+    background-color: var(--color-secondary);
+    border: solid 1px var(--color-secondary);
+    color: var(--color-base);
+  }
+
+  .btn-action-accent:hover:not(:disabled) {
+    filter: brightness(1.1);
   }
 
   .btn-window-action {
@@ -327,27 +310,9 @@
     border-color: var(--color-primary);
   }
 
-  .btn-action-primary {
-    background-color: var(--color-primary);
-    border: solid var(--width-border) var(--color-primary);
-    color: var(--color-base);
-  }
-
-  .btn-action-primary:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  .btn-action-accent {
-    background-color: var(--color-secondary);
-    border: solid var(--width-border) var(--color-secondary);
-    color: var(--color-base);
-  }
-
-  .btn-action-accent:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  button:disabled {
+  .btn-action-primary:disabled,
+  .btn-action-accent:disabled,
+  .btn-window-action:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
@@ -356,24 +321,54 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.5rem 0.85rem;
-    background-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
-    color: var(--color-warning);
+    padding: 0.5rem 1rem;
+    background-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-surface));
     border-bottom: solid var(--width-border) var(--color-warning);
-    font-size: 0.82rem;
+    color: var(--color-warning);
+    font-size: 0.8rem;
     font-weight: 600;
   }
 
   .status-banner {
-    padding: 0.4rem 0.85rem;
-    background-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
-    color: var(--color-text);
-    border-bottom: solid var(--width-border) var(--color-border);
+    padding: 0.45rem 1rem;
+    background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
+    border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-primary) 40%, transparent);
+    color: var(--color-primary);
     font-size: 0.8rem;
+    font-weight: 500;
+  }
+
+  .error-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background-color: color-mix(in srgb, var(--color-failure) 20%, var(--color-surface));
+    border-bottom: solid var(--width-border) var(--color-failure);
+    color: var(--color-failure);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .btn-retry {
+    background-color: transparent;
+    border: solid 1px var(--color-failure);
+    color: var(--color-failure);
+    border-radius: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-retry:hover {
+    background-color: var(--color-failure);
+    color: var(--color-base);
   }
 
   .window-content {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 0.75rem;
     background-color: var(--color-base);
@@ -424,125 +419,5 @@
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
-  }
-
-  .update-card {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.75rem 0.85rem;
-    background-color: var(--color-surface);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.35rem;
-  }
-
-  .update-card.downloaded {
-    border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
-  }
-
-  .update-main {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .update-badge-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-  }
-
-  .kb-badge {
-    font-size: 0.72rem;
-    font-family: monospace;
-    font-weight: 700;
-    padding: 0.1rem 0.4rem;
-    border-radius: 0.2rem;
-    background-color: var(--color-base);
-    color: var(--color-text);
-    border: solid var(--width-border) var(--color-border);
-  }
-
-  .severity-badge,
-  .size-badge {
-    font-size: 0.7rem;
-    padding: 0.1rem 0.35rem;
-    border-radius: 0.2rem;
-    background-color: var(--color-base);
-    color: var(--color-text-muted);
-  }
-
-  .status-pill {
-    font-size: 0.68rem;
-    font-weight: 600;
-    padding: 0.1rem 0.4rem;
-    border-radius: 999px;
-  }
-
-  .status-pill.ready {
-    background-color: var(--color-primary);
-    color: var(--color-base);
-  }
-
-  .status-pill.pending {
-    background-color: var(--color-base);
-    color: var(--color-text-muted);
-    border: solid var(--width-border) var(--color-border);
-  }
-
-  .update-title {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--color-text);
-    line-height: 1.3;
-  }
-
-  .update-desc {
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-    line-height: 1.35;
-  }
-
-  .category-tags {
-    display: flex;
-    gap: 0.3rem;
-    flex-wrap: wrap;
-  }
-
-  .cat-pill {
-    font-size: 0.68rem;
-    color: var(--color-text-muted);
-  }
-
-  .btn-card-action {
-    background-color: var(--color-base);
-    border: solid var(--width-border) var(--color-border);
-    color: var(--color-text);
-    padding: 0.35rem 0.75rem;
-    border-radius: 0.3rem;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.15s ease;
-  }
-
-  .btn-card-action:hover:not(:disabled) {
-    border-color: var(--color-primary);
-    background-color: var(--color-surface-hover);
-  }
-
-  .btn-card-action.accent {
-    background-color: var(--color-secondary);
-    border-color: var(--color-secondary);
-    color: var(--color-base);
-  }
-
-  .btn-card-action.accent:hover:not(:disabled) {
-    filter: brightness(1.1);
   }
 </style>
