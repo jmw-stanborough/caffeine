@@ -28,6 +28,7 @@
   let serverBind = $state("0.0.0.0");
   let adminToken = $state("");
   let theme = $state("system");
+  let persistedTheme = $state("system");
   let retentionDays = $state(14);
   let maxLogEntries = $state(1000);
 
@@ -49,6 +50,12 @@
     }
   });
 
+  function handleClose() {
+    theme = persistedTheme;
+    applyTheme(persistedTheme);
+    open = false;
+  }
+
   async function loadSettings() {
     loading = true;
     error = null;
@@ -61,8 +68,9 @@
       serverPort = settings.server_port;
       serverBind = settings.server_bind;
       adminToken = settings.admin_token ?? "";
+      persistedTheme = settings.theme;
       theme = settings.theme;
-      applyTheme(theme);
+      applyTheme(persistedTheme);
       retentionDays = settings.retention_days;
       maxLogEntries = settings.max_log_entries;
     } catch (err) {
@@ -93,6 +101,7 @@
         settings: payload,
       });
 
+      persistedTheme = theme;
       applyTheme(theme);
       successMsg = "Settings saved successfully";
       setTimeout(() => {
@@ -106,13 +115,13 @@
   }
 </script>
 
-<Modal bind:open maxWidth="38rem" ariaLabel="Application Settings">
+<Modal bind:open maxWidth="38rem" ariaLabel="Application Settings" onBackdropClose={handleClose}>
   <div class="settings-header">
     <h2>Application Settings</h2>
     <button
       type="button"
       class="close-button"
-      onclick={() => (open = false)}
+      onclick={handleClose}
       aria-label="Close settings"
     >
       &times;
@@ -266,11 +275,7 @@
         <h3 class="section-title">Appearance</h3>
         <div class="form-group">
           <label for="themeSelect">Theme</label>
-          <select
-            id="themeSelect"
-            bind:value={theme}
-            onchange={() => applyTheme(theme)}
-          >
+          <select id="themeSelect" bind:value={theme}>
             <option value="system">System Default</option>
             <option value="dark">Dark Theme</option>
             <option value="light">Light Theme</option>
@@ -282,7 +287,7 @@
         <button
           type="button"
           class="btn btn-secondary"
-          onclick={() => (open = false)}
+          onclick={handleClose}
         >
           Cancel
         </button>
