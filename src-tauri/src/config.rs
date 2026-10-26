@@ -150,8 +150,33 @@ pub fn get_app_settings_cmd(app: AppHandle) -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-pub fn update_app_settings_cmd(app: AppHandle, settings: AppSettings) -> Result<AppSettings, String> {
+pub async fn update_app_settings_cmd(
+    app: AppHandle,
+    db_state: tauri::State<'_, crate::db::DbState>,
+    settings: AppSettings,
+) -> Result<AppSettings, String> {
+    let old_settings = load_app_settings(&app).unwrap_or_default();
     save_app_settings(&app, &settings)?;
+
+    if old_settings.server_mode != settings.server_mode
+        || old_settings.target_host != settings.target_host
+        || old_settings.target_port != settings.target_port
+    {
+        crate::db::switch_active_db(&app, &db_state)?;
+
+        if settings.server_mode && !old_settings.server_mode {
+            if let Ok(machine_db) = crate::db::get_machine_db_path() {
+                let bind = settings.server_bind.clone();
+                let port = settings.server_port;
+                tokio::spawn(async move {
+                    if let Err(e) = crate::server::start_embedded_server(&bind, port, machine_db).await {
+                        eprintln!("Failed to start embedded server on settings change: {e}");
+                    }
+                });
+            }
+        }
+    }
+
     Ok(settings)
 }
 

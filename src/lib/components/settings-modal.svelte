@@ -1,6 +1,8 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
   import { applyTheme } from "$lib/theme";
+  import { printerStore } from "../../routes/printers/printers.svelte";
+  import { serverStore } from "../../routes/servers/servers.svelte";
   import { invoke } from "@tauri-apps/api/core";
 
   export interface AppSettings {
@@ -100,6 +102,11 @@
       await invoke<AppSettings>("update_app_settings_cmd", {
         settings: payload,
       });
+
+      await Promise.allSettled([
+        serverStore.fetchServers(),
+        printerStore.fetchPrinters(),
+      ]);
 
       persistedTheme = theme;
       applyTheme(theme);
@@ -233,7 +240,7 @@
               </div>
             </div>
             <p class="field-hint">
-              Server mode reads and writes to machine storage (%ProgramData%) and serves clients on the network.
+              Server mode reads and writes to system-wide machine storage and serves clients on the network.
             </p>
           </div>
         {/if}

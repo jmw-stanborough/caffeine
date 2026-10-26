@@ -112,7 +112,7 @@ pub fn get_remote_replica_db_path(
     Ok(dir.join(DB_FILE_NAME))
 }
 
-fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn get_local_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     let local_data_dir = app
         .path()
         .local_data_dir()
@@ -125,6 +125,35 @@ fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     let local_path = base_dir.join(DB_FILE_NAME);
     migrate_legacy_roaming_db(app, &local_path)?;
     Ok(local_path)
+}
+
+pub fn resolve_active_db_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let settings = crate::config::load_app_settings(app).unwrap_or_default();
+    if settings.server_mode {
+        get_machine_db_path()
+    } else if !crate::config::is_self_serving(&settings.target_host) {
+        get_remote_replica_db_path(app, &settings.target_host, settings.target_port)
+    } else {
+        get_local_db_path(app)
+    }
+}
+
+pub fn switch_active_db(app: &AppHandle, db_state: &DbState) -> Result<(), String> {
+    let new_path = resolve_active_db_path(app)?;
+    let new_conn = Connection::open(&new_path)
+        .map_err(|e| format!("Failed to open database at {new_path:?}: {e}"))?;
+    init_db_schema(&new_conn)?;
+
+    let mut conn_guard = db_state
+        .0
+        .lock()
+        .map_err(|e| format!("Database lock poisoned: {e}"))?;
+    *conn_guard = new_conn;
+    Ok(())
+}
+
+fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
+    resolve_active_db_path(app)
 }
 
 pub fn init_db_schema(conn: &Connection) -> Result<(), String> {
