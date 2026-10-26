@@ -154,9 +154,9 @@
 
       <!-- Target Connection Section -->
       <section class="settings-section">
-        <h3 class="section-title">Client Target Server</h3>
+        <h3 class="section-title">Connection Target</h3>
         <p class="section-description">
-          Defaults to <code>127.0.0.1</code> (self-serving client). Point to an IP or hostname to consume from a remote Caffeine server.
+          Defaults to <code>127.0.0.1</code> (self-serving client). Point to an IP or hostname to consume from a remote Caffeine instance.
         </p>
 
         <div class="form-row">
@@ -195,7 +195,7 @@
               id="adminToken"
               type="password"
               bind:value={adminToken}
-              placeholder="Enter server admin token to unlock edit permissions"
+              placeholder="Enter admin token to unlock edit permissions"
             />
             <span class="field-hint">
               Leave blank for standard read-only monitoring.
@@ -208,7 +208,7 @@
       <section class="settings-section">
         <h3 class="section-title">Server Mode (Broadcast)</h3>
         <p class="section-description">
-          Run an embedded server on this machine to broadcast printers and servers to other Caffeine clients.
+          Run an embedded server on this machine to broadcast monitored resources to other Caffeine clients.
         </p>
 
         <label class="checkbox-label">
