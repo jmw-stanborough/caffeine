@@ -155,6 +155,7 @@ async fn handle_post_server(
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     check_admin_auth(&headers, &conn)?;
     insert_server(&conn, &server).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
     let servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(servers))
 }
@@ -168,6 +169,7 @@ async fn handle_put_server(
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     check_admin_auth(&headers, &conn)?;
     update_server_entry(&conn, &id, &server).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
     let servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(servers))
 }
@@ -180,8 +182,23 @@ async fn handle_delete_server(
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     check_admin_auth(&headers, &conn)?;
     delete_server_entry(&conn, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
     let servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(servers))
+}
+
+async fn handle_reorder_servers(
+    headers: HeaderMap,
+    State(state): State<Arc<ServerAppState>>,
+    Json(servers): Json<Vec<Server>>,
+) -> Result<Json<Vec<Server>>, (StatusCode, String)> {
+    let mut conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    check_admin_auth(&headers, &conn)?;
+    crate::server_monitor::db::update_sort_order(&mut conn, &servers)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
+    let updated = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(updated))
 }
 
 async fn handle_post_printer(
@@ -192,6 +209,7 @@ async fn handle_post_printer(
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     check_admin_auth(&headers, &conn)?;
     insert_printer(&conn, &printer).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
     let printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(printers))
 }
@@ -205,6 +223,7 @@ async fn handle_put_printer(
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     check_admin_auth(&headers, &conn)?;
     update_printer_entry(&conn, &id, &printer).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
     let printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(printers))
 }
@@ -217,8 +236,23 @@ async fn handle_delete_printer(
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     check_admin_auth(&headers, &conn)?;
     delete_printer_entry(&conn, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
     let printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(printers))
+}
+
+async fn handle_reorder_printers(
+    headers: HeaderMap,
+    State(state): State<Arc<ServerAppState>>,
+    Json(printers): Json<Vec<Printer>>,
+) -> Result<Json<Vec<Printer>>, (StatusCode, String)> {
+    let mut conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    check_admin_auth(&headers, &conn)?;
+    crate::printer_dashboard::db::update_printer_sort_order(&mut conn, &printers)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let _ = state.broadcast_tx.send(ServerBroadcastEvent::EntitiesUpdated);
+    let updated = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(updated))
 }
 
 async fn ws_handler(
@@ -246,8 +280,10 @@ pub fn create_router(state: Arc<ServerAppState>) -> Router {
         .route("/api/v1/sync/history", get(get_history))
         .route("/api/v1/auth/login", post(login))
         .route("/api/v1/servers", post(handle_post_server))
+        .route("/api/v1/servers/reorder", post(handle_reorder_servers))
         .route("/api/v1/servers/{id}", put(handle_put_server).delete(handle_delete_server))
         .route("/api/v1/printers", post(handle_post_printer))
+        .route("/api/v1/printers/reorder", post(handle_reorder_printers))
         .route("/api/v1/printers/{id}", put(handle_put_printer).delete(handle_delete_printer))
         .route("/api/v1/stream", get(ws_handler))
         .with_state(state)

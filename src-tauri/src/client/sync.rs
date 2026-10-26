@@ -87,7 +87,7 @@ pub fn start_client_sync_worker(app: AppHandle) {
                 let _ = prune_logs(&conn, settings.retention_days, settings.max_log_entries);
             }
 
-            if let Err(err) = stream_websocket_ticks(&ws_url, &app).await {
+            if let Err(err) = stream_websocket_ticks(&ws_url, &http_client, &base_url, &replica_path, &app).await {
                 eprintln!("WebSocket stream disconnected from {ws_url}: {err}");
             }
 
@@ -239,7 +239,13 @@ fn write_history_to_replica(
     Ok(())
 }
 
-async fn stream_websocket_ticks(ws_url: &str, app: &AppHandle) -> Result<(), String> {
+async fn stream_websocket_ticks(
+    ws_url: &str,
+    http_client: &reqwest::Client,
+    base_url: &str,
+    replica_path: &Path,
+    app: &AppHandle,
+) -> Result<(), String> {
     let (ws_stream, _) = connect_async(ws_url)
         .await
         .map_err(|e| format!("WebSocket connection failed: {e}"))?;
@@ -263,6 +269,13 @@ async fn stream_websocket_ticks(ws_url: &str, app: &AppHandle) -> Result<(), Str
                 }
                 ServerBroadcastEvent::PrinterTick(payload) => {
                     let _ = app.emit(PRINTER_STATUS_EVENT_NAME, &payload);
+                }
+                ServerBroadcastEvent::EntitiesUpdated => {
+                    if let Ok(snapshot) = fetch_initial_snapshot(http_client, base_url).await {
+                        if let Ok(()) = write_snapshot_to_replica(replica_path, snapshot) {
+                            let _ = app.emit("snapshot-synced", ());
+                        }
+                    }
                 }
             }
         }

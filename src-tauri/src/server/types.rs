@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum ServerBroadcastEvent {
     ServerTick(ServerStatusEvent),
     PrinterTick(PrinterStatusEvent),
+    EntitiesUpdated,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
