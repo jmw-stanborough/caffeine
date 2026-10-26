@@ -25,11 +25,10 @@ export class EndpointStore {
   shell = $state<ShellDetectionResult | null>(null);
 
   private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
-  private isDestroyed = false;
   private isRefreshing = false;
+  private subscriberCount = 0;
 
   async init(): Promise<void> {
-    this.isDestroyed = false;
     this.osChecking = true;
 
     try {
@@ -51,24 +50,39 @@ export class EndpointStore {
       return;
     }
 
-    // Load initial hardware metrics and detect shell asynchronously
     await Promise.allSettled([
       this.fetchMachineInfo(true),
       this.detectShell(),
     ]);
 
-    this.startAutoRefresh();
+    if (this.subscriberCount > 0) {
+      this.startAutoRefresh();
+    }
   }
 
-  destroy(): void {
-    this.isDestroyed = true;
-    this.stopAutoRefresh();
+  async subscribe(): Promise<void> {
+    this.subscriberCount++;
+    if (!this.osSupport) {
+      await this.init();
+    } else {
+      if (this.osSupport.is_windows && !this.machine) {
+        await this.fetchMachineInfo(true);
+      }
+      this.startAutoRefresh();
+    }
+  }
+
+  unsubscribe(): void {
+    this.subscriberCount = Math.max(0, this.subscriberCount - 1);
+    if (this.subscriberCount === 0) {
+      this.stopAutoRefresh();
+    }
   }
 
   startAutoRefresh(intervalMs = 3500): void {
     this.stopAutoRefresh();
     this.autoRefreshTimer = setInterval(() => {
-      if (!this.isDestroyed && this.osSupport?.is_windows && !this.machineLoading && !this.isRefreshing) {
+      if (this.subscriberCount > 0 && this.osSupport?.is_windows && !this.isRefreshing) {
         this.fetchMachineInfo(false).catch((err) => {
           console.warn("Endpoint telemetry refresh failed:", err);
         });
@@ -87,7 +101,7 @@ export class EndpointStore {
     if (this.isRefreshing) return;
     this.isRefreshing = true;
 
-    if (showSpinner) {
+    if (showSpinner && !this.machine) {
       this.machineLoading = true;
     }
     this.machineError = null;

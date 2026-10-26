@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EndpointSummaryCard from "$lib/components/endpoint-summary-card.svelte";
   import { Printer, Server } from "$lib/components/icons";
   import StatusSummaryCard, {
     type AttentionItem,
@@ -83,6 +84,7 @@
       attention={serverAttention}
       extraStat={{ label: "Avg latency", value: serverLatency }}
     />
+    <EndpointSummaryCard />
   </section>
 </div>
 

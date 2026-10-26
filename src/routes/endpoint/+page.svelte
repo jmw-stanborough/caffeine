@@ -9,13 +9,13 @@
   const store = endpointStore;
 
   onMount(() => {
-    store.init().catch((err) => {
+    store.subscribe().catch((err) => {
       console.error("Endpoint initialization failed:", err);
     });
   });
 
   onDestroy(() => {
-    store.destroy();
+    store.unsubscribe();
   });
 </script>
 
