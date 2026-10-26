@@ -4,11 +4,23 @@
   import Sidebar from "$lib/sidebar.svelte";
   import { serverStore } from "./servers/servers.svelte";
   import { printerStore } from "./printers/printers.svelte";
+  import { applyTheme } from "$lib/theme";
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
   let { children } = $props();
 
   onMount(() => {
+    invoke<{ theme?: string }>("get_app_settings_cmd")
+      .then((settings) => {
+        if (settings?.theme) {
+          applyTheme(settings.theme);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load user theme setting:", err);
+      });
+
     serverStore.init().catch((err) => {
       console.error("Failed to initialize server monitor on startup:", err);
     });

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
+  import { applyTheme } from "$lib/theme";
   import { invoke } from "@tauri-apps/api/core";
 
   export interface AppSettings {
@@ -61,6 +62,7 @@
       serverBind = settings.server_bind;
       adminToken = settings.admin_token ?? "";
       theme = settings.theme;
+      applyTheme(theme);
       retentionDays = settings.retention_days;
       maxLogEntries = settings.max_log_entries;
     } catch (err) {
@@ -91,6 +93,7 @@
         settings: payload,
       });
 
+      applyTheme(theme);
       successMsg = "Settings saved successfully";
       setTimeout(() => {
         open = false;
@@ -263,7 +266,11 @@
         <h3 class="section-title">Appearance</h3>
         <div class="form-group">
           <label for="themeSelect">Theme</label>
-          <select id="themeSelect" bind:value={theme}>
+          <select
+            id="themeSelect"
+            bind:value={theme}
+            onchange={() => applyTheme(theme)}
+          >
             <option value="system">System Default</option>
             <option value="dark">Dark Theme</option>
             <option value="light">Light Theme</option>

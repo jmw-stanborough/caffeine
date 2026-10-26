@@ -23,12 +23,21 @@
   let isConnecting = $state(true);
   let darkModeMql: MediaQueryList | null = null;
   let themeListener: ((e: MediaQueryListEvent) => void) | null = null;
+  let themeObserver: MutationObserver | null = null;
+
+  function isDarkThemeActive(): boolean {
+    if (typeof document === "undefined") return true;
+    const explicit = document.documentElement.dataset.theme;
+    if (explicit === "dark") return true;
+    if (explicit === "light") return false;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
 
   async function initTerminal() {
     if (!terminalContainer) return;
 
     darkModeMql = window.matchMedia("(prefers-color-scheme: dark)");
-    const theme = getTerminalTheme(darkModeMql.matches);
+    const theme = getTerminalTheme(isDarkThemeActive());
 
     term = new Terminal({
       cursorBlink: true,
@@ -41,12 +50,22 @@
       allowProposedApi: true,
     });
 
-    themeListener = (e: MediaQueryListEvent) => {
+    themeListener = () => {
       if (term) {
-        term.options.theme = getTerminalTheme(e.matches);
+        term.options.theme = getTerminalTheme(isDarkThemeActive());
       }
     };
     darkModeMql.addEventListener("change", themeListener);
+
+    themeObserver = new MutationObserver(() => {
+      if (term) {
+        term.options.theme = getTerminalTheme(isDarkThemeActive());
+      }
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
 
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -129,6 +148,10 @@
   }
 
   function cleanup() {
+    if (themeObserver) {
+      themeObserver.disconnect();
+      themeObserver = null;
+    }
     if (darkModeMql && themeListener) {
       darkModeMql.removeEventListener("change", themeListener);
       themeListener = null;
