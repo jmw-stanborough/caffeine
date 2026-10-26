@@ -1,5 +1,6 @@
 use tauri::Manager;
 
+pub mod config;
 pub mod db;
 pub mod endpoint;
 pub mod net;
@@ -54,6 +55,8 @@ pub fn run() {
             endpoint::endpoint_write_terminal,
             endpoint::endpoint_resize_terminal,
             endpoint::endpoint_close_terminal,
+            config::get_app_settings_cmd,
+            config::update_app_settings_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

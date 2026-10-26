@@ -2,7 +2,7 @@ use crate:: net::event_name_for_status;
 use crate::server_monitor::types::{HealthStatus, Server};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
@@ -15,6 +15,103 @@ const LEGACY_SETTINGS_FILE: &str = "settings.json";
 
 pub struct DbState(pub Mutex<Connection>);
 
+fn migrate_legacy_roaming_db(app: &AppHandle, local_db_path: &Path) -> Result<(), String> {
+    if local_db_path.exists() {
+        return Ok(());
+    }
+
+    let config_dir = match app.path().config_dir() {
+        Ok(dir) => dir,
+        Err(_) => return Ok(()),
+    };
+
+    let legacy_db = config_dir.join(APP_DIR_NAME).join(DB_FILE_NAME);
+    if !legacy_db.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = local_db_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create local database directory: {e}"))?;
+    }
+
+    fs::rename(&legacy_db, local_db_path)
+        .or_else(|_| fs::copy(&legacy_db, local_db_path).map(|_| ()))
+        .map_err(|e| format!("Failed to migrate database from roaming AppData: {e}"))?;
+
+    for suffix in &["-wal", "-shm"] {
+        let legacy_aux = config_dir
+            .join(APP_DIR_NAME)
+            .join(format!("{DB_FILE_NAME}{suffix}"));
+        if legacy_aux.exists() {
+            let local_aux = local_db_path.with_file_name(format!("{DB_FILE_NAME}{suffix}"));
+            let _ = fs::rename(&legacy_aux, &local_aux)
+                .or_else(|_| fs::copy(&legacy_aux, &local_aux).map(|_| ()));
+            let _ = fs::remove_file(&legacy_aux);
+        }
+    }
+
+    let _ = fs::remove_file(&legacy_db);
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_machine_db_dir() -> Result<PathBuf, String> {
+    let program_data =
+        std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string());
+    let dir = PathBuf::from(program_data).join(APP_DIR_NAME);
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
+    Ok(dir)
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_machine_db_dir() -> Result<PathBuf, String> {
+    let dir = PathBuf::from("/var/lib").join(APP_DIR_NAME);
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
+    Ok(dir)
+}
+
+#[cfg(target_os = "macos")]
+pub fn get_machine_db_dir() -> Result<PathBuf, String> {
+    let dir = PathBuf::from("/Library/Application Support").join(APP_DIR_NAME);
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
+    Ok(dir)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+pub fn get_machine_db_dir() -> Result<PathBuf, String> {
+    let dir = PathBuf::from("/var/lib").join(APP_DIR_NAME);
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
+    Ok(dir)
+}
+
+pub fn get_machine_db_path() -> Result<PathBuf, String> {
+    let dir = get_machine_db_dir()?;
+    Ok(dir.join(DB_FILE_NAME))
+}
+
+pub fn get_remote_replica_db_path(
+    app: &AppHandle,
+    host: &str,
+    port: u16,
+) -> Result<PathBuf, String> {
+    let local_data_dir = app
+        .path()
+        .local_data_dir()
+        .map_err(|e| format!("Failed to resolve local data dir: {e}"))?;
+
+    let slug = crate::config::sanitize_host_slug(host, port);
+    let dir = local_data_dir.join(APP_DIR_NAME).join("remotes").join(slug);
+    fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create remote replica directory at {dir:?}: {e}"))?;
+
+    Ok(dir.join(DB_FILE_NAME))
+}
+
 fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     let local_data_dir = app
         .path()
@@ -25,7 +122,9 @@ fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&base_dir)
         .map_err(|e| format!("Failed to create database directory: {e}"))?;
 
-    Ok(base_dir.join(DB_FILE_NAME))
+    let local_path = base_dir.join(DB_FILE_NAME);
+    migrate_legacy_roaming_db(app, &local_path)?;
+    Ok(local_path)
 }
 
 pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
@@ -399,9 +498,108 @@ pub fn record_status_transition(
     Ok(Some((new_event.to_string(), ts)))
 }
 
+pub fn prune_logs(
+    conn: &Connection,
+    retention_days: u32,
+    max_entries_per_entity: u32,
+) -> Result<(), String> {
+    let days_param = format!("-{retention_days} days");
+
+    conn.execute(
+        "DELETE FROM server_logs WHERE timestamp < datetime('now', ?1)",
+        params![days_param],
+    )
+    .map_err(|e| format!("Failed to prune server_logs by age: {e}"))?;
+
+    conn.execute(
+        "DELETE FROM printer_logs WHERE timestamp < datetime('now', ?1)",
+        params![days_param],
+    )
+    .map_err(|e| format!("Failed to prune printer_logs by age: {e}"))?;
+
+    conn.execute(
+        "DELETE FROM server_logs
+         WHERE id NOT IN (
+             SELECT id FROM (
+                 SELECT id, ROW_NUMBER() OVER (PARTITION BY server_id ORDER BY id DESC) as rn
+                 FROM server_logs
+             ) WHERE rn <= ?1
+         )",
+        params![max_entries_per_entity],
+    )
+    .map_err(|e| format!("Failed to prune server_logs by entry count: {e}"))?;
+
+    conn.execute(
+        "DELETE FROM printer_logs
+         WHERE id NOT IN (
+             SELECT id FROM (
+                 SELECT id, ROW_NUMBER() OVER (PARTITION BY printer_id ORDER BY id DESC) as rn
+                 FROM printer_logs
+             ) WHERE rn <= ?1
+         )",
+        params![max_entries_per_entity],
+    )
+    .map_err(|e| format!("Failed to prune printer_logs by entry count: {e}"))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_prune_logs_retains_within_threshold() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE server_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                latency_ms INTEGER,
+                timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            CREATE TABLE printer_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                printer_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                latency_ms INTEGER,
+                timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            );
+            ",
+        )
+        .unwrap();
+
+        for i in 1..=10 {
+            conn.execute(
+                "INSERT INTO server_logs (server_id, event_type, timestamp) VALUES ('srv1', 'connected', datetime('now', ?1))",
+                params![format!("-{} days", i)],
+            )
+            .unwrap();
+        }
+
+        prune_logs(&conn, 5, 100).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM server_logs", [], |r| r.get(0))
+            .unwrap();
+        assert!(count <= 5);
+
+        for _ in 1..=10 {
+            conn.execute(
+                "INSERT INTO server_logs (server_id, event_type) VALUES ('srv1', 'connected')",
+                [],
+            )
+            .unwrap();
+        }
+
+        prune_logs(&conn, 30, 4).unwrap();
+        let count_after_max: i64 = conn
+            .query_row("SELECT count(*) FROM server_logs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count_after_max, 4);
+    }
 
     #[test]
     fn test_resolve_initial_event_filters_non_connectivity_events() {
