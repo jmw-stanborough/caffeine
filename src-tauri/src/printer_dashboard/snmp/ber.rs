@@ -16,7 +16,8 @@ const ASN1_COUNTER32: u8 = 0x41;
 const ASN1_GAUGE32: u8 = 0x42;
 const ASN1_TIMETICKS: u8 = 0x43;
 
-const SNMP_VERSION_2C: i32 = 1;
+pub const SNMP_VERSION_1: i32 = 0;
+pub const SNMP_VERSION_2C: i32 = 1;
 const SNMP_UDP_BUFFER_SIZE: usize = 4096;
 
 const BER_LONG_LENGTH_FLAG: u8 = 0x80;
@@ -128,6 +129,7 @@ pub fn encode_oid(oid: &[u32]) -> Vec<u8> {
 }
 
 pub fn build_snmp_packet(
+    version: i32,
     community: &str,
     request_id: i32,
     pdu_tag: u8,
@@ -150,7 +152,7 @@ pub fn build_snmp_packet(
     let pdu = encode_tlv(pdu_tag, &pdu_inner);
 
     let mut msg_inner = Vec::new();
-    msg_inner.extend(encode_integer(SNMP_VERSION_2C));
+    msg_inner.extend(encode_integer(version));
     msg_inner.extend(encode_tlv(ASN1_OCTET_STRING, community.as_bytes()));
     msg_inner.extend(pdu);
 
@@ -243,7 +245,14 @@ pub fn clean_octet_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&trimmed).trim().to_string()
 }
 
-pub fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>> {
+#[derive(Debug, Clone)]
+pub struct SnmpPduResponse {
+    pub error_status: i64,
+    pub error_index: i64,
+    pub varbinds: Vec<(Vec<u32>, Option<SnmpVal>)>,
+}
+
+pub fn parse_snmp_pdu(packet: &[u8]) -> Option<SnmpPduResponse> {
     let mut pos = 0;
     let (seq_tag, seq_start, seq_len) = parse_ber_tlv(packet, &mut pos)?;
     if seq_tag != ASN1_SEQUENCE {
@@ -263,10 +272,9 @@ pub fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVa
     let mut pdu_pos = pdu_start;
     let _ = parse_ber_tlv(packet, &mut pdu_pos)?;
     let (_, err_start, err_len) = parse_ber_tlv(packet, &mut pdu_pos)?;
-    let err_status = decode_signed_int(&packet[err_start..err_start + err_len]);
-    if err_status != 0 {
-        return None;
-    }
+    let error_status = decode_signed_int(&packet[err_start..err_start + err_len]);
+    let (_, err_idx_start, err_idx_len) = parse_ber_tlv(packet, &mut pdu_pos)?;
+    let error_index = decode_signed_int(&packet[err_idx_start..err_idx_start + err_idx_len]);
     let _ = parse_ber_tlv(packet, &mut pdu_pos)?;
     let (vbl_tag, vbl_start, vbl_len) = parse_ber_tlv(packet, &mut pdu_pos)?;
     if vbl_tag != ASN1_SEQUENCE || pdu_pos > pdu_start + pdu_len {
@@ -275,7 +283,7 @@ pub fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVa
 
     let mut vbl_pos = vbl_start;
     let vbl_end = vbl_start + vbl_len;
-    let mut results = Vec::new();
+    let mut varbinds = Vec::new();
 
     while vbl_pos < vbl_end {
         let (vb_tag, vb_start, vb_len) = parse_ber_tlv(packet, &mut vbl_pos)?;
@@ -304,31 +312,60 @@ pub fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVa
             _ => None,
         };
 
-        results.push((oid, val));
+        varbinds.push((oid, val));
     }
 
-    Some(results)
+    Some(SnmpPduResponse {
+        error_status,
+        error_index,
+        varbinds,
+    })
 }
 
-pub async fn snmp_request(
+pub fn parse_snmp_response(packet: &[u8]) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>> {
+    let pdu = parse_snmp_pdu(packet)?;
+    if pdu.error_status != 0 {
+        return None;
+    }
+    Some(pdu.varbinds)
+}
+
+pub async fn snmp_request_raw(
     sock: &UdpSocket,
+    version: i32,
     community: &str,
     req_id: i32,
     pdu_tag: u8,
     oids: &[Vec<u32>],
-) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>> {
-    let pkt = build_snmp_packet(community, req_id, pdu_tag, oids);
+) -> Option<SnmpPduResponse> {
+    let pkt = build_snmp_packet(version, community, req_id, pdu_tag, oids);
     sock.send(&pkt).await.ok()?;
     let mut buf = [0u8; SNMP_UDP_BUFFER_SIZE];
     let n = timeout(SNMP_TIMEOUT, sock.recv(&mut buf))
         .await
         .ok()?
         .ok()?;
-    parse_snmp_response(&buf[..n])
+    parse_snmp_pdu(&buf[..n])
+}
+
+pub async fn snmp_request(
+    sock: &UdpSocket,
+    version: i32,
+    community: &str,
+    req_id: i32,
+    pdu_tag: u8,
+    oids: &[Vec<u32>],
+) -> Option<Vec<(Vec<u32>, Option<SnmpVal>)>> {
+    let pdu = snmp_request_raw(sock, version, community, req_id, pdu_tag, oids).await?;
+    if pdu.error_status != 0 {
+        return None;
+    }
+    Some(pdu.varbinds)
 }
 
 pub async fn snmp_walk_columns<F>(
     sock: &UdpSocket,
+    version: i32,
     community: &str,
     req_id: &mut i32,
     entry_prefix: &[u32],
@@ -350,7 +387,7 @@ pub async fn snmp_walk_columns<F>(
 
     for _ in 0..max_steps {
         let Some(step_resp) =
-            snmp_request(sock, community, *req_id, PDU_GET_NEXT_REQUEST, &current_oids).await
+            snmp_request(sock, version, community, *req_id, PDU_GET_NEXT_REQUEST, &current_oids).await
         else {
             break;
         };
@@ -422,5 +459,43 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].0, oid);
         assert_eq!(parsed[0].1.as_ref().unwrap().as_i64(), Some(85));
+    }
+
+    #[test]
+    fn test_snmp_v1_packet_and_error_pdu() {
+        let oid = vec![1, 3, 6, 1, 2, 1, 1, 1, 0];
+        let pkt = build_snmp_packet(SNMP_VERSION_1, "public", 100, PDU_GET_REQUEST, &[oid.clone()]);
+        // Sequence tag (0x30) + length, then Integer version (0x02, 0x01, 0x00)
+        assert_eq!(pkt[0], ASN1_SEQUENCE);
+        let mut pos = 0;
+        let (_, _, _) = parse_ber_tlv(&pkt, &mut pos).unwrap();
+        let (ver_tag, ver_start, ver_len) = parse_ber_tlv(&pkt, &mut pos).unwrap();
+        assert_eq!(ver_tag, ASN1_INTEGER);
+        assert_eq!(decode_signed_int(&pkt[ver_start..ver_start + ver_len]), 0);
+
+        let vb_oid = encode_oid(&oid);
+        let mut vb_inner = Vec::new();
+        vb_inner.extend(vb_oid);
+        vb_inner.extend_from_slice(&[ASN1_NULL, 0x00]);
+        let vb = encode_tlv(ASN1_SEQUENCE, &vb_inner);
+        let vbl = encode_tlv(ASN1_SEQUENCE, &vb);
+
+        let mut pdu_inner = Vec::new();
+        pdu_inner.extend(encode_integer(100));
+        pdu_inner.extend(encode_integer(2)); // error-status: noSuchName
+        pdu_inner.extend(encode_integer(1)); // error-index: 1
+        pdu_inner.extend(vbl);
+        let pdu = encode_tlv(PDU_GET_RESPONSE, &pdu_inner);
+
+        let mut msg_inner = Vec::new();
+        msg_inner.extend(encode_integer(SNMP_VERSION_1));
+        msg_inner.extend(encode_tlv(ASN1_OCTET_STRING, b"public"));
+        msg_inner.extend(pdu);
+        let err_packet = encode_tlv(ASN1_SEQUENCE, &msg_inner);
+
+        assert!(parse_snmp_response(&err_packet).is_none());
+        let pdu_resp = parse_snmp_pdu(&err_packet).expect("parsed error pdu");
+        assert_eq!(pdu_resp.error_status, 2);
+        assert_eq!(pdu_resp.error_index, 1);
     }
 }

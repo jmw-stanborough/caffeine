@@ -1,5 +1,7 @@
 use super::PrinterPollDetails;
-use super::ber::{PDU_GET_NEXT_REQUEST, PDU_GET_REQUEST, snmp_request, snmp_walk_columns};
+use super::ber::{
+    PDU_GET_NEXT_REQUEST, PDU_GET_REQUEST, snmp_request, snmp_request_raw, snmp_walk_columns,
+};
 use super::oids::*;
 use super::parsers::*;
 use crate::printer_dashboard::types::TonerSupply;
@@ -21,11 +23,12 @@ pub fn format_console_lines(lines: &[String]) -> Option<String> {
 
 pub async fn poll_general_info(
     sock: &UdpSocket,
+    version: i32,
     community: &str,
     req_id: &mut i32,
     details: &mut PrinterPollDetails,
 ) -> Option<BTreeMap<String, u8>> {
-    let general_oids: Vec<Vec<u32>> = [
+    let mut general_oids: Vec<Vec<u32>> = [
         OID_HR_DEVICE_DESCR,
         OID_HR_DEVICE_STATUS,
         OID_PRT_GENERAL_PRINTER_NAME,
@@ -46,8 +49,35 @@ pub async fn poll_general_info(
     .map(|oid| oid.to_vec())
     .collect();
 
-    let resp = snmp_request(sock, community, *req_id, PDU_GET_REQUEST, &general_oids).await?;
-    *req_id += 1;
+    let resp = loop {
+        if general_oids.is_empty() {
+            return None;
+        }
+        let pdu = snmp_request_raw(
+            sock,
+            version,
+            community,
+            *req_id,
+            PDU_GET_REQUEST,
+            &general_oids,
+        )
+        .await?;
+        *req_id += 1;
+
+        if pdu.error_status == 0 {
+            break pdu.varbinds;
+        }
+
+        // Under RFC 1157 SNMPv1, an unsupported MIB variable rejects the batch with noSuchName (2).
+        if pdu.error_status == 2
+            && pdu.error_index >= 1
+            && (pdu.error_index as usize) <= general_oids.len()
+        {
+            general_oids.remove((pdu.error_index as usize) - 1);
+        } else {
+            return None;
+        }
+    };
 
     let mut hr_device_descr = None;
     let mut prt_general_name = None;
@@ -155,6 +185,7 @@ pub async fn poll_general_info(
 
 pub async fn poll_colorants(
     sock: &UdpSocket,
+    version: i32,
     community: &str,
     req_id: &mut i32,
 ) -> BTreeMap<u32, String> {
@@ -163,7 +194,7 @@ pub async fn poll_colorants(
 
     for _ in 0..MAX_COLORANT_WALK_STEPS {
         let Some(c_resp) =
-            snmp_request(sock, community, *req_id, PDU_GET_NEXT_REQUEST, &colorant_oid).await
+            snmp_request(sock, version, community, *req_id, PDU_GET_NEXT_REQUEST, &colorant_oid).await
         else {
             break;
         };
@@ -191,6 +222,7 @@ pub async fn poll_colorants(
 
 pub async fn poll_supplies(
     sock: &UdpSocket,
+    version: i32,
     community: &str,
     req_id: &mut i32,
     brother_toner_pcts: &BTreeMap<String, u8>,
@@ -208,6 +240,7 @@ pub async fn poll_supplies(
     let mut supplies_map: BTreeMap<Vec<u32>, RawSupply> = BTreeMap::new();
     snmp_walk_columns(
         sock,
+        version,
         community,
         req_id,
         OID_PRT_MARKER_SUPPLIES_ENTRY,
@@ -227,7 +260,7 @@ pub async fn poll_supplies(
     )
     .await;
 
-    let colorants = poll_colorants(sock, community, req_id).await;
+    let colorants = poll_colorants(sock, version, community, req_id).await;
 
     for (_instance, raw) in supplies_map {
         let mut level = raw.level.unwrap_or(SUPPLY_LEVEL_UNKNOWN);
@@ -329,6 +362,7 @@ pub async fn poll_supplies(
 
 pub async fn poll_alerts(
     sock: &UdpSocket,
+    version: i32,
     community: &str,
     req_id: &mut i32,
     details: &mut PrinterPollDetails,
@@ -344,6 +378,7 @@ pub async fn poll_alerts(
     let mut alerts_map: BTreeMap<Vec<u32>, RawAlert> = BTreeMap::new();
     snmp_walk_columns(
         sock,
+        version,
         community,
         req_id,
         OID_PRT_ALERT_ENTRY,
@@ -395,6 +430,7 @@ pub async fn poll_alerts(
 
 pub async fn poll_media_paths(
     sock: &UdpSocket,
+    version: i32,
     community: &str,
     req_id: &mut i32,
     details: &mut PrinterPollDetails,
@@ -408,6 +444,7 @@ pub async fn poll_media_paths(
     let mut paths_map: BTreeMap<Vec<u32>, RawMediaPath> = BTreeMap::new();
     snmp_walk_columns(
         sock,
+        version,
         community,
         req_id,
         OID_PRT_MEDIA_PATH_ENTRY,

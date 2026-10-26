@@ -11,6 +11,7 @@ pub use parsers::{
 };
 
 use super::types::{TonerSupply, normalize_snmp_community};
+use ber::{SNMP_VERSION_1, SNMP_VERSION_2C};
 use ipp::poll_ipp;
 use std::net::ToSocketAddrs;
 use tokio::net::UdpSocket;
@@ -98,6 +99,31 @@ fn apply_capability_fallbacks(details: &mut PrinterPollDetails) {
     }
 }
 
+async fn poll_snmp_with_version(
+    sock: &UdpSocket,
+    version: i32,
+    community: &str,
+    req_id: &mut i32,
+) -> Option<PrinterPollDetails> {
+    let mut details = PrinterPollDetails::default();
+
+    let brother_toner_pcts =
+        poll_general_info(sock, version, community, req_id, &mut details).await?;
+    poll_supplies(
+        sock,
+        version,
+        community,
+        req_id,
+        &brother_toner_pcts,
+        &mut details,
+    )
+    .await;
+    poll_media_paths(sock, version, community, req_id, &mut details).await;
+    poll_alerts(sock, version, community, req_id, &mut details).await;
+
+    Some(details)
+}
+
 async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     let host_owned = host.to_string();
     let target_addr = tokio::task::spawn_blocking(move || {
@@ -121,23 +147,16 @@ async fn poll_snmp(host: &str, community: &str) -> Option<PrinterPollDetails> {
     let sock = UdpSocket::bind(bind_addr).await.ok()?;
     sock.connect(target_addr).await.ok()?;
 
-    let mut details = PrinterPollDetails::default();
     let mut req_id = INITIAL_SNMP_REQUEST_ID;
 
-    let brother_toner_pcts =
-        poll_general_info(&sock, community, &mut req_id, &mut details).await?;
-    poll_supplies(
-        &sock,
-        community,
-        &mut req_id,
-        &brother_toner_pcts,
-        &mut details,
-    )
-    .await;
-    poll_media_paths(&sock, community, &mut req_id, &mut details).await;
-    poll_alerts(&sock, community, &mut req_id, &mut details).await;
+    // Prefer SNMPv2c for performance, falling back to SNMPv1 for legacy agents.
+    if let Some(details) =
+        poll_snmp_with_version(&sock, SNMP_VERSION_2C, community, &mut req_id).await
+    {
+        return Some(details);
+    }
 
-    Some(details)
+    poll_snmp_with_version(&sock, SNMP_VERSION_1, community, &mut req_id).await
 }
 
 pub async fn poll_printer_details(host: &str, community: &str) -> PrinterPollDetails {
