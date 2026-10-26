@@ -25,44 +25,7 @@ fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&base_dir)
         .map_err(|e| format!("Failed to create database directory: {e}"))?;
 
-    let local_db_path = base_dir.join(DB_FILE_NAME);
-    migrate_from_roaming_db_if_needed(app, &local_db_path)?;
-
-    Ok(local_db_path)
-}
-
-fn migrate_file_if_missing(
-    source: &std::path::Path,
-    destination: &std::path::Path,
-) -> Result<bool, String> {
-    if destination.exists() || !source.exists() {
-        return Ok(false);
-    }
-
-    fs::copy(source, destination).map_err(|e| {
-        format!("Failed to copy legacy database from {source:?} to {destination:?}: {e}")
-    })?;
-
-    Ok(true)
-}
-
-fn migrate_from_roaming_db_if_needed(
-    app: &AppHandle,
-    local_db_path: &std::path::Path,
-) -> Result<(), String> {
-    if local_db_path.exists() {
-        return Ok(());
-    }
-
-    let config_dir = app
-        .path()
-        .config_dir()
-        .map_err(|e| format!("Failed to resolve config dir: {e}"))?;
-
-    let roaming_db_path = config_dir.join(APP_DIR_NAME).join(DB_FILE_NAME);
-    migrate_file_if_missing(&roaming_db_path, local_db_path)?;
-
-    Ok(())
+    Ok(base_dir.join(DB_FILE_NAME))
 }
 
 pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
@@ -503,26 +466,5 @@ mod tests {
         assert_eq!(remaining[0].1, "toner empty");
         assert_eq!(remaining[1].1, "out of paper");
         assert_eq!(remaining[2].1, "toner empty");
-    }
-
-    #[test]
-    fn test_migrate_file_if_missing() {
-        let temp_dir = std::env::temp_dir().join(format!("caffeine_test_{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(&temp_dir).unwrap();
-
-        let source = temp_dir.join("source.db");
-        let dest = temp_dir.join("dest.db");
-
-        assert_eq!(migrate_file_if_missing(&source, &dest).unwrap(), false);
-
-        fs::write(&source, b"sqlite content").unwrap();
-        assert_eq!(migrate_file_if_missing(&source, &dest).unwrap(), true);
-        assert_eq!(fs::read(&dest).unwrap(), b"sqlite content");
-
-        fs::write(&source, b"new content").unwrap();
-        assert_eq!(migrate_file_if_missing(&source, &dest).unwrap(), false);
-        assert_eq!(fs::read(&dest).unwrap(), b"sqlite content");
-
-        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
