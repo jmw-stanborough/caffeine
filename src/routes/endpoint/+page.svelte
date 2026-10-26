@@ -33,7 +33,6 @@
     <UnsupportedOs osSupport={store.osSupport} />
   {:else}
     <div class="endpoint-workspace">
-      <!-- Left Column: System & Hardware Telemetry -->
       <section class="left-column">
         <HardwarePanel
           machine={store.machine}
@@ -43,9 +42,7 @@
         />
       </section>
 
-      <!-- Right Column: Two Stacked Windows -->
       <section class="right-column">
-        <!-- Top Window: System Updates -->
         <div class="top-window-wrap">
           <UpdatesWindow
             updates={store.updates}
@@ -60,7 +57,6 @@
           />
         </div>
 
-        <!-- Bottom Window: Terminal -->
         <div class="bottom-window-wrap">
           <TerminalWindow shell={store.shell} />
         </div>
