@@ -5,10 +5,60 @@ use tauri::{AppHandle, Manager};
 
 const APP_DIR_NAME: &str = "caffeine";
 const SETTINGS_FILE_NAME: &str = "settings.json";
+const MACHINE_SETTINGS_FILE_NAME: &str = "machine.json";
 pub const DEFAULT_TARGET_HOST: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 6310;
 pub const DEFAULT_RETENTION_DAYS: u32 = 14;
 pub const DEFAULT_MAX_LOG_ENTRIES: u32 = 1000;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UserProfileSettings {
+    #[serde(default = "default_target_host")]
+    pub target_host: String,
+    #[serde(default = "default_port")]
+    pub target_port: u16,
+    #[serde(default)]
+    pub admin_token: Option<String>,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+    #[serde(default = "default_max_log_entries")]
+    pub max_log_entries: u32,
+}
+
+impl Default for UserProfileSettings {
+    fn default() -> Self {
+        Self {
+            target_host: default_target_host(),
+            target_port: default_port(),
+            admin_token: None,
+            theme: default_theme(),
+            retention_days: default_retention_days(),
+            max_log_entries: default_max_log_entries(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MachineSettings {
+    #[serde(default)]
+    pub server_mode: bool,
+    #[serde(default = "default_port")]
+    pub server_port: u16,
+    #[serde(default = "default_server_bind")]
+    pub server_bind: String,
+}
+
+impl Default for MachineSettings {
+    fn default() -> Self {
+        Self {
+            server_mode: false,
+            server_port: default_port(),
+            server_bind: default_server_bind(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppSettings {
@@ -89,26 +139,87 @@ pub fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir.join(SETTINGS_FILE_NAME))
 }
 
-pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
-    let path = get_settings_path(app)?;
+pub fn get_machine_settings_path() -> Result<PathBuf, String> {
+    let machine_dir = crate::db::get_machine_db_dir()?;
+    Ok(machine_dir.join(MACHINE_SETTINGS_FILE_NAME))
+}
+
+pub fn load_machine_settings() -> Result<MachineSettings, String> {
+    let path = get_machine_settings_path()?;
     if !path.exists() {
-        return Ok(AppSettings::default());
+        return Ok(MachineSettings::default());
     }
 
     let contents = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read settings file at {:?}: {e}", path))?;
+        .map_err(|e| format!("Failed to read machine settings at {:?}: {e}", path))?;
 
-    serde_json::from_str::<AppSettings>(&contents)
-        .map_err(|e| format!("Failed to parse settings JSON at {:?}: {e}", path))
+    serde_json::from_str::<MachineSettings>(&contents)
+        .map_err(|e| format!("Failed to parse machine settings JSON at {:?}: {e}", path))
+}
+
+pub fn save_machine_settings(settings: &MachineSettings) -> Result<(), String> {
+    let path = get_machine_settings_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create machine settings directory: {e}"))?;
+    }
+    let serialized = serde_json::to_string_pretty(settings)
+        .map_err(|e| format!("Failed to serialize machine settings: {e}"))?;
+
+    fs::write(&path, serialized)
+        .map_err(|e| format!("Failed to write machine settings to {:?}: {e}", path))?;
+
+    Ok(())
+}
+
+pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
+    let user_path = get_settings_path(app)?;
+    let user_settings: UserProfileSettings = if user_path.exists() {
+        let contents = fs::read_to_string(&user_path)
+            .map_err(|e| format!("Failed to read settings file at {:?}: {e}", user_path))?;
+        serde_json::from_str::<UserProfileSettings>(&contents)
+            .unwrap_or_default()
+    } else {
+        UserProfileSettings::default()
+    };
+
+    let machine_settings = load_machine_settings().unwrap_or_default();
+
+    Ok(AppSettings {
+        target_host: user_settings.target_host,
+        target_port: user_settings.target_port,
+        server_mode: machine_settings.server_mode,
+        server_port: machine_settings.server_port,
+        server_bind: machine_settings.server_bind,
+        admin_token: user_settings.admin_token,
+        theme: user_settings.theme,
+        retention_days: user_settings.retention_days,
+        max_log_entries: user_settings.max_log_entries,
+    })
 }
 
 pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
-    let path = get_settings_path(app)?;
-    let serialized = serde_json::to_string_pretty(settings)
-        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+    let user_settings = UserProfileSettings {
+        target_host: settings.target_host.clone(),
+        target_port: settings.target_port,
+        admin_token: settings.admin_token.clone(),
+        theme: settings.theme.clone(),
+        retention_days: settings.retention_days,
+        max_log_entries: settings.max_log_entries,
+    };
 
-    fs::write(&path, serialized)
-        .map_err(|e| format!("Failed to write settings to {:?}: {e}", path))?;
+    let user_path = get_settings_path(app)?;
+    let user_serialized = serde_json::to_string_pretty(&user_settings)
+        .map_err(|e| format!("Failed to serialize user settings: {e}"))?;
+    fs::write(&user_path, user_serialized)
+        .map_err(|e| format!("Failed to write user settings to {:?}: {e}", user_path))?;
+
+    let machine_settings = MachineSettings {
+        server_mode: settings.server_mode,
+        server_port: settings.server_port,
+        server_bind: settings.server_bind.clone(),
+    };
+    save_machine_settings(&machine_settings)?;
 
     Ok(())
 }
@@ -212,5 +323,29 @@ mod tests {
         assert_eq!(settings.server_port, 6310);
         assert_eq!(settings.retention_days, 14);
         assert_eq!(settings.max_log_entries, 1000);
+    }
+
+    #[test]
+    fn test_user_and_machine_settings_separation() {
+        let user = UserProfileSettings {
+            target_host: "10.0.0.1".to_string(),
+            target_port: 6310,
+            admin_token: Some("secret".to_string()),
+            theme: "dark".to_string(),
+            retention_days: 7,
+            max_log_entries: 500,
+        };
+        let machine = MachineSettings {
+            server_mode: true,
+            server_port: 6310,
+            server_bind: "127.0.0.1".to_string(),
+        };
+
+        let user_json = serde_json::to_string(&user).unwrap();
+        let machine_json = serde_json::to_string(&machine).unwrap();
+
+        assert!(!user_json.contains("server_mode"));
+        assert!(!machine_json.contains("target_host"));
+        assert!(!machine_json.contains("theme"));
     }
 }
