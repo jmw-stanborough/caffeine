@@ -292,7 +292,7 @@ pub async fn update_app_settings_cmd(
         {
             let machine_db = crate::db::get_machine_db_path()?;
             active_server
-                .start(&settings.server_bind, settings.server_port, machine_db)
+                .start(Some(app.clone()), &settings.server_bind, settings.server_port, machine_db)
                 .await?;
         }
     } else if old_settings.server_mode {

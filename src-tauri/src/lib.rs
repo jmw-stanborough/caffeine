@@ -32,8 +32,9 @@ pub fn run() {
                     let bind = settings.server_bind.clone();
                     let port = settings.server_port;
                     let srv = active_server.clone();
+                    let handle = app.handle().clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = srv.start(&bind, port, machine_db).await {
+                        if let Err(e) = srv.start(Some(handle), &bind, port, machine_db).await {
                             eprintln!("Failed to start embedded server on startup: {e}");
                         }
                     });

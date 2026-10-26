@@ -141,28 +141,60 @@ fn write_snapshot_to_replica(
     snapshot: SnapshotResponse,
 ) -> Result<(), String> {
     let mut conn = Connection::open(replica_path).map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;")
+        .map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    tx.execute("DELETE FROM servers", []).map_err(|e| e.to_string())?;
+    let srv_ids: std::collections::HashSet<String> = snapshot.servers.iter().map(|s| s.id.clone()).collect();
     for (idx, s) in snapshot.servers.into_iter().enumerate() {
         let agent_port = s.agent.as_ref().map(|a| a.port as i64);
         let agent_api = s.agent.as_ref().map(|a| a.api_key.as_str());
         tx.execute(
             "INSERT INTO servers (id, host, label, description, agent_port, agent_api_key, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                host = excluded.host,
+                label = excluded.label,
+                description = excluded.description,
+                agent_port = excluded.agent_port,
+                agent_api_key = excluded.agent_api_key,
+                sort_order = excluded.sort_order",
             params![s.id, s.host, s.label, s.description, agent_port, agent_api, idx as i64],
         )
         .map_err(|e| e.to_string())?;
     }
+    let existing_servers = crate::server_monitor::db::get_servers(&tx).map_err(|e| e.to_string())?;
+    for existing in existing_servers {
+        if !srv_ids.contains(&existing.id) {
+            tx.execute("DELETE FROM servers WHERE id = ?1", params![existing.id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
 
-    tx.execute("DELETE FROM printers", []).map_err(|e| e.to_string())?;
+    let prn_ids: std::collections::HashSet<String> = snapshot.printers.iter().map(|p| p.id.clone()).collect();
     for (idx, p) in snapshot.printers.into_iter().enumerate() {
         tx.execute(
             "INSERT INTO printers (id, host, label, description, model, location, snmp_community, web_url, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                host = excluded.host,
+                label = excluded.label,
+                description = excluded.description,
+                model = excluded.model,
+                location = excluded.location,
+                snmp_community = excluded.snmp_community,
+                web_url = excluded.web_url,
+                sort_order = excluded.sort_order",
             params![p.id, p.host, p.label, p.description, p.model, p.location, p.snmp_community, p.web_url, idx as i64],
         )
         .map_err(|e| e.to_string())?;
+    }
+    let existing_printers = crate::printer_dashboard::db::get_printers(&tx).map_err(|e| e.to_string())?;
+    for existing in existing_printers {
+        if !prn_ids.contains(&existing.id) {
+            tx.execute("DELETE FROM printers WHERE id = ?1", params![existing.id])
+                .map_err(|e| e.to_string())?;
+        }
     }
 
     tx.execute("DELETE FROM printer_filter_tags", []).map_err(|e| e.to_string())?;
@@ -266,13 +298,29 @@ async fn stream_websocket_ticks(
             match event {
                 ServerBroadcastEvent::ServerTick(payload) => {
                     let _ = app.emit(SERVER_STATUS_EVENT_NAME, &payload);
+                    let (max_srv, max_prn) = get_max_log_ids(replica_path);
+                    if let Ok(history) = fetch_history_logs(http_client, base_url, max_srv, max_prn).await {
+                        if !history.server_logs.is_empty() || !history.printer_logs.is_empty() {
+                            let _ = write_history_to_replica(replica_path, history);
+                        }
+                    }
                 }
                 ServerBroadcastEvent::PrinterTick(payload) => {
                     let _ = app.emit(PRINTER_STATUS_EVENT_NAME, &payload);
+                    let (max_srv, max_prn) = get_max_log_ids(replica_path);
+                    if let Ok(history) = fetch_history_logs(http_client, base_url, max_srv, max_prn).await {
+                        if !history.server_logs.is_empty() || !history.printer_logs.is_empty() {
+                            let _ = write_history_to_replica(replica_path, history);
+                        }
+                    }
                 }
                 ServerBroadcastEvent::EntitiesUpdated => {
                     if let Ok(snapshot) = fetch_initial_snapshot(http_client, base_url).await {
                         if let Ok(()) = write_snapshot_to_replica(replica_path, snapshot) {
+                            let (max_srv, max_prn) = get_max_log_ids(replica_path);
+                            if let Ok(history) = fetch_history_logs(http_client, base_url, max_srv, max_prn).await {
+                                let _ = write_history_to_replica(replica_path, history);
+                            }
                             let _ = app.emit("snapshot-synced", ());
                         }
                     }

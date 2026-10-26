@@ -100,11 +100,30 @@ pub async fn reorder_printers(
 }
 
 #[tauri::command]
-pub fn get_printer_logs(
+pub async fn get_printer_logs(
+    app: AppHandle,
     db: State<'_, DbState>,
     printer_id: String,
     limit: Option<i64>,
 ) -> Result<Vec<PrinterLog>, String> {
+    let settings = crate::config::load_app_settings(&app).unwrap_or_default();
+    if !crate::config::is_self_serving(&settings.target_host) && !settings.server_mode {
+        let base_url = format!("http://{}:{}", settings.target_host, settings.target_port);
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        let lim = limit.unwrap_or(DEFAULT_LOG_LIMIT);
+        let url = format!("{base_url}/api/v1/printers/{printer_id}/logs?limit={lim}");
+        if let Ok(resp) = client.get(&url).send().await {
+            if resp.status().is_success() {
+                if let Ok(logs) = resp.json::<Vec<PrinterLog>>().await {
+                    return Ok(logs);
+                }
+            }
+        }
+    }
+
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     query_printer_logs(&conn, &printer_id, limit.unwrap_or(DEFAULT_LOG_LIMIT))
 }

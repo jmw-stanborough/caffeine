@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tauri::AppHandle;
 use tokio::sync::broadcast;
 use types::ServerBroadcastEvent;
 
@@ -40,11 +41,12 @@ impl ActiveServer {
 
     pub async fn start(
         &self,
+        app: Option<AppHandle>,
         bind_ip: &str,
         port: u16,
         db_path: PathBuf,
     ) -> Result<SocketAddr, String> {
-        let instance = start_embedded_server(bind_ip, port, db_path).await?;
+        let instance = start_embedded_server(app, bind_ip, port, db_path).await?;
         let addr = instance.bound_addr;
 
         let mut guard = self
@@ -111,6 +113,7 @@ pub fn init_server_db(db_path: &PathBuf) -> Result<Connection, String> {
 }
 
 pub async fn start_embedded_server(
+    app: Option<AppHandle>,
     bind_ip: &str,
     port: u16,
     db_path: PathBuf,
@@ -124,6 +127,7 @@ pub async fn start_embedded_server(
     let app_state = Arc::new(ServerAppState {
         db: Mutex::new(conn),
         broadcast_tx: broadcast_tx.clone(),
+        app,
     });
 
     let router = create_router(app_state);
@@ -170,7 +174,7 @@ mod tests {
 
         let active_server = ActiveServer::new();
         let addr = active_server
-            .start("127.0.0.1", 0, db_path.clone())
+            .start(None, "127.0.0.1", 0, db_path.clone())
             .await
             .expect("Failed to start server on ephemeral port");
 

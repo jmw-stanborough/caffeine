@@ -1,6 +1,9 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
+  import EventHistoryList, { type ConnectionLogItem } from "$lib/components/event-history-list.svelte";
+  import { DEFAULT_LOG_LIMIT } from "$lib/constants";
   import { formatRelativeTime } from "$lib/format";
+  import { invoke } from "@tauri-apps/api/core";
   import PrinterTagsRow from "./printer-tags-row.svelte";
   import PrinterTonerList from "./printer-toner-list.svelte";
   import { getEffectivePrinterStatus, parseStatusChips } from "./tags";
@@ -75,6 +78,35 @@
     }),
   );
 
+  let activeTab = $state<"details" | "history">("details");
+  let logs = $state<ConnectionLogItem[]>([]);
+  let logsLoading = $state(false);
+  let logsError = $state<string | null>(null);
+
+  $effect(() => {
+    if (open) {
+      activeTab = "details";
+      if (printer) {
+        fetchLogs(printer.id);
+      }
+    }
+  });
+
+  async function fetchLogs(printerId: string) {
+    logsLoading = true;
+    logsError = null;
+    try {
+      logs = await invoke<ConnectionLogItem[]>("get_printer_logs", {
+        printerId,
+        limit: DEFAULT_LOG_LIMIT,
+      });
+    } catch (err) {
+      logsError = String(err);
+    } finally {
+      logsLoading = false;
+    }
+  }
+
   function handleWebUi() {
     if (!printer) return;
     const target = printer;
@@ -126,7 +158,7 @@
             class="btn-action btn-config"
             onclick={handleConfigure}
             aria-label="Configure {printer.label}"
-            title="Configure Printer & Event History"
+            title="Configure Printer"
           >
             ⚙
           </button>
@@ -141,6 +173,27 @@
         </button>
       </div>
     </div>
+
+    <div class="tab-nav">
+      <button
+        type="button"
+        class="tab-btn"
+        class:active={activeTab === "details"}
+        onclick={() => (activeTab = "details")}
+      >
+        Details
+      </button>
+      <button
+        type="button"
+        class="tab-btn"
+        class:active={activeTab === "history"}
+        onclick={() => (activeTab = "history")}
+      >
+        Event History
+      </button>
+    </div>
+
+    {#if activeTab === "details"}
 
     {#if statusChips.length > 0 || printer.description}
       <div class="modal-description-group">
@@ -209,7 +262,15 @@
         {/if}
       </span>
     </div>
-  </Modal>
+  {:else}
+    <EventHistoryList
+      {logs}
+      loading={logsLoading}
+      error={logsError}
+      onclose={() => (open = false)}
+    />
+  {/if}
+</Modal>
 {/if}
 
 <style>
