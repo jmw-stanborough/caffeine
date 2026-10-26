@@ -345,6 +345,52 @@ fn parse_ipp_response(data: &[u8]) -> Option<PrinterPollDetails> {
     }
 }
 
+async fn read_http_response<R: AsyncReadExt + Unpin>(
+    stream: &mut R,
+) -> std::io::Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    let mut temp = [0u8; 2048];
+    let mut body_expected: Option<usize> = None;
+    let mut header_end: Option<usize> = None;
+
+    loop {
+        let n = stream.read(&mut temp).await?;
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&temp[..n]);
+
+        if header_end.is_none() {
+            if let Some(pos) = buf
+                .windows(HTTP_HEADER_DELIMITER.len())
+                .position(|w| w == HTTP_HEADER_DELIMITER)
+            {
+                let end = pos + HTTP_HEADER_DELIMITER.len();
+                header_end = Some(end);
+
+                let headers = String::from_utf8_lossy(&buf[..pos]);
+                for line in headers.lines() {
+                    if let Some((k, v)) = line.split_once(':') {
+                        if k.trim().eq_ignore_ascii_case("content-length") {
+                            if let Ok(len) = v.trim().parse::<usize>() {
+                                body_expected = Some(len);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let (Some(end), Some(expected)) = (header_end, body_expected) {
+            if buf.len() >= end + expected {
+                break;
+            }
+        }
+    }
+
+    Ok(buf)
+}
+
 pub async fn poll_ipp(host: &str) -> Option<PrinterPollDetails> {
     let target = if host.contains(':') {
         host.to_string()
@@ -367,8 +413,7 @@ pub async fn poll_ipp(host: &str) -> Option<PrinterPollDetails> {
     timeout(IPP_TIMEOUT, async {
         stream.write_all(http_req.as_bytes()).await.ok()?;
         stream.write_all(&ipp_body).await.ok()?;
-        let mut resp = Vec::new();
-        let _ = stream.read_to_end(&mut resp).await;
+        let resp = read_http_response(&mut stream).await.ok()?;
         parse_ipp_response(&resp)
     })
     .await
@@ -426,5 +471,23 @@ mod tests {
 
         assert_eq!(parsed.is_color, Some(false));
         assert_eq!(parsed.is_duplex, Some(false));
+    }
+
+    #[tokio::test]
+    async fn test_read_http_response_content_length() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let _ = server
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: keep-alive\r\n\r\nhello-extra-bytes")
+                .await;
+            // Intentionally keep server alive without closing
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        });
+
+        let resp = read_http_response(&mut client).await.expect("read response");
+        let s = String::from_utf8_lossy(&resp);
+        assert!(s.ends_with("hello"));
+        assert!(!s.contains("extra"));
     }
 }
