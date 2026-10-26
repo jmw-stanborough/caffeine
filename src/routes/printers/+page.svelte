@@ -8,6 +8,7 @@
     PRINTER_NOC_MIN_WIDTH_REM,
   } from "$lib/constants";
   import { createNocController } from "$lib/noc.svelte";
+  import { clientMode } from "$lib/client-mode.svelte";
   import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";
   import type { SortRule } from "$lib/sort/types";
   import { onMount } from "svelte";
@@ -178,6 +179,11 @@
       onRetry={store.fetchPrinters}
     >
       {#snippet extraActions()}
+        {#if clientMode.isRemoteClient && !clientMode.canEdit}
+          <span class="readonly-badge" title="Connected to remote server in read-only mode">
+            Remote (Read-Only)
+          </span>
+        {/if}
         {#if !noc.isNocMode}
           <button
             type="button"
@@ -232,16 +238,16 @@
         use:dndzone={{
           items: displayPrinters,
           flipDurationMs: DND_FLIP_DURATION_MS,
-          dragDisabled: noc.isNocMode || isFiltered || isSorted,
+          dragDisabled: noc.isNocMode || isFiltered || isSorted || !clientMode.canEdit,
           dropTargetStyle: {},
         }}
         onconsider={(e) => {
-          if (!isFiltered && !isSorted) {
+          if (!isFiltered && !isSorted && clientMode.canEdit) {
             store.items = e.detail.items;
           }
         }}
         onfinalize={(e) => {
-          if (!isFiltered && !isSorted) {
+          if (!isFiltered && !isSorted && clientMode.canEdit) {
             store.reorderPrinters(e.detail.items);
           }
         }}
@@ -252,6 +258,7 @@
             <PrinterCard
               {printer}
               nocMode={noc.isNocMode}
+              canEdit={clientMode.canEdit}
               status={printerState?.status ?? "checking"}
               toners={printerState?.toners ?? []}
               detectedMake={printerState?.detectedMake}
@@ -265,12 +272,16 @@
               isDuplex={printerState?.isDuplex}
               onclick={() => openDetailModal(printer)}
               onwebui={() => openWebInterface(printer)}
-              onconfigure={() => openEditModal(printer)}
+              onconfigure={() => {
+                if (clientMode.canEdit) {
+                  openEditModal(printer);
+                }
+              }}
             />
           </div>
         {/each}
 
-        {#if !noc.isNocMode}
+        {#if !noc.isNocMode && clientMode.canEdit}
           <div class="add-card-wrapper" aria-disabled="true">
             <button
               class="add-printer-card"
@@ -362,6 +373,18 @@
   .btn-clear-empty:hover {
     border-color: var(--color-primary);
     color: var(--color-primary);
+  }
+
+  .readonly-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    background-color: var(--color-surface);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 4px;
   }
 
   .printer-grid {

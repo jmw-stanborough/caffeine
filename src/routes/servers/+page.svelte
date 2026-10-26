@@ -9,6 +9,7 @@
   } from "$lib/constants";
   import { Sort } from "$lib/icons";
   import { createNocController } from "$lib/noc.svelte";
+  import { clientMode } from "$lib/client-mode.svelte";
   import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";
   import type { SortRule } from "$lib/sort/types";
   import { onMount } from "svelte";
@@ -102,6 +103,11 @@
     onRetry={store.fetchServers}
   >
     {#snippet extraActions()}
+      {#if clientMode.isRemoteClient && !clientMode.canEdit}
+        <span class="readonly-badge" title="Connected to remote server in read-only mode">
+          Remote (Read-Only)
+        </span>
+      {/if}
       {#if !noc.isNocMode}
         <button
           type="button"
@@ -129,16 +135,16 @@
       use:dndzone={{
         items: displayServers,
         flipDurationMs: DND_FLIP_DURATION_MS,
-        dragDisabled: noc.isNocMode || isSorted,
+        dragDisabled: noc.isNocMode || isSorted || !clientMode.canEdit,
         dropTargetStyle: {},
       }}
       onconsider={(e) => {
-        if (!isSorted) {
+        if (!isSorted && clientMode.canEdit) {
           store.items = e.detail.items;
         }
       }}
       onfinalize={(e) => {
-        if (!isSorted) {
+        if (!isSorted && clientMode.canEdit) {
           store.reorderServers(e.detail.items);
         }
       }}
@@ -154,12 +160,16 @@
             lastEvent={hostState?.lastEvent}
             lastEventAt={hostState?.lastEventAt}
             now={store.now}
-            onclick={() => openEditModal(server)}
+            onclick={() => {
+              if (clientMode.canEdit) {
+                openEditModal(server);
+              }
+            }}
           />
         </div>
       {/each}
 
-      {#if !noc.isNocMode}
+      {#if !noc.isNocMode && clientMode.canEdit}
         <div class="add-card-wrapper" aria-disabled="true">
           <button
             class="add-server-card"
@@ -212,6 +222,18 @@
     height: 100%;
     min-height: var(--card-min-height, 8.5rem);
     outline: none;
+  }
+
+  .readonly-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    background-color: var(--color-surface);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 4px;
   }
 
   .add-server-card {

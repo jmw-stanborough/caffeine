@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
   import { applyTheme } from "$lib/theme";
+  import { refreshClientMode } from "$lib/client-mode.svelte";
   import { printerStore } from "../../routes/printers/printers.svelte";
   import { serverStore } from "../../routes/servers/servers.svelte";
   import { invoke } from "@tauri-apps/api/core";
@@ -135,6 +136,7 @@
       await Promise.allSettled([
         serverStore.fetchServers(),
         printerStore.fetchPrinters(),
+        refreshClientMode(),
       ]);
 
       persistedTheme = theme;

@@ -19,6 +19,7 @@
     isColor = undefined,
     isDuplex = undefined,
     nocMode = false,
+    canEdit = true,
     onclick,
     onwebui,
     onconfigure,
@@ -36,6 +37,7 @@
     isColor?: boolean;
     isDuplex?: boolean;
     nocMode?: boolean;
+    canEdit?: boolean;
     onclick?: () => void;
     onwebui?: () => void;
     onconfigure?: () => void;
@@ -108,16 +110,18 @@
         >
           Web UI ↗
         </button>
-        <button
-          type="button"
-          class="btn-action btn-config"
-          onclick={handleConfigureClick}
-          onkeydown={handleActionKeyDown}
-          aria-label="Configure {printer.label}"
-          title="Configure Printer & Event History"
-        >
-          <Cog size={15} />
-        </button>
+        {#if canEdit}
+          <button
+            type="button"
+            class="btn-action btn-config"
+            onclick={handleConfigureClick}
+            onkeydown={handleActionKeyDown}
+            aria-label="Configure {printer.label}"
+            title="Configure Printer & Event History"
+          >
+            <Cog size={15} />
+          </button>
+        {/if}
       </div>
     {/if}
   </div>

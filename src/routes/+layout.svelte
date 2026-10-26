@@ -2,6 +2,7 @@
   import "@fontsource-variable/roboto";
   import "../app.css";
   import Sidebar from "$lib/sidebar.svelte";
+  import { clientMode } from "$lib/client-mode.svelte";
   import { serverStore } from "./servers/servers.svelte";
   import { printerStore } from "./printers/printers.svelte";
   import { applyTheme } from "$lib/theme";
@@ -13,6 +14,7 @@
 
   onMount(() => {
     let unlistenSync: UnlistenFn | null = null;
+    clientMode.refresh();
 
     invoke<{ theme?: string }>("get_app_settings_cmd")
       .then((settings) => {
