@@ -503,15 +503,18 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
     overflow: hidden;
-    background-color: var(--color-base);
+    background-color: var(--color-surface);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.5rem;
   }
 
   .panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.85rem 1.25rem;
+    padding: 0.65rem 1rem;
     background-color: var(--color-surface);
     border-bottom: solid var(--width-border) var(--color-border);
     flex-shrink: 0;
@@ -577,10 +580,11 @@
   .panel-scroll-content {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1.25rem;
+    gap: 0.85rem;
+    padding: 0.85rem;
     overflow-y: auto;
     flex: 1;
+    background-color: var(--color-base);
   }
 
   .section-card {
@@ -948,8 +952,11 @@
   .skeleton-container {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1.25rem;
+    gap: 0.85rem;
+    padding: 0.85rem;
+    flex: 1;
+    overflow-y: auto;
+    background-color: var(--color-base);
   }
 
   .skeleton-card {

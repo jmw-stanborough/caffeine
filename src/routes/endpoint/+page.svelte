@@ -108,13 +108,17 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
+    padding: 0.85rem;
+    gap: 0.85rem;
+    box-sizing: border-box;
+    background-color: var(--color-base);
   }
 
   .left-column {
     flex: 1.1;
     min-width: 340px;
     height: 100%;
-    border-right: solid var(--width-border) var(--color-border);
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -122,13 +126,12 @@
     flex: 1;
     min-width: 340px;
     height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    padding: 0.85rem;
     gap: 0.85rem;
     box-sizing: border-box;
-    background-color: var(--color-base);
   }
 
   .top-window-wrap {
