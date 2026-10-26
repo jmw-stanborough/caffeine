@@ -118,8 +118,9 @@
   </div>
 
   {#if updates?.reboot_required}
-    <div class="reboot-banner">
+    <div class="reboot-banner" role="alert">
       <svg
+        class="reboot-icon"
         xmlns="http://www.w3.org/2000/svg"
         width="16"
         height="16"
@@ -321,12 +322,29 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.5rem 1rem;
-    background-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-surface));
-    border-bottom: solid var(--width-border) var(--color-warning);
-    color: var(--color-warning);
+    padding: 0.55rem 1rem;
+    background-color: color-mix(in srgb, #b57614 12%, var(--color-surface));
+    border-bottom: solid var(--width-border) color-mix(in srgb, #b57614 35%, var(--color-border));
+    color: #7c4a03;
     font-size: 0.8rem;
     font-weight: 600;
+  }
+
+  .reboot-icon {
+    flex-shrink: 0;
+    color: #b57614;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .reboot-banner {
+      background-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-surface));
+      border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-warning) 45%, transparent);
+      color: #fabd2f;
+    }
+
+    .reboot-icon {
+      color: #fabd2f;
+    }
   }
 
   .status-banner {

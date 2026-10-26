@@ -303,9 +303,15 @@
     gap: 4px;
     font-size: 0.68rem;
     font-weight: 600;
-    color: var(--color-warning);
+    color: #7c4a03;
     line-height: 1.2;
     margin-top: 2px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .fast-startup-warn {
+      color: #fabd2f;
+    }
   }
 
   .dot {
