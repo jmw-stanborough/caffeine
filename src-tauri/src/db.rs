@@ -56,12 +56,31 @@ fn migrate_legacy_roaming_db(app: &AppHandle, local_db_path: &Path) -> Result<()
 }
 
 #[cfg(target_os = "windows")]
+pub fn ensure_machine_dir_permissions(dir: &Path) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let _ = std::process::Command::new("icacls")
+        .arg(dir)
+        .arg("/grant")
+        .arg("*S-1-5-32-545:(OI)(CI)M")
+        .arg("/t")
+        .arg("/c")
+        .arg("/q")
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+}
+
+#[cfg(target_os = "windows")]
 pub fn get_machine_db_dir() -> Result<PathBuf, String> {
     let program_data =
         std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string());
     let dir = PathBuf::from(program_data).join(APP_DIR_NAME);
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
+        ensure_machine_dir_permissions(&dir);
+    }
     Ok(dir)
 }
 

@@ -166,14 +166,27 @@ pub fn load_machine_settings() -> Result<MachineSettings, String> {
 pub fn save_machine_settings(settings: &MachineSettings) -> Result<(), String> {
     let path = get_machine_settings_path()?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create machine settings directory: {e}"))?;
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create machine settings directory: {e}"))?;
+            #[cfg(target_os = "windows")]
+            crate::db::ensure_machine_dir_permissions(parent);
+        }
     }
     let serialized = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize machine settings: {e}"))?;
 
-    fs::write(&path, serialized)
-        .map_err(|e| format!("Failed to write machine settings to {:?}: {e}", path))?;
+    fs::write(&path, serialized).map_err(|e| {
+        format!(
+            "Failed to write machine settings to {:?}: {e}. Elevated administrator privileges may be required to modify machine-wide server settings.",
+            path
+        )
+    })?;
+
+    #[cfg(target_os = "windows")]
+    if let Some(parent) = path.parent() {
+        crate::db::ensure_machine_dir_permissions(parent);
+    }
 
     Ok(())
 }
@@ -221,13 +234,17 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), 
     fs::write(&user_path, user_serialized)
         .map_err(|e| format!("Failed to write user settings to {:?}: {e}", user_path))?;
 
-    let machine_settings = MachineSettings {
+    let new_machine_settings = MachineSettings {
         server_mode: settings.server_mode,
         server_port: settings.server_port,
         server_bind: settings.server_bind.clone(),
         admin_token: settings.server_admin_token.clone(),
     };
-    save_machine_settings(&machine_settings)?;
+
+    let current_machine_settings = load_machine_settings().unwrap_or_default();
+    if new_machine_settings != current_machine_settings {
+        save_machine_settings(&new_machine_settings)?;
+    }
 
     Ok(())
 }
@@ -360,5 +377,25 @@ mod tests {
         assert!(!machine_json.contains("target_host"));
         assert!(!machine_json.contains("theme"));
         assert!(machine_json.contains("machine_server_token"));
+    }
+
+    #[test]
+    fn test_machine_settings_equality() {
+        let ms1 = MachineSettings {
+            server_mode: false,
+            server_port: 6310,
+            server_bind: "0.0.0.0".to_string(),
+            admin_token: None,
+        };
+        let ms2 = MachineSettings::default();
+        assert_eq!(ms1, ms2);
+
+        let ms3 = MachineSettings {
+            server_mode: true,
+            server_port: 6310,
+            server_bind: "0.0.0.0".to_string(),
+            admin_token: None,
+        };
+        assert_ne!(ms1, ms3);
     }
 }
