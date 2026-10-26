@@ -364,7 +364,9 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "windows-sys 0.59.0",
  "winping",
+ "winreg 0.55.0",
 ]
 
 [[package]]

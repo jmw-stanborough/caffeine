@@ -1,9 +1,9 @@
 use std::sync::{LazyLock, Mutex};
 use sysinfo::{Components, Disks, Networks, System};
 
-use super::powershell::{extract_json_slice, query_powershell_json, run_powershell};
+use super::native;
 use super::types::{
-    BatteryInfo, CpuInfo, DiskInfo, EndpointMachineInfo, GpuInfo, MemoryInfo, MotherboardInfo,
+    CpuInfo, DiskInfo, EndpointMachineInfo, GpuInfo, MemoryInfo, MotherboardInfo,
     NetworkInterfaceInfo, OsSupportInfo, SystemMetaInfo, TemperatureReading,
 };
 
@@ -219,7 +219,7 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
         temperature_celsius: temperatures.first().map(|t| t.celsius),
     };
 
-    let battery = query_battery_status()?;
+    let battery = native::query_battery_status()?;
 
     Ok(EndpointMachineInfo {
         system: system_meta,
@@ -249,18 +249,10 @@ fn get_or_load_static_hardware() -> Result<StaticHardwareInfo, String> {
 }
 
 fn query_static_windows_hardware() -> Result<StaticHardwareInfo, String> {
-    let domain_raw = run_powershell("(Get-CimInstance Win32_ComputerSystem).Domain")?;
-    let domain = if domain_raw.is_empty() {
-        "WORKGROUP".to_string()
-    } else {
-        domain_raw
-    };
-
-    let gpus = query_gpus()?;
-    let motherboard = query_motherboard()?;
-    let build_number = run_powershell(
-        "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').CurrentBuildNumber",
-    )?;
+    let domain = native::query_domain_or_workgroup()?;
+    let gpus = native::query_gpus()?;
+    let motherboard = native::query_motherboard()?;
+    let build_number = native::query_build_number()?;
 
     Ok(StaticHardwareInfo {
         domain,
@@ -270,95 +262,19 @@ fn query_static_windows_hardware() -> Result<StaticHardwareInfo, String> {
     })
 }
 
-fn query_gpus() -> Result<Vec<GpuInfo>, String> {
-    let script = "@(Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, AdapterRAM) | ConvertTo-Json -Compress";
-    let stdout = run_powershell(script)?;
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    #[derive(serde::Deserialize)]
-    struct RawGpu {
-        #[serde(rename = "Name")]
-        name: Option<String>,
-        #[serde(rename = "DriverVersion")]
-        driver_version: Option<String>,
-        #[serde(rename = "AdapterRAM")]
-        adapter_ram: Option<u64>,
-    }
+    #[test]
+    fn test_gather_machine_info() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
 
-    let json_slice = extract_json_slice(trimmed)?;
-    if let Ok(list) = serde_json::from_str::<Vec<RawGpu>>(json_slice) {
-        Ok(list
-            .into_iter()
-            .map(|g| GpuInfo {
-                name: g.name.unwrap_or_else(|| "Display Adapter".to_string()),
-                driver_version: g.driver_version.unwrap_or_default(),
-                vram_bytes: g.adapter_ram.unwrap_or(0),
-                temperature_celsius: None,
-            })
-            .collect())
-    } else if let Ok(single) = serde_json::from_str::<RawGpu>(json_slice) {
-        Ok(vec![GpuInfo {
-            name: single.name.unwrap_or_else(|| "Display Adapter".to_string()),
-            driver_version: single.driver_version.unwrap_or_default(),
-            vram_bytes: single.adapter_ram.unwrap_or(0),
-            temperature_celsius: None,
-        }])
-    } else {
-        Err(format!("Failed to parse GPU output: {json_slice}"))
-    }
-}
-
-fn query_motherboard() -> Result<Option<MotherboardInfo>, String> {
-    let script = "$b = Get-CimInstance Win32_BaseBoard; $bios = Get-CimInstance Win32_BIOS; [PSCustomObject]@{ Manufacturer = $b.Manufacturer; Product = $b.Product; BiosVendor = $bios.Manufacturer; BiosVersion = $bios.SMBIOSBIOSVersion; BiosDate = [string]$bios.ReleaseDate } | ConvertTo-Json -Compress";
-
-    #[derive(serde::Deserialize)]
-    struct RawBoard {
-        #[serde(rename = "Manufacturer")]
-        manufacturer: Option<String>,
-        #[serde(rename = "Product")]
-        product: Option<String>,
-        #[serde(rename = "BiosVendor")]
-        bios_vendor: Option<String>,
-        #[serde(rename = "BiosVersion")]
-        bios_version: Option<String>,
-        #[serde(rename = "BiosDate")]
-        bios_date: Option<String>,
-    }
-
-    let raw: RawBoard = query_powershell_json(script)?;
-    Ok(Some(MotherboardInfo {
-        manufacturer: raw.manufacturer.unwrap_or_default(),
-        product: raw.product.unwrap_or_default(),
-        bios_vendor: raw.bios_vendor.unwrap_or_default(),
-        bios_version: raw.bios_version.unwrap_or_default(),
-        bios_date: raw.bios_date.unwrap_or_default(),
-    }))
-}
-
-fn query_battery_status() -> Result<Option<BatteryInfo>, String> {
-    let script = "$bat = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if ($bat) { [PSCustomObject]@{ HasBattery = $true; IsCharging = ($bat.BatteryStatus -eq 2); ChargePercent = [int]$bat.EstimatedChargeRemaining } | ConvertTo-Json -Compress } else { [PSCustomObject]@{ HasBattery = $false; IsCharging = $false; ChargePercent = 0 } | ConvertTo-Json -Compress }";
-
-    #[derive(serde::Deserialize)]
-    struct RawBattery {
-        #[serde(rename = "HasBattery")]
-        has_battery: Option<bool>,
-        #[serde(rename = "IsCharging")]
-        is_charging: Option<bool>,
-        #[serde(rename = "ChargePercent")]
-        charge_percent: Option<u8>,
-    }
-
-    let raw: RawBattery = query_powershell_json(script)?;
-    if raw.has_battery.unwrap_or(false) {
-        Ok(Some(BatteryInfo {
-            has_battery: true,
-            is_charging: raw.is_charging.unwrap_or(false),
-            charge_percent: raw.charge_percent.unwrap_or(0),
-        }))
-    } else {
-        Ok(None)
+        let info = gather_machine_info().expect("gather_machine_info should succeed without error");
+        assert!(!info.system.computer_name.is_empty());
+        assert!(!info.cpu.model_name.is_empty());
+        assert!(info.memory.total_bytes > 0);
     }
 }

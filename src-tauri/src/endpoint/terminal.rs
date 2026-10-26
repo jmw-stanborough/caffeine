@@ -36,15 +36,22 @@ fn detect_shell_internal() -> Result<ShellDetectionResult, String> {
         return Err("Terminal is only supported on Windows.".to_string());
     }
 
-    if let Ok(output) = Command::new("pwsh")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "$PSVersionTable.PSVersion.ToString()",
-        ])
-        .output()
+    let mut pwsh_cmd = Command::new("pwsh");
+    pwsh_cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$PSVersionTable.PSVersion.ToString()",
+    ]);
+
+    #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        pwsh_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    if let Ok(output) = pwsh_cmd.output() {
         if output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
             return Ok(ShellDetectionResult {
@@ -56,13 +63,22 @@ fn detect_shell_internal() -> Result<ShellDetectionResult, String> {
         }
     }
 
-    let ps_output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "$PSVersionTable.PSVersion.ToString()",
-        ])
+    let mut ps_cmd = Command::new("powershell");
+    ps_cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$PSVersionTable.PSVersion.ToString()",
+    ]);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        ps_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let ps_output = ps_cmd
         .output()
         .map_err(|e| format!("Failed to spawn PowerShell: {e}"))?;
 
