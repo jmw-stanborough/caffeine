@@ -5,6 +5,7 @@ export interface OsSupportInfo {
   architecture: string;
   hostname: string;
   error_message?: string;
+  is_admin: boolean;
 }
 
 export interface CpuInfo {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { AlertTriangle } from "$lib/components/icons";
   import type { UpdateCheckResult } from "./types";
   import UpdateCard from "./update-card.svelte";
 
@@ -9,6 +10,7 @@
     installingId: string | null;
     operationStatus: string | null;
     errorMessage: string | null;
+    isAdmin?: boolean;
     onCheck: () => void;
     onDownload: (id?: string) => void;
     onInstall: (id?: string) => void;
@@ -21,6 +23,7 @@
     installingId,
     operationStatus,
     errorMessage,
+    isAdmin = true,
     onCheck,
     onDownload,
     onInstall,
@@ -116,6 +119,15 @@
       </button>
     </div>
   </div>
+
+  {#if !isAdmin}
+    <div class="admin-warning-banner" role="status">
+      <span class="admin-warning-icon">
+        <AlertTriangle size={16} />
+      </span>
+      <span>Running without administrator privileges. Windows updates may not download correctly.</span>
+    </div>
+  {/if}
 
   {#if updates?.reboot_required}
     <div class="reboot-banner" role="alert">
@@ -318,6 +330,7 @@
     cursor: not-allowed;
   }
 
+  .admin-warning-banner,
   .reboot-banner {
     display: flex;
     align-items: center;
@@ -330,18 +343,23 @@
     font-weight: 600;
   }
 
+  .admin-warning-icon,
   .reboot-icon {
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
     color: #b57614;
   }
 
   @media (prefers-color-scheme: dark) {
+    .admin-warning-banner,
     .reboot-banner {
       background-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-surface));
       border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-warning) 45%, transparent);
       color: #fabd2f;
     }
 
+    .admin-warning-icon,
     .reboot-icon {
       color: #fabd2f;
     }

@@ -10,6 +10,7 @@ import type {
 export class EndpointStore {
   osSupport = $state<OsSupportInfo | null>(null);
   osChecking = $state(true);
+  isAdmin = $derived(this.osSupport?.is_admin ?? false);
 
   machine = $state<EndpointMachineInfo | null>(null);
   machineLoading = $state(true);
@@ -139,8 +140,13 @@ export class EndpointStore {
       const res = await invoke<UpdateOperationResult>("endpoint_download_updates", {
         targetId: targetId ?? null,
       });
-      this.operationStatus = res.message;
-      await this.checkForUpdates();
+      if (!res.success) {
+        this.updatesError = res.message || "Failed to download updates.";
+        this.operationStatus = null;
+      } else {
+        this.operationStatus = res.message;
+        await this.checkForUpdates();
+      }
       return res;
     } catch (err: unknown) {
       this.updatesError = String(err);
@@ -160,8 +166,13 @@ export class EndpointStore {
       const res = await invoke<UpdateOperationResult>("endpoint_install_updates", {
         targetId: targetId ?? null,
       });
-      this.operationStatus = res.message;
-      await this.checkForUpdates();
+      if (!res.success) {
+        this.updatesError = res.message || "Failed to install updates.";
+        this.operationStatus = null;
+      } else {
+        this.operationStatus = res.message;
+        await this.checkForUpdates();
+      }
       return res;
     } catch (err: unknown) {
       this.updatesError = String(err);

@@ -51,6 +51,7 @@
             installingId={store.installingId}
             operationStatus={store.operationStatus}
             errorMessage={store.updatesError}
+            isAdmin={store.isAdmin}
             onCheck={() => store.checkForUpdates()}
             onDownload={(id) => store.downloadUpdates(id)}
             onInstall={(id) => store.installUpdates(id)}
