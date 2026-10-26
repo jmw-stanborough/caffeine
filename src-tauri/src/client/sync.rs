@@ -83,8 +83,13 @@ pub fn start_client_sync_worker(app: AppHandle) {
                 }
             }
 
-            if let Ok(conn) = Connection::open(&replica_path) {
-                let _ = prune_logs(&conn, settings.retention_days, settings.max_log_entries);
+            match Connection::open(&replica_path) {
+                Ok(conn) => {
+                    if let Err(err) = prune_logs(&conn, settings.retention_days, settings.max_log_entries) {
+                        eprintln!("Failed to prune replica DB logs: {err}");
+                    }
+                }
+                Err(err) => eprintln!("Failed to open replica DB for pruning: {err}"),
             }
 
             if let Err(err) = stream_websocket_ticks(&ws_url, &http_client, &base_url, &replica_path, &app).await {
@@ -271,6 +276,24 @@ fn write_history_to_replica(
     Ok(())
 }
 
+async fn sync_incremental_logs(
+    http_client: &reqwest::Client,
+    base_url: &str,
+    replica_path: &Path,
+) {
+    let (max_srv, max_prn) = get_max_log_ids(replica_path);
+    match fetch_history_logs(http_client, base_url, max_srv, max_prn).await {
+        Ok(history) => {
+            if !history.server_logs.is_empty() || !history.printer_logs.is_empty() {
+                if let Err(err) = write_history_to_replica(replica_path, history) {
+                    eprintln!("Failed to write incremental logs to replica DB: {err}");
+                }
+            }
+        }
+        Err(err) => eprintln!("Failed to fetch incremental logs: {err}"),
+    }
+}
+
 async fn stream_websocket_ticks(
     ws_url: &str,
     http_client: &reqwest::Client,
@@ -298,31 +321,23 @@ async fn stream_websocket_ticks(
             match event {
                 ServerBroadcastEvent::ServerTick(payload) => {
                     let _ = app.emit(SERVER_STATUS_EVENT_NAME, &payload);
-                    let (max_srv, max_prn) = get_max_log_ids(replica_path);
-                    if let Ok(history) = fetch_history_logs(http_client, base_url, max_srv, max_prn).await {
-                        if !history.server_logs.is_empty() || !history.printer_logs.is_empty() {
-                            let _ = write_history_to_replica(replica_path, history);
-                        }
-                    }
+                    sync_incremental_logs(http_client, base_url, replica_path).await;
                 }
                 ServerBroadcastEvent::PrinterTick(payload) => {
                     let _ = app.emit(PRINTER_STATUS_EVENT_NAME, &payload);
-                    let (max_srv, max_prn) = get_max_log_ids(replica_path);
-                    if let Ok(history) = fetch_history_logs(http_client, base_url, max_srv, max_prn).await {
-                        if !history.server_logs.is_empty() || !history.printer_logs.is_empty() {
-                            let _ = write_history_to_replica(replica_path, history);
-                        }
-                    }
+                    sync_incremental_logs(http_client, base_url, replica_path).await;
                 }
                 ServerBroadcastEvent::EntitiesUpdated => {
-                    if let Ok(snapshot) = fetch_initial_snapshot(http_client, base_url).await {
-                        if let Ok(()) = write_snapshot_to_replica(replica_path, snapshot) {
-                            let (max_srv, max_prn) = get_max_log_ids(replica_path);
-                            if let Ok(history) = fetch_history_logs(http_client, base_url, max_srv, max_prn).await {
-                                let _ = write_history_to_replica(replica_path, history);
+                    match fetch_initial_snapshot(http_client, base_url).await {
+                        Ok(snapshot) => {
+                            if let Err(err) = write_snapshot_to_replica(replica_path, snapshot) {
+                                eprintln!("Failed to write snapshot to replica DB: {err}");
+                            } else {
+                                sync_incremental_logs(http_client, base_url, replica_path).await;
+                                let _ = app.emit("snapshot-synced", ());
                             }
-                            let _ = app.emit("snapshot-synced", ());
                         }
+                        Err(err) => eprintln!("Failed to fetch snapshot on entity update: {err}"),
                     }
                 }
             }

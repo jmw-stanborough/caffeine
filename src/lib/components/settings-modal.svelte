@@ -183,7 +183,6 @@
         <div class="alert alert-success">{successMsg}</div>
       {/if}
 
-      <!-- Target Connection Section -->
       <section class="settings-section">
         <h3 class="section-title">Connection Target</h3>
         <p class="section-description">
@@ -235,7 +234,6 @@
         {/if}
       </section>
 
-      <!-- Server Mode Section -->
       <section class="settings-section">
         <h3 class="section-title">Server Mode (Broadcast)</h3>
         <p class="section-description">
@@ -308,7 +306,6 @@
         {/if}
       </section>
 
-      <!-- Data Retention Section -->
       <section class="settings-section">
         <h3 class="section-title">Local Log Retention</h3>
         <p class="section-description">
@@ -339,7 +336,6 @@
         </div>
       </section>
 
-      <!-- Appearance Section -->
       <section class="settings-section">
         <h3 class="section-title">Appearance</h3>
         <div class="form-group">

@@ -58,6 +58,48 @@ where
         .map_err(|e| format!("Failed to parse remote server response: {e}"))
 }
 
+pub async fn fetch_remote_query<T>(app: &AppHandle, endpoint: &str) -> Result<Option<T>, String>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let settings = crate::config::load_app_settings(app)?;
+    if crate::config::is_self_serving(&settings.target_host) || settings.server_mode {
+        return Ok(None);
+    }
+
+    let url = format!(
+        "http://{}:{}/api/v1/{endpoint}",
+        settings.target_host, settings.target_port
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to reach remote server at {url}: {e}"))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let err_msg = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error from remote server".to_string());
+        return Err(format!("Remote server rejected query ({status}): {err_msg}"));
+    }
+
+    let parsed = response
+        .json::<T>()
+        .await
+        .map_err(|e| format!("Failed to parse remote server response: {e}"))?;
+
+    Ok(Some(parsed))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -69,7 +111,6 @@ mod tests {
             ..Default::default()
         };
 
-        // When remote and token is None, mutations must fail fast
         assert!(!crate::config::is_self_serving(&settings.target_host));
         assert!(settings.admin_token.is_none());
     }
