@@ -53,7 +53,7 @@ pub async fn endpoint_install_updates(
 pub async fn endpoint_detect_shell() -> Result<ShellDetectionResult, String> {
     tokio::task::spawn_blocking(terminal::detect_shell)
         .await
-        .map_err(|e| format!("Shell detection task panicked: {e}"))
+        .map_err(|e| format!("Shell detection task panicked: {e}"))?
 }
 
 #[tauri::command]

@@ -17,28 +17,23 @@ static ACTIVE_SESSION: LazyLock<Mutex<Option<ActiveTerminalSession>>> =
 static DETECTED_SHELL: LazyLock<Mutex<Option<ShellDetectionResult>>> =
     LazyLock::new(|| Mutex::new(None));
 
-pub fn detect_shell() -> ShellDetectionResult {
+pub fn detect_shell() -> Result<ShellDetectionResult, String> {
     let mut cache = DETECTED_SHELL
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
     if let Some(cached) = &*cache {
-        return cached.clone();
+        return Ok(cached.clone());
     }
 
-    let detected = detect_shell_internal();
+    let detected = detect_shell_internal()?;
     *cache = Some(detected.clone());
-    detected
+    Ok(detected)
 }
 
-fn detect_shell_internal() -> ShellDetectionResult {
+fn detect_shell_internal() -> Result<ShellDetectionResult, String> {
     if !cfg!(target_os = "windows") {
-        return ShellDetectionResult {
-            shell_name: "unsupported".to_string(),
-            executable_path: String::new(),
-            version: "N/A".to_string(),
-            is_pwsh: false,
-        };
+        return Err("Terminal is only supported on Windows.".to_string());
     }
 
     if let Ok(output) = Command::new("pwsh")
@@ -52,12 +47,12 @@ fn detect_shell_internal() -> ShellDetectionResult {
     {
         if output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return ShellDetectionResult {
+            return Ok(ShellDetectionResult {
                 shell_name: "pwsh".to_string(),
                 executable_path: "pwsh".to_string(),
                 version,
                 is_pwsh: true,
-            };
+            });
         }
     }
 
@@ -68,19 +63,32 @@ fn detect_shell_internal() -> ShellDetectionResult {
             "-Command",
             "$PSVersionTable.PSVersion.ToString()",
         ])
-        .output();
+        .output()
+        .map_err(|e| format!("Failed to spawn PowerShell: {e}"))?;
 
-    let version = ps_output
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "5.1".to_string());
+    if !ps_output.status.success() {
+        let stderr = String::from_utf8_lossy(&ps_output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!(
+                "PowerShell detection exited with status {:?}",
+                ps_output.status.code()
+            )
+        } else {
+            format!("PowerShell detection failed: {stderr}")
+        });
+    }
 
-    ShellDetectionResult {
+    let version = String::from_utf8_lossy(&ps_output.stdout).trim().to_string();
+    if version.is_empty() {
+        return Err("PowerShell returned empty version string during detection".to_string());
+    }
+
+    Ok(ShellDetectionResult {
         shell_name: "powershell".to_string(),
         executable_path: "powershell".to_string(),
         version,
         is_pwsh: false,
-    }
+    })
 }
 
 pub fn start_terminal_session(
@@ -92,10 +100,9 @@ pub fn start_terminal_session(
         return Err("Terminal is only supported on Windows.".to_string());
     }
 
-    let shell = detect_shell();
+    let shell = detect_shell()?;
     let exec = shell.executable_path.clone();
 
-    // Kill any existing session before starting a fresh one
     close_terminal_session();
 
     let pty_system = native_pty_system();
@@ -146,7 +153,6 @@ pub fn start_terminal_session(
         *active = Some(session);
     }
 
-    // Spawn reader thread that streams output in real-time to xterm frontend
     std::thread::spawn(move || {
         let mut buf = [0u8; 2048];
         loop {

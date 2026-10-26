@@ -1,7 +1,7 @@
-use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use sysinfo::{Components, Disks, Networks, System};
 
+use super::powershell::{extract_json_slice, query_powershell_json, run_powershell};
 use super::types::{
     BatteryInfo, CpuInfo, DiskInfo, EndpointMachineInfo, GpuInfo, MemoryInfo, MotherboardInfo,
     NetworkInterfaceInfo, OsSupportInfo, SystemMetaInfo, TemperatureReading,
@@ -195,7 +195,7 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
         });
     }
 
-    let static_info = get_or_load_static_hardware();
+    let static_info = get_or_load_static_hardware()?;
 
     let system_meta = SystemMetaInfo {
         computer_name: System::host_name().unwrap_or_else(|| "Unknown".to_string()),
@@ -219,7 +219,7 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
         temperature_celsius: temperatures.first().map(|t| t.celsius),
     };
 
-    let battery = query_battery_status();
+    let battery = query_battery_status()?;
 
     Ok(EndpointMachineInfo {
         system: system_meta,
@@ -234,52 +234,48 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
     })
 }
 
-fn get_or_load_static_hardware() -> StaticHardwareInfo {
+fn get_or_load_static_hardware() -> Result<StaticHardwareInfo, String> {
     let mut cache = CACHED_STATIC_HARDWARE
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
     if let Some(info) = &*cache {
-        return info.clone();
+        return Ok(info.clone());
     }
 
-    let loaded = query_static_windows_hardware();
+    let loaded = query_static_windows_hardware()?;
     *cache = Some(loaded.clone());
-    loaded
+    Ok(loaded)
 }
 
-fn query_static_windows_hardware() -> StaticHardwareInfo {
-    let domain = query_powershell_scalar("(Get-CimInstance Win32_ComputerSystem).Domain")
-        .unwrap_or_else(|_| "WORKGROUP".to_string());
+fn query_static_windows_hardware() -> Result<StaticHardwareInfo, String> {
+    let domain_raw = run_powershell("(Get-CimInstance Win32_ComputerSystem).Domain")?;
+    let domain = if domain_raw.is_empty() {
+        "WORKGROUP".to_string()
+    } else {
+        domain_raw
+    };
 
-    let gpus = query_gpus();
-    let motherboard = query_motherboard();
-    let build_number = query_powershell_scalar(
+    let gpus = query_gpus()?;
+    let motherboard = query_motherboard()?;
+    let build_number = run_powershell(
         "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').CurrentBuildNumber",
-    )
-    .unwrap_or_default();
+    )?;
 
-    StaticHardwareInfo {
+    Ok(StaticHardwareInfo {
         domain,
         motherboard,
         gpus,
         build_number,
-    }
+    })
 }
 
-fn query_gpus() -> Vec<GpuInfo> {
+fn query_gpus() -> Result<Vec<GpuInfo>, String> {
     let script = "@(Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, AdapterRAM) | ConvertTo-Json -Compress";
-    let output = match Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-    {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
-        Err(_) => return Vec::new(),
-    };
-
-    let trimmed = output.trim();
+    let stdout = run_powershell(script)?;
+    let trimmed = stdout.trim();
     if trimmed.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     #[derive(serde::Deserialize)]
@@ -292,38 +288,31 @@ fn query_gpus() -> Vec<GpuInfo> {
         adapter_ram: Option<u64>,
     }
 
-    if let Ok(list) = serde_json::from_str::<Vec<RawGpu>>(trimmed) {
-        list.into_iter()
+    let json_slice = extract_json_slice(trimmed)?;
+    if let Ok(list) = serde_json::from_str::<Vec<RawGpu>>(json_slice) {
+        Ok(list
+            .into_iter()
             .map(|g| GpuInfo {
                 name: g.name.unwrap_or_else(|| "Display Adapter".to_string()),
                 driver_version: g.driver_version.unwrap_or_default(),
                 vram_bytes: g.adapter_ram.unwrap_or(0),
                 temperature_celsius: None,
             })
-            .collect()
-    } else if let Ok(single) = serde_json::from_str::<RawGpu>(trimmed) {
-        vec![GpuInfo {
+            .collect())
+    } else if let Ok(single) = serde_json::from_str::<RawGpu>(json_slice) {
+        Ok(vec![GpuInfo {
             name: single.name.unwrap_or_else(|| "Display Adapter".to_string()),
             driver_version: single.driver_version.unwrap_or_default(),
             vram_bytes: single.adapter_ram.unwrap_or(0),
             temperature_celsius: None,
-        }]
+        }])
     } else {
-        Vec::new()
+        Err(format!("Failed to parse GPU output: {json_slice}"))
     }
 }
 
-fn query_motherboard() -> Option<MotherboardInfo> {
+fn query_motherboard() -> Result<Option<MotherboardInfo>, String> {
     let script = "$b = Get-CimInstance Win32_BaseBoard; $bios = Get-CimInstance Win32_BIOS; [PSCustomObject]@{ Manufacturer = $b.Manufacturer; Product = $b.Product; BiosVendor = $bios.Manufacturer; BiosVersion = $bios.SMBIOSBIOSVersion; BiosDate = [string]$bios.ReleaseDate } | ConvertTo-Json -Compress";
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .ok()?;
-
-    let trimmed = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if trimmed.is_empty() {
-        return None;
-    }
 
     #[derive(serde::Deserialize)]
     struct RawBoard {
@@ -339,27 +328,18 @@ fn query_motherboard() -> Option<MotherboardInfo> {
         bios_date: Option<String>,
     }
 
-    let raw: RawBoard = serde_json::from_str(&trimmed).ok()?;
-    Some(MotherboardInfo {
+    let raw: RawBoard = query_powershell_json(script)?;
+    Ok(Some(MotherboardInfo {
         manufacturer: raw.manufacturer.unwrap_or_default(),
         product: raw.product.unwrap_or_default(),
         bios_vendor: raw.bios_vendor.unwrap_or_default(),
         bios_version: raw.bios_version.unwrap_or_default(),
         bios_date: raw.bios_date.unwrap_or_default(),
-    })
+    }))
 }
 
-fn query_battery_status() -> Option<BatteryInfo> {
-    let script = "$bat = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if ($bat) { [PSCustomObject]@{ HasBattery = $true; IsCharging = ($bat.BatteryStatus -eq 2); ChargePercent = [int]$bat.EstimatedChargeRemaining } | ConvertTo-Json -Compress }";
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .ok()?;
-
-    let trimmed = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if trimmed.is_empty() {
-        return None;
-    }
+fn query_battery_status() -> Result<Option<BatteryInfo>, String> {
+    let script = "$bat = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if ($bat) { [PSCustomObject]@{ HasBattery = $true; IsCharging = ($bat.BatteryStatus -eq 2); ChargePercent = [int]$bat.EstimatedChargeRemaining } | ConvertTo-Json -Compress } else { [PSCustomObject]@{ HasBattery = $false; IsCharging = $false; ChargePercent = 0 } | ConvertTo-Json -Compress }";
 
     #[derive(serde::Deserialize)]
     struct RawBattery {
@@ -371,23 +351,14 @@ fn query_battery_status() -> Option<BatteryInfo> {
         charge_percent: Option<u8>,
     }
 
-    let raw: RawBattery = serde_json::from_str(&trimmed).ok()?;
-    Some(BatteryInfo {
-        has_battery: raw.has_battery.unwrap_or(false),
-        is_charging: raw.is_charging.unwrap_or(false),
-        charge_percent: raw.charge_percent.unwrap_or(0),
-    })
-}
-
-fn query_powershell_scalar(script: &str) -> Result<String, String> {
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .map_err(|e| format!("PowerShell execution failed: {e}"))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    let raw: RawBattery = query_powershell_json(script)?;
+    if raw.has_battery.unwrap_or(false) {
+        Ok(Some(BatteryInfo {
+            has_battery: true,
+            is_charging: raw.is_charging.unwrap_or(false),
+            charge_percent: raw.charge_percent.unwrap_or(0),
+        }))
+    } else {
+        Ok(None)
     }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
