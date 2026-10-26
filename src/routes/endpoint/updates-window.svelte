@@ -269,7 +269,7 @@
 
   .badge-clean {
     background-color: var(--color-success);
-    color: #1c1917;
+    color: var(--color-tag-text-success, #ffffff);
   }
 
   .header-actions {
@@ -336,9 +336,9 @@
     align-items: center;
     gap: 0.6rem;
     padding: 0.55rem 1rem;
-    background-color: color-mix(in srgb, #b57614 12%, var(--color-surface));
-    border-bottom: solid var(--width-border) color-mix(in srgb, #b57614 35%, var(--color-border));
-    color: #7c4a03;
+    background-color: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
+    border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-warning) 35%, var(--color-border));
+    color: var(--color-warning);
     font-size: 0.8rem;
     font-weight: 600;
   }
@@ -348,21 +348,7 @@
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
-    color: #b57614;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .admin-warning-banner,
-    .reboot-banner {
-      background-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-surface));
-      border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-warning) 45%, transparent);
-      color: #fabd2f;
-    }
-
-    .admin-warning-icon,
-    .reboot-icon {
-      color: #fabd2f;
-    }
+    color: var(--color-warning);
   }
 
   .status-banner {

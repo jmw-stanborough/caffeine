@@ -20,9 +20,13 @@
   --color-primary: #98971a;
   --color-secondary: #af3a03;
 
-  --color-success: #66ee66;
-  --color-warning: #eeee66;
-  --color-failure: #ee6666;
+  --color-success: #2e7d32;
+  --color-warning: #b45309;
+  --color-failure: #cc241d;
+
+  --color-tag-text-success: #ffffff;
+  --color-tag-text-warning: #ffffff;
+  --color-tag-text-failure: #ffffff;
 
   --color-link: #458588;
   --color-link-hover: #689d6a;
@@ -44,9 +48,13 @@
     --color-primary: #b8bb26;
     --color-secondary: #fe8019;
 
-    --color-success: #55aa55;
-    --color-warning: #aaaa55;
-    --color-failure: #aa5555;
+    --color-success: #73c936;
+    --color-warning: #fabd2f;
+    --color-failure: #fb4934;
+
+    --color-tag-text-success: #1c1917;
+    --color-tag-text-warning: #1c1917;
+    --color-tag-text-failure: #1c1917;
 
     --color-link: #83a598;
     --color-link-hover: #8ec07c;
@@ -66,9 +74,13 @@
   --color-primary: #b8bb26;
   --color-secondary: #fe8019;
 
-  --color-success: #55aa55;
-  --color-warning: #aaaa55;
-  --color-failure: #aa5555;
+  --color-success: #73c936;
+  --color-warning: #fabd2f;
+  --color-failure: #fb4934;
+
+  --color-tag-text-success: #1c1917;
+  --color-tag-text-warning: #1c1917;
+  --color-tag-text-failure: #1c1917;
 
   --color-link: #83a598;
   --color-link-hover: #8ec07c;
@@ -87,9 +99,13 @@
   --color-primary: #98971a;
   --color-secondary: #af3a03;
 
-  --color-success: #66ee66;
-  --color-warning: #eeee66;
-  --color-failure: #ee6666;
+  --color-success: #2e7d32;
+  --color-warning: #b45309;
+  --color-failure: #cc241d;
+
+  --color-tag-text-success: #ffffff;
+  --color-tag-text-warning: #ffffff;
+  --color-tag-text-failure: #ffffff;
 
   --color-link: #458588;
   --color-link-hover: #689d6a;
@@ -388,13 +404,13 @@ textarea,
 
 .tag-failure {
   background-color: var(--color-failure);
-  color: #1c1917;
+  color: var(--color-tag-text-failure, #ffffff);
   border-color: color-mix(in srgb, var(--color-failure) 75%, #000000);
 }
 
 .tag-warning {
   background-color: var(--color-warning);
-  color: #1c1917;
+  color: var(--color-tag-text-warning, #ffffff);
   border-color: color-mix(in srgb, var(--color-warning) 75%, #000000);
 }
 

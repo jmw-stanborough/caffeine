@@ -205,15 +205,16 @@
     font-weight: 800;
     padding: 0.05rem 0.3rem;
     border-radius: 0.2rem;
-    color: #1c1917;
   }
 
   .empty-badge {
     background-color: var(--color-failure);
+    color: var(--color-tag-text-failure, #ffffff);
   }
 
   .low-badge {
     background-color: var(--color-warning);
+    color: var(--color-tag-text-warning, #ffffff);
   }
 
   .toner-pct {

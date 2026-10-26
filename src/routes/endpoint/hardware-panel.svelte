@@ -162,17 +162,9 @@
     font-weight: 600;
     padding: 0.15rem 0.55rem;
     border-radius: 999px;
-    background-color: color-mix(in srgb, #b57614 12%, transparent);
-    color: #7c4a03;
-    border: solid var(--width-border) color-mix(in srgb, #b57614 35%, transparent);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .fast-startup-warning {
-      background-color: color-mix(in srgb, var(--color-warning) 15%, transparent);
-      color: #fabd2f;
-      border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
-    }
+    background-color: color-mix(in srgb, var(--color-warning) 14%, transparent);
+    color: var(--color-warning);
+    border: solid var(--width-border) color-mix(in srgb, var(--color-warning) 35%, transparent);
   }
 
   .btn-refresh {
