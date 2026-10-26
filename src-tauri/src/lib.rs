@@ -17,8 +17,7 @@ pub fn run() {
                 }
             }
 
-            let db_state =
-                db::init_db(app.handle()).expect("failed to initialize sqlite database");
+            let db_state = db::init_db(app.handle()).map_err(std::io::Error::other)?;
             app.manage(db_state);
 
             server_monitor::worker::start_ping_worker(app.handle().clone());
