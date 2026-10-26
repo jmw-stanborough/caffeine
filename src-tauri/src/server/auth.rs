@@ -81,6 +81,14 @@ pub fn authenticate_and_create_session(
 }
 
 pub fn validate_admin_token(conn: &Connection, token: &str) -> Result<bool, String> {
+    if let Ok(machine) = crate::config::load_machine_settings() {
+        if let Some(configured_token) = machine.admin_token {
+            if !configured_token.trim().is_empty() && constant_time_eq(token, configured_token.trim()) {
+                return Ok(true);
+            }
+        }
+    }
+
     let count: i64 = conn
         .query_row(
             "SELECT count(*) FROM server_sessions s
@@ -94,9 +102,29 @@ pub fn validate_admin_token(conn: &Connection, token: &str) -> Result<bool, Stri
     Ok(count > 0)
 }
 
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a_bytes.iter().zip(b_bytes) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_constant_time_eq() {
+        assert!(constant_time_eq("secret_admin_token", "secret_admin_token"));
+        assert!(!constant_time_eq("secret_admin_token", "wrong_admin_token"));
+        assert!(!constant_time_eq("short", "longer_token"));
+    }
 
     #[test]
     fn test_argon2_hash_and_verify() {

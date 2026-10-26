@@ -48,6 +48,8 @@ pub struct MachineSettings {
     pub server_port: u16,
     #[serde(default = "default_server_bind")]
     pub server_bind: String,
+    #[serde(default)]
+    pub admin_token: Option<String>,
 }
 
 impl Default for MachineSettings {
@@ -56,6 +58,7 @@ impl Default for MachineSettings {
             server_mode: false,
             server_port: default_port(),
             server_bind: default_server_bind(),
+            admin_token: None,
         }
     }
 }
@@ -72,6 +75,8 @@ pub struct AppSettings {
     pub server_port: u16,
     #[serde(default = "default_server_bind")]
     pub server_bind: String,
+    #[serde(default)]
+    pub server_admin_token: Option<String>,
     #[serde(default)]
     pub admin_token: Option<String>,
     #[serde(default = "default_theme")]
@@ -114,6 +119,7 @@ impl Default for AppSettings {
             server_mode: false,
             server_port: default_port(),
             server_bind: default_server_bind(),
+            server_admin_token: None,
             admin_token: None,
             theme: default_theme(),
             retention_days: default_retention_days(),
@@ -191,6 +197,7 @@ pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
         server_mode: machine_settings.server_mode,
         server_port: machine_settings.server_port,
         server_bind: machine_settings.server_bind,
+        server_admin_token: machine_settings.admin_token,
         admin_token: user_settings.admin_token,
         theme: user_settings.theme,
         retention_days: user_settings.retention_days,
@@ -218,6 +225,7 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), 
         server_mode: settings.server_mode,
         server_port: settings.server_port,
         server_bind: settings.server_bind.clone(),
+        admin_token: settings.server_admin_token.clone(),
     };
     save_machine_settings(&machine_settings)?;
 
@@ -342,6 +350,7 @@ mod tests {
             server_mode: true,
             server_port: 6310,
             server_bind: "127.0.0.1".to_string(),
+            admin_token: Some("machine_server_token".to_string()),
         };
 
         let user_json = serde_json::to_string(&user).unwrap();
@@ -350,5 +359,6 @@ mod tests {
         assert!(!user_json.contains("server_mode"));
         assert!(!machine_json.contains("target_host"));
         assert!(!machine_json.contains("theme"));
+        assert!(machine_json.contains("machine_server_token"));
     }
 }

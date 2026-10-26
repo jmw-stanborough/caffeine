@@ -11,6 +11,7 @@
     server_mode: boolean;
     server_port: number;
     server_bind: string;
+    server_admin_token?: string | null;
     admin_token: string | null;
     theme: string;
     retention_days: number;
@@ -28,7 +29,9 @@
   let serverMode = $state(false);
   let serverPort = $state(6310);
   let serverBind = $state("0.0.0.0");
+  let serverAdminToken = $state("");
   let adminToken = $state("");
+  let copySuccess = $state(false);
   let theme = $state("system");
   let persistedTheme = $state("system");
   let retentionDays = $state(14);
@@ -58,6 +61,30 @@
     open = false;
   }
 
+  function generateServerToken() {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let token = "caff_";
+    const array = new Uint8Array(28);
+    crypto.getRandomValues(array);
+    for (let i = 0; i < array.length; i++) {
+      token += chars[array[i] % chars.length];
+    }
+    serverAdminToken = token;
+  }
+
+  async function copyServerToken() {
+    if (!serverAdminToken) return;
+    try {
+      await navigator.clipboard.writeText(serverAdminToken);
+      copySuccess = true;
+      setTimeout(() => {
+        copySuccess = false;
+      }, 2000);
+    } catch (e) {
+      console.warn("Failed to copy to clipboard", e);
+    }
+  }
+
   async function loadSettings() {
     loading = true;
     error = null;
@@ -69,6 +96,7 @@
       serverMode = settings.server_mode;
       serverPort = settings.server_port;
       serverBind = settings.server_bind;
+      serverAdminToken = settings.server_admin_token ?? "";
       adminToken = settings.admin_token ?? "";
       persistedTheme = settings.theme;
       theme = settings.theme;
@@ -93,6 +121,7 @@
         server_mode: serverMode,
         server_port: Number(serverPort) || 6310,
         server_bind: serverBind.trim() || "0.0.0.0",
+        server_admin_token: serverAdminToken.trim() ? serverAdminToken.trim() : null,
         admin_token: adminToken.trim() ? adminToken.trim() : null,
         theme,
         retention_days: Number(retentionDays) || 14,
@@ -239,6 +268,37 @@
                 />
               </div>
             </div>
+            <div class="form-group">
+              <label for="serverAdminToken">Server Admin Token</label>
+              <div class="token-input-row">
+                <input
+                  id="serverAdminToken"
+                  type="text"
+                  bind:value={serverAdminToken}
+                  placeholder="Optional: Set or generate a token for remote clients"
+                />
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  onclick={generateServerToken}
+                >
+                  Generate
+                </button>
+                {#if serverAdminToken}
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    onclick={copyServerToken}
+                  >
+                    {copySuccess ? "Copied!" : "Copy"}
+                  </button>
+                {/if}
+              </div>
+              <span class="field-hint">
+                Provide this token to remote Caffeine clients requiring edit or delete permissions.
+              </span>
+            </div>
+
             <p class="field-hint">
               Server mode reads and writes to system-wide machine storage and serves clients on the network.
             </p>
@@ -375,6 +435,22 @@
     background-color: var(--color-surface-active);
     padding: 2px 4px;
     border-radius: 4px;
+  }
+
+  .token-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .token-input-row input {
+    flex: 1;
+  }
+
+  .btn-sm {
+    padding: 7px 12px;
+    font-size: 0.8125rem;
+    white-space: nowrap;
   }
 
   .form-row {
