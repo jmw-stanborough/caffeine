@@ -61,10 +61,8 @@
     term.loadAddon(fitAddon);
     term.open(terminalContainer);
 
-    try {
+    if (terminalContainer.clientWidth > 0 && terminalContainer.clientHeight > 0) {
       fitAddon.fit();
-    } catch {
-      // Container may still be settling dimensions
     }
 
     const cols = term.cols || 80;
@@ -89,21 +87,25 @@
 
     term.onData((data) => {
       invoke("endpoint_write_terminal", { data }).catch((err) => {
-        console.warn("Failed to send terminal input:", err);
+        console.error("Failed to send terminal input:", err);
       });
     });
 
     resizeObserver = new ResizeObserver(() => {
-      if (fitAddon && term && terminalContainer && terminalContainer.clientWidth > 0) {
-        try {
-          fitAddon.fit();
-          invoke("endpoint_resize_terminal", {
-            cols: term.cols,
-            rows: term.rows,
-          }).catch(() => {});
-        } catch {
-          // ignore transient resize calculations
-        }
+      if (
+        fitAddon &&
+        term &&
+        terminalContainer &&
+        terminalContainer.clientWidth > 0 &&
+        terminalContainer.clientHeight > 0
+      ) {
+        fitAddon.fit();
+        invoke("endpoint_resize_terminal", {
+          cols: term.cols,
+          rows: term.rows,
+        }).catch((err) => {
+          console.error("Failed to resize terminal:", err);
+        });
       }
     });
 
@@ -113,7 +115,7 @@
 
   function sendData(data: string) {
     invoke("endpoint_write_terminal", { data }).catch((err) => {
-      console.warn("Failed to write to terminal:", err);
+      console.error("Failed to write to terminal:", err);
     });
   }
 
@@ -148,7 +150,9 @@
       resizeObserver.disconnect();
       resizeObserver = null;
     }
-    invoke("endpoint_close_terminal").catch(() => {});
+    invoke("endpoint_close_terminal").catch((err) => {
+      console.error("Failed to close terminal session:", err);
+    });
     if (term) {
       term.dispose();
       term = null;

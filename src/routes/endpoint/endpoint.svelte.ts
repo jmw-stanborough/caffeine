@@ -34,14 +34,9 @@ export class EndpointStore {
     try {
       this.osSupport = await invoke<OsSupportInfo>("endpoint_check_os_support");
     } catch (err: unknown) {
-      this.osSupport = {
-        is_windows: false,
-        os_name: "Unknown",
-        os_version: "",
-        architecture: "",
-        hostname: "",
-        error_message: String(err),
-      };
+      this.osSupport = null;
+      this.machineError = String(err);
+      throw err;
     } finally {
       this.osChecking = false;
     }
@@ -181,13 +176,8 @@ export class EndpointStore {
     try {
       this.shell = await invoke<ShellDetectionResult>("endpoint_detect_shell");
     } catch (err: unknown) {
-      console.warn("Failed to detect shell:", err);
-      this.shell = {
-        shell_name: "powershell",
-        executable_path: "powershell",
-        version: "5.1",
-        is_pwsh: false,
-      };
+      this.shell = null;
+      throw new Error(`Failed to detect shell: ${String(err)}`);
     }
   }
 }
