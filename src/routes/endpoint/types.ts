@@ -79,6 +79,7 @@ export interface SystemMetaInfo {
   architecture: string;
   uptime_seconds: number;
   boot_timestamp: number;
+  fast_startup_enabled: boolean;
 }
 
 export interface BatteryInfo {
