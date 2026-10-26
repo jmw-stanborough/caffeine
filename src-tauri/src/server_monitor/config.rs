@@ -4,7 +4,7 @@ use super::db::{
 };
 use super::types::{Server, ServerLog};
 use crate::db::{DEFAULT_LOG_LIMIT, DbState};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub fn load_servers(db: State<'_, DbState>) -> Result<Vec<Server>, String> {
@@ -13,38 +13,89 @@ pub fn load_servers(db: State<'_, DbState>) -> Result<Vec<Server>, String> {
 }
 
 #[tauri::command]
-pub fn save_server(db: State<'_, DbState>, new_server: Server) -> Result<Vec<Server>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    insert_server(&conn, &new_server)?;
-    get_servers(&conn)
+pub async fn save_server(
+    app: AppHandle,
+    db: State<'_, DbState>,
+    active_server: State<'_, crate::server::ActiveServer>,
+    new_server: Server,
+) -> Result<Vec<Server>, String> {
+    let body = serde_json::to_value(&new_server).map_err(|e| e.to_string())?;
+    crate::client::remote_api::execute_mutation(&app, "servers", reqwest::Method::POST, Some(&body), || {
+        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        insert_server(&conn, &new_server)?;
+        active_server.broadcast(crate::server::types::ServerBroadcastEvent::EntitiesUpdated);
+        get_servers(&conn)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn update_server(
+pub async fn update_server(
+    app: AppHandle,
     db: State<'_, DbState>,
+    active_server: State<'_, crate::server::ActiveServer>,
     id: String,
     updated_server: Server,
 ) -> Result<Vec<Server>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    update_server_entry(&conn, &id, &updated_server)?;
-    get_servers(&conn)
+    let body = serde_json::to_value(&updated_server).map_err(|e| e.to_string())?;
+    crate::client::remote_api::execute_mutation(
+        &app,
+        &format!("servers/{id}"),
+        reqwest::Method::PUT,
+        Some(&body),
+        || {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            update_server_entry(&conn, &id, &updated_server)?;
+            active_server.broadcast(crate::server::types::ServerBroadcastEvent::EntitiesUpdated);
+            get_servers(&conn)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
-pub fn delete_server(db: State<'_, DbState>, id: String) -> Result<Vec<Server>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    delete_server_entry(&conn, &id)?;
-    get_servers(&conn)
-}
-
-#[tauri::command]
-pub fn reorder_servers(
+pub async fn delete_server(
+    app: AppHandle,
     db: State<'_, DbState>,
+    active_server: State<'_, crate::server::ActiveServer>,
+    id: String,
+) -> Result<Vec<Server>, String> {
+    crate::client::remote_api::execute_mutation(
+        &app,
+        &format!("servers/{id}"),
+        reqwest::Method::DELETE,
+        None,
+        || {
+            let conn = db.0.lock().map_err(|e| e.to_string())?;
+            delete_server_entry(&conn, &id)?;
+            active_server.broadcast(crate::server::types::ServerBroadcastEvent::EntitiesUpdated);
+            get_servers(&conn)
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn reorder_servers(
+    app: AppHandle,
+    db: State<'_, DbState>,
+    active_server: State<'_, crate::server::ActiveServer>,
     servers: Vec<Server>,
 ) -> Result<Vec<Server>, String> {
-    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-    update_sort_order(&mut conn, &servers)?;
-    get_servers(&conn)
+    let body = serde_json::to_value(&servers).map_err(|e| e.to_string())?;
+    crate::client::remote_api::execute_mutation(
+        &app,
+        "servers/reorder",
+        reqwest::Method::POST,
+        Some(&body),
+        || {
+            let mut conn = db.0.lock().map_err(|e| e.to_string())?;
+            update_sort_order(&mut conn, &servers)?;
+            active_server.broadcast(crate::server::types::ServerBroadcastEvent::EntitiesUpdated);
+            get_servers(&conn)
+        },
+    )
+    .await
 }
 
 #[tauri::command]
