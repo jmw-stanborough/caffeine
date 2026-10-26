@@ -1,9 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { Coffee } from "$lib/components/icons";
+  import { Cog } from "$lib/icons";
+  import SettingsModal from "$lib/components/settings-modal.svelte";
   import { getSidebarNavigationItems, type SidebarItem } from "$lib/features";
 
   let navigationItems = $derived<SidebarItem[]>(getSidebarNavigationItems());
+  let isSettingsOpen = $state(false);
 </script>
 
 <aside class="sidebar">
@@ -34,7 +37,22 @@
       </a>
     {/each}
   </nav>
+
+  <div class="sidebar-footer">
+    <hr class="sidebar-divider" />
+    <button
+      type="button"
+      class="nav-item settings-button"
+      onclick={() => (isSettingsOpen = true)}
+      aria-label="Open settings"
+    >
+      <Cog size={16} />
+      <span>Settings</span>
+    </button>
+  </div>
 </aside>
+
+<SettingsModal bind:open={isSettingsOpen} />
 
 <style>
   .sidebar {
@@ -73,6 +91,29 @@
     flex-direction: column;
     gap: 4px;
     padding: 8px;
+    flex: 1;
+  }
+
+  .sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    margin-top: auto;
+  }
+
+  .sidebar-divider {
+    border: none;
+    border-top: solid var(--width-border) var(--color-border);
+    margin: 0 0 8px 0;
+  }
+
+  .settings-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
   }
 
   .nav-item {
