@@ -1,3 +1,4 @@
+pub mod powershell;
 pub mod system;
 pub mod terminal;
 pub mod types;

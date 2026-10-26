@@ -1,4 +1,4 @@
-use std::process::Command;
+use super::powershell::query_powershell_json;
 use super::types::{SystemUpdateItem, UpdateCheckResult, UpdateOperationResult};
 
 #[derive(serde::Deserialize)]
@@ -35,13 +35,29 @@ struct RawResult {
     last_checked: Option<String>,
 }
 
-fn extract_json(stdout: &str) -> Option<&str> {
-    let start = stdout.find('{')?;
-    let end = stdout.rfind('}')?;
-    if start <= end {
-        Some(&stdout[start..=end])
-    } else {
-        None
+#[derive(serde::Deserialize)]
+struct RawUpdateOperation {
+    #[serde(rename = "Success")]
+    success: Option<bool>,
+    #[serde(rename = "Message")]
+    message: Option<String>,
+    #[serde(rename = "SucceededCount")]
+    succeeded_count: Option<usize>,
+    #[serde(rename = "FailedCount")]
+    failed_count: Option<usize>,
+    #[serde(rename = "RebootRequired")]
+    reboot_required: Option<bool>,
+}
+
+impl From<RawUpdateOperation> for UpdateOperationResult {
+    fn from(raw: RawUpdateOperation) -> Self {
+        Self {
+            success: raw.success.unwrap_or(false),
+            reboot_required: raw.reboot_required.unwrap_or(false),
+            message: raw.message.unwrap_or_default(),
+            succeeded_count: raw.succeeded_count.unwrap_or(0),
+            failed_count: raw.failed_count.unwrap_or(0),
+        }
     }
 }
 
@@ -86,19 +102,7 @@ $rebootPending = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Win
 } | ConvertTo-Json -Depth 4 -Compress
 "#;
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .map_err(|e| format!("Failed to invoke PowerShell for update search: {e}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json_slice = extract_json(&stdout).ok_or_else(|| {
-        let err = String::from_utf8_lossy(&output.stderr);
-        format!("Failed to retrieve updates. Stderr: {err}")
-    })?;
-
-    let parsed: RawResult = serde_json::from_str(json_slice)
-        .map_err(|e| format!("Failed to parse update search result: {e}. Output: {json_slice}"))?;
+    let parsed: RawResult = query_powershell_json(script)?;
 
     let mut update_items = Vec::new();
     if let Some(val) = parsed.updates {
@@ -131,6 +135,11 @@ fn map_raw_update(raw: RawUpdate) -> SystemUpdateItem {
         is_downloaded: raw.is_downloaded.unwrap_or(false),
         support_url: raw.support_url,
     }
+}
+
+fn execute_update_operation(script: &str) -> Result<UpdateOperationResult, String> {
+    let raw: RawUpdateOperation = query_powershell_json(script)?;
+    Ok(raw.into())
 }
 
 pub fn download_updates(target_id: Option<String>) -> Result<UpdateOperationResult, String> {
@@ -177,41 +186,7 @@ $reboot = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpd
 "#
     );
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-        .map_err(|e| format!("Failed to execute update download: {e}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json_slice = extract_json(&stdout).ok_or_else(|| {
-        let err = String::from_utf8_lossy(&output.stderr);
-        format!("Download failed: {err}")
-    })?;
-
-    #[derive(serde::Deserialize)]
-    struct RawOp {
-        #[serde(rename = "Success")]
-        success: Option<bool>,
-        #[serde(rename = "Message")]
-        message: Option<String>,
-        #[serde(rename = "SucceededCount")]
-        succeeded_count: Option<usize>,
-        #[serde(rename = "FailedCount")]
-        failed_count: Option<usize>,
-        #[serde(rename = "RebootRequired")]
-        reboot_required: Option<bool>,
-    }
-
-    let parsed: RawOp = serde_json::from_str(json_slice)
-        .map_err(|e| format!("Failed to parse download result: {e}. Output: {json_slice}"))?;
-
-    Ok(UpdateOperationResult {
-        success: parsed.success.unwrap_or(false),
-        reboot_required: parsed.reboot_required.unwrap_or(false),
-        message: parsed.message.unwrap_or_default(),
-        succeeded_count: parsed.succeeded_count.unwrap_or(0),
-        failed_count: parsed.failed_count.unwrap_or(0),
-    })
+    execute_update_operation(&script)
 }
 
 pub fn install_updates(target_id: Option<String>) -> Result<UpdateOperationResult, String> {
@@ -258,39 +233,5 @@ $reboot = [bool]$installResult.RebootRequired -or (Test-Path 'HKLM:\SOFTWARE\Mic
 "#
     );
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-        .map_err(|e| format!("Failed to execute update installation: {e}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json_slice = extract_json(&stdout).ok_or_else(|| {
-        let err = String::from_utf8_lossy(&output.stderr);
-        format!("Installation failed: {err}")
-    })?;
-
-    #[derive(serde::Deserialize)]
-    struct RawOp {
-        #[serde(rename = "Success")]
-        success: Option<bool>,
-        #[serde(rename = "Message")]
-        message: Option<String>,
-        #[serde(rename = "SucceededCount")]
-        succeeded_count: Option<usize>,
-        #[serde(rename = "FailedCount")]
-        failed_count: Option<usize>,
-        #[serde(rename = "RebootRequired")]
-        reboot_required: Option<bool>,
-    }
-
-    let parsed: RawOp = serde_json::from_str(json_slice)
-        .map_err(|e| format!("Failed to parse installation result: {e}. Output: {json_slice}"))?;
-
-    Ok(UpdateOperationResult {
-        success: parsed.success.unwrap_or(false),
-        reboot_required: parsed.reboot_required.unwrap_or(false),
-        message: parsed.message.unwrap_or_default(),
-        succeeded_count: parsed.succeeded_count.unwrap_or(0),
-        failed_count: parsed.failed_count.unwrap_or(0),
-    })
+    execute_update_operation(&script)
 }
