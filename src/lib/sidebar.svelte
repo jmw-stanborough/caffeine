@@ -1,41 +1,9 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Coffee, DesktopPc, LayoutDashboard, Printer, Server } from "$lib/components/icons";
-  import { printerStore } from "../routes/printers/printers.svelte";
-  import { serverStore } from "../routes/servers/servers.svelte";
-  import type { Component } from "svelte";
+  import { Coffee } from "$lib/components/icons";
+  import { getSidebarNavigationItems, type SidebarItem } from "$lib/features";
 
-  interface NavigationItem {
-    href: string;
-    label: string;
-    badgeCount?: number;
-    icon: Component<{ size?: number | string; class?: string }>;
-  }
-
-  let navigationItems = $derived<NavigationItem[]>([
-    {
-      href: "/",
-      label: "Dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      href: "/printers",
-      label: "Printers",
-      badgeCount: printerStore.alertCount,
-      icon: Printer,
-    },
-    {
-      href: "/servers",
-      label: "Servers",
-      badgeCount: serverStore.alertCount,
-      icon: Server,
-    },
-    {
-      href: "/endpoint",
-      label: "Endpoint",
-      icon: DesktopPc,
-    },
-  ]);
+  let navigationItems = $derived<SidebarItem[]>(getSidebarNavigationItems());
 </script>
 
 <aside class="sidebar">
