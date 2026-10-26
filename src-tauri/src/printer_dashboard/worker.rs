@@ -364,8 +364,12 @@ pub fn start_printer_worker(app: AppHandle) {
                     is_duplex: current.cached_details.is_duplex,
                 };
 
-                if let Err(err) = app.emit(PRINTER_STATUS_EVENT_NAME, event) {
+                if let Err(err) = app.emit(PRINTER_STATUS_EVENT_NAME, &event) {
                     eprintln!("Failed to emit printer status event: {err}");
+                }
+
+                if let Some(active_srv) = app.try_state::<crate::server::ActiveServer>() {
+                    active_srv.broadcast(crate::server::types::ServerBroadcastEvent::PrinterTick(event));
                 }
             }
 
