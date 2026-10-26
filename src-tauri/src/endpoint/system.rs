@@ -19,6 +19,7 @@ struct StaticHardwareInfo {
     motherboard: Option<MotherboardInfo>,
     gpus: Vec<GpuInfo>,
     build_number: String,
+    fast_startup_enabled: bool,
 }
 
 pub fn check_os_support() -> OsSupportInfo {
@@ -206,6 +207,7 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
         architecture: System::cpu_arch(),
         uptime_seconds: System::uptime(),
         boot_timestamp: System::boot_time(),
+        fast_startup_enabled: static_info.fast_startup_enabled,
     };
 
     let cpu = CpuInfo {
@@ -253,12 +255,14 @@ fn query_static_windows_hardware() -> Result<StaticHardwareInfo, String> {
     let gpus = native::query_gpus()?;
     let motherboard = native::query_motherboard()?;
     let build_number = native::query_build_number()?;
+    let fast_startup_enabled = native::query_fast_startup_enabled()?;
 
     Ok(StaticHardwareInfo {
         domain,
         motherboard,
         gpus,
         build_number,
+        fast_startup_enabled,
     })
 }
 

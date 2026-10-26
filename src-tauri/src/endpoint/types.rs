@@ -90,6 +90,7 @@ pub struct SystemMetaInfo {
     pub architecture: String,
     pub uptime_seconds: u64,
     pub boot_timestamp: u64,
+    pub fast_startup_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

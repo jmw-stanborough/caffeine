@@ -164,6 +164,21 @@ mod win {
 
         Ok(gpus)
     }
+
+    pub fn query_fast_startup_enabled() -> Result<bool, String> {
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let key = match hklm.open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power") {
+            Ok(k) => k,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(format!("Failed to open Power registry key: {e}")),
+        };
+
+        match key.get_value::<u32, _>("HiberbootEnabled") {
+            Ok(val) => Ok(val == 1),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(format!("Failed to read HiberbootEnabled registry value: {e}")),
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -192,6 +207,10 @@ mod non_win {
     pub fn query_gpus() -> Result<Vec<GpuInfo>, String> {
         Ok(Vec::new())
     }
+
+    pub fn query_fast_startup_enabled() -> Result<bool, String> {
+        Ok(false)
+    }
 }
 
 #[cfg(not(windows))]
@@ -205,6 +224,13 @@ mod tests {
     fn test_query_battery_status_runs_without_panicking() {
         let result = query_battery_status();
         assert!(result.is_ok(), "query_battery_status returned an error: {:?}", result.err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_query_fast_startup_enabled_returns_boolean() {
+        let result = query_fast_startup_enabled();
+        assert!(result.is_ok(), "Failed to query fast startup status: {:?}", result.err());
     }
 
     #[test]
