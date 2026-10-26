@@ -183,6 +183,12 @@ pub fn start_printer_worker(app: AppHandle) {
         tokio::time::sleep(INITIAL_WORKER_DELAY).await;
 
         loop {
+            let settings = crate::config::load_app_settings(&app).unwrap_or_default();
+            if !crate::config::is_self_serving(&settings.target_host) && !settings.server_mode {
+                tokio::time::sleep(WORKER_POLL_INTERVAL).await;
+                continue;
+            }
+
             let printers = {
                 let db = app.state::<DbState>();
                 let result = {

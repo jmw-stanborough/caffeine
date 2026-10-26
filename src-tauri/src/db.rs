@@ -127,10 +127,7 @@ fn get_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(local_path)
 }
 
-pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
-    let db_path = get_db_path(app)?;
-    let conn = Connection::open(&db_path).map_err(|e| format!("Failed to open database: {e}"))?;
-
+pub fn init_db_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
         PRAGMA busy_timeout = 5000;
@@ -191,9 +188,17 @@ pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
     )
     .map_err(|e| format!("Failed to run schema migrations: {e}"))?;
 
-    migrate_printer_filter_tags_table(&conn)?;
+    migrate_printer_filter_tags_table(conn)?;
+    deduplicate_consecutive_printer_logs(conn)?;
+    Ok(())
+}
+
+pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
+    let db_path = get_db_path(app)?;
+    let conn = Connection::open(&db_path).map_err(|e| format!("Failed to open database: {e}"))?;
+
+    init_db_schema(&conn)?;
     migrate_legacy_json(app, &conn)?;
-    deduplicate_consecutive_printer_logs(&conn)?;
 
     Ok(DbState(Mutex::new(conn)))
 }
