@@ -20,22 +20,18 @@
   let unlistenData: UnlistenFn | null = null;
   let unlistenExit: UnlistenFn | null = null;
   let isConnecting = $state(true);
+  let darkModeMql: MediaQueryList | null = null;
+  let themeListener: ((e: MediaQueryListEvent) => void) | null = null;
 
-  async function initTerminal() {
-    if (!terminalContainer) return;
-
-    term = new Terminal({
-      cursorBlink: true,
-      cursorStyle: "bar",
-      fontSize: 13,
-      lineHeight: 1.25,
-      fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
-      theme: {
+  function getTerminalTheme(isDark: boolean) {
+    if (isDark) {
+      return {
         background: "#1d2021",
         foreground: "#ebdbb2",
         cursor: "#fabd2f",
         cursorAccent: "#1d2021",
         selectionBackground: "#504945",
+        selectionForeground: "#ebdbb2",
         black: "#282828",
         red: "#cc241d",
         green: "#98971a",
@@ -52,10 +48,58 @@
         brightMagenta: "#d3869b",
         brightCyan: "#8ec07c",
         brightWhite: "#ebdbb2",
-      },
+      };
+    }
+
+    return {
+      background: "#fbf1c7",
+      foreground: "#3c3836",
+      cursor: "#3c3836",
+      cursorAccent: "#fbf1c7",
+      selectionBackground: "#d5c4a1",
+      selectionForeground: "#3c3836",
+      black: "#3c3836",
+      red: "#cc241d",
+      green: "#79740e",
+      yellow: "#b57614",
+      blue: "#076678",
+      magenta: "#8f3f71",
+      cyan: "#427b58",
+      white: "#ebdbb2",
+      brightBlack: "#928374",
+      brightRed: "#9d0006",
+      brightGreen: "#b8bb26",
+      brightYellow: "#b57614",
+      brightBlue: "#458588",
+      brightMagenta: "#d3869b",
+      brightCyan: "#689d6a",
+      brightWhite: "#fbf1c7",
+    };
+  }
+
+  async function initTerminal() {
+    if (!terminalContainer) return;
+
+    darkModeMql = window.matchMedia("(prefers-color-scheme: dark)");
+    const theme = getTerminalTheme(darkModeMql.matches);
+
+    term = new Terminal({
+      cursorBlink: true,
+      cursorStyle: "bar",
+      fontSize: 13,
+      lineHeight: 1.25,
+      fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
+      theme,
       convertEol: true,
       allowProposedApi: true,
     });
+
+    themeListener = (e: MediaQueryListEvent) => {
+      if (term) {
+        term.options.theme = getTerminalTheme(e.matches);
+      }
+    };
+    darkModeMql.addEventListener("change", themeListener);
 
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -138,6 +182,11 @@
   }
 
   function cleanup() {
+    if (darkModeMql && themeListener) {
+      darkModeMql.removeEventListener("change", themeListener);
+      themeListener = null;
+      darkModeMql = null;
+    }
     if (unlistenData) {
       unlistenData();
       unlistenData = null;
@@ -192,9 +241,9 @@
         <span
           class="shell-badge"
           class:pwsh={shell.is_pwsh}
-          title={`Executable: ${shell.executable_path}`}
+          title={`Executable: ${shell.executable_path} (Version: ${shell.version})`}
         >
-          {shell.shell_name} {shell.version}
+          {shell.shell_name}
         </span>
       {/if}
       {#if isConnecting}
@@ -226,6 +275,8 @@
           ps
         </button>
       </div>
+
+      <div class="action-divider"></div>
 
       <button
         class="btn-interrupt"
@@ -262,7 +313,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background-color: #1d2021;
+    background-color: var(--color-base);
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.5rem;
     overflow: hidden;
@@ -272,9 +323,10 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
     padding: 0.55rem 0.85rem;
-    background-color: #282828;
-    border-bottom: solid var(--width-border) #3c3836;
+    background-color: var(--color-surface);
+    border-bottom: solid var(--width-border) var(--color-border);
     flex-shrink: 0;
   }
 
@@ -282,19 +334,23 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-shrink: 0;
+    min-width: 0;
   }
 
   .header-icon-wrap {
     color: var(--color-primary);
     display: flex;
     align-items: center;
+    flex-shrink: 0;
   }
 
   .window-title {
     margin: 0;
     font-size: 0.95rem;
     font-weight: 700;
-    color: #ebdbb2;
+    color: var(--color-text);
+    white-space: nowrap;
   }
 
   .shell-badge {
@@ -303,27 +359,32 @@
     font-weight: 700;
     padding: 0.15rem 0.45rem;
     border-radius: 0.25rem;
-    background-color: #3c3836;
-    color: #a89984;
-    border: solid 1px #504945;
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-muted);
+    border: solid 1px var(--color-border);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .shell-badge.pwsh {
-    background-color: color-mix(in srgb, var(--color-primary) 20%, #282828);
+    background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
     color: var(--color-primary);
-    border-color: var(--color-primary);
+    border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
   }
 
   .connecting-label {
     font-size: 0.75rem;
-    color: #fabd2f;
+    color: var(--color-secondary);
     font-style: italic;
+    white-space: nowrap;
   }
 
   .header-actions {
     display: flex;
     align-items: center;
     gap: 0.35rem;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   .quick-commands {
@@ -333,23 +394,32 @@
   }
 
   .btn-quick {
-    background-color: #3c3836;
-    border: solid 1px #504945;
-    color: #ebdbb2;
+    background-color: var(--color-base);
+    border: solid 1px var(--color-border);
+    color: var(--color-text);
     padding: 0.18rem 0.45rem;
     border-radius: 0.25rem;
     font-size: 0.75rem;
     font-family: monospace;
     cursor: pointer;
-    transition: background-color 0.12s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
   }
 
   .btn-quick:hover {
-    background-color: #504945;
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-primary);
+  }
+
+  .action-divider {
+    width: 1px;
+    height: 14px;
+    background-color: var(--color-border);
+    margin: 0 0.15rem;
+    flex-shrink: 0;
   }
 
   .btn-interrupt {
-    background-color: color-mix(in srgb, var(--color-failure) 20%, #282828);
+    background-color: color-mix(in srgb, var(--color-failure) 15%, var(--color-surface));
     border: solid 1px var(--color-failure);
     color: var(--color-failure);
     padding: 0.18rem 0.5rem;
@@ -368,8 +438,8 @@
 
   .btn-action {
     background-color: transparent;
-    border: solid 1px #504945;
-    color: #a89984;
+    border: solid 1px var(--color-border);
+    color: var(--color-text-muted);
     padding: 0.18rem 0.5rem;
     border-radius: 0.25rem;
     font-size: 0.75rem;
@@ -379,15 +449,16 @@
   }
 
   .btn-action:hover {
-    background-color: #3c3836;
-    color: #ebdbb2;
+    background-color: var(--color-surface-hover);
+    color: var(--color-text);
+    border-color: var(--color-text-muted);
   }
 
   .terminal-body {
     flex: 1;
     min-height: 0;
     padding: 0.4rem 0.5rem;
-    background-color: #1d2021;
+    background-color: var(--color-base);
     overflow: hidden;
   }
 
