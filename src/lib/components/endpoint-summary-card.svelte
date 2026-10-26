@@ -66,18 +66,23 @@
     <p
       class="headline"
       class:ok={!hasHighUsage && !hasModerateUsage && !store.updates?.reboot_required}
-      class:warn={hasModerateUsage}
+      class:warn={hasModerateUsage || (!hasHighUsage && Boolean(store.updates?.reboot_required))}
       class:crit={hasHighUsage}
     >
-      {#if store.updates?.reboot_required}
-        Restart required to complete updates
-      {:else if hasHighUsage}
-        High resource utilization detected
-      {:else if hasModerateUsage}
-        Elevated resource utilization
-      {:else}
-        System operating normally
+      {#if hasHighUsage || hasModerateUsage || store.updates?.reboot_required}
+        <AlertTriangle size={16} />
       {/if}
+      <span>
+        {#if store.updates?.reboot_required}
+          Restart required to complete updates
+        {:else if hasHighUsage}
+          High resource utilization detected
+        {:else if hasModerateUsage}
+          Elevated resource utilization
+        {:else}
+          System operating normally
+        {/if}
+      </span>
     </p>
 
     <dl class="stats">
@@ -240,11 +245,14 @@
   .headline {
     margin: 0;
     font-weight: 600;
-    color: var(--color-secondary);
+    color: var(--color-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .headline.ok {
-    color: var(--color-primary);
+    color: var(--color-success);
   }
 
   .headline.warn {
@@ -303,15 +311,9 @@
     gap: 4px;
     font-size: 0.68rem;
     font-weight: 600;
-    color: #7c4a03;
+    color: var(--color-warning);
     line-height: 1.2;
     margin-top: 2px;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .fast-startup-warn {
-      color: #fabd2f;
-    }
   }
 
   .dot {

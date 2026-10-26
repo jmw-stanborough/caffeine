@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { AlertTriangle } from "$lib/components/icons";
   import type { MonitorStatus } from "$lib/monitor-store.svelte";
   import type { Component } from "svelte";
 
@@ -41,6 +42,12 @@
     { key: "offline", label: "Error" },
     { key: "checking", label: "Checking" },
   ];
+
+  let hasFailure = $derived(
+    counts.offline > 0 || attention.some((a) => a.severity === "offline"),
+  );
+  let hasWarning = $derived(!hasFailure && attention.length > 0);
+  let isHealthy = $derived(total > 0 && attention.length === 0);
 </script>
 
 <a {href} class="card">
@@ -58,12 +65,22 @@
   {:else if total === 0}
     <p class="status-message">No {noun}s configured.</p>
   {:else}
-    <p class="headline" class:ok={attention.length === 0}>
-      {#if attention.length === 0}
-        All {total} {noun}{total === 1 ? "" : "s"} healthy
-      {:else}
-        {attention.length} of {total} {noun}{total === 1 ? "" : "s"} need attention
+    <p
+      class="headline"
+      class:ok={isHealthy}
+      class:warn={hasWarning}
+      class:crit={hasFailure}
+    >
+      {#if hasFailure || hasWarning}
+        <AlertTriangle size={16} />
       {/if}
+      <span>
+        {#if attention.length === 0}
+          All {total} {noun}{total === 1 ? "" : "s"} healthy
+        {:else}
+          {attention.length} of {total} {noun}{total === 1 ? "" : "s"} need attention
+        {/if}
+      </span>
     </p>
 
     <dl class="stats">
@@ -131,11 +148,22 @@
   .headline {
     margin: 0;
     font-weight: 600;
-    color: var(--color-secondary);
+    color: var(--color-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .headline.ok {
-    color: var(--color-primary);
+    color: var(--color-success);
+  }
+
+  .headline.warn {
+    color: var(--color-warning);
+  }
+
+  .headline.crit {
+    color: var(--color-failure);
   }
 
   .stats {
