@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DesktopPc } from "$lib/components/icons";
+  import { AlertTriangle, DesktopPc } from "$lib/components/icons";
   import { endpointStore } from "../../routes/endpoint/endpoint.svelte";
   import {
     formatBytes,
@@ -145,6 +145,16 @@
             {store.machine.system.architecture}
           </span>
         {/if}
+        {#if store.machine.system.fast_startup_enabled}
+          <span
+            class="fast-startup-warn"
+            role="status"
+            title="Fast startup is turned on"
+          >
+            <AlertTriangle size={11} />
+            <span>Fast startup is turned on</span>
+          </span>
+        {/if}
       </div>
     </dl>
 
@@ -285,6 +295,17 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .fast-startup-warn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--color-warning);
+    line-height: 1.2;
+    margin-top: 2px;
   }
 
   .dot {

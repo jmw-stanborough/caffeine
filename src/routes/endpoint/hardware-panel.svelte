@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { AlertTriangle } from "$lib/components/icons";
   import { formatUptime } from "./metrics";
   import type { EndpointMachineInfo } from "./types";
   import BatteryCard from "./cards/battery-card.svelte";
@@ -29,6 +30,16 @@
         <span class="uptime-badge" title="System Uptime">
           Up: {formatUptime(machine.system.uptime_seconds)}
         </span>
+        {#if machine.system.fast_startup_enabled}
+          <span
+            class="fast-startup-warning"
+            role="status"
+            title="Fast startup is turned on; system uptime is not reliable"
+          >
+            <AlertTriangle size={13} />
+            <span>Fast startup is turned on; system uptime is not reliable</span>
+          </span>
+        {/if}
       {/if}
     </div>
     <button
@@ -123,6 +134,7 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-wrap: wrap;
   }
 
   .panel-title {
@@ -140,6 +152,19 @@
     background-color: var(--color-base);
     color: var(--color-text-muted);
     border: solid var(--width-border) var(--color-border);
+  }
+
+  .fast-startup-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background-color: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+    border: solid var(--width-border) color-mix(in srgb, var(--color-warning) 40%, transparent);
   }
 
   .btn-refresh {
