@@ -26,6 +26,7 @@
     isColor = undefined,
     isDuplex = undefined,
     now = Date.now(),
+    canEdit = true,
     onwebui,
     onconfigure,
   }: {
@@ -48,6 +49,7 @@
     isColor?: boolean;
     isDuplex?: boolean;
     now?: number;
+    canEdit?: boolean;
     onwebui?: (printer: Printer) => void;
     onconfigure?: (printer: Printer) => void;
   } = $props();
@@ -118,7 +120,7 @@
             Web UI ↗
           </button>
         {/if}
-        {#if onconfigure}
+        {#if onconfigure && canEdit}
           <button
             type="button"
             class="btn-action btn-config"

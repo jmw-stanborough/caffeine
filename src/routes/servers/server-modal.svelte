@@ -1,5 +1,6 @@
 <script lang="ts">
   import ConfigHistoryModal from "$lib/components/config-history-modal.svelte";
+  import { clientMode } from "$lib/client-mode.svelte";
   import { DEFAULT_AGENT_PORT, DEFAULT_LOG_LIMIT } from "$lib/constants";
   import { invoke } from "@tauri-apps/api/core";
   import type { Server, ServerLog } from "./types";
@@ -7,14 +8,18 @@
   let {
     open = $bindable(false),
     server = undefined,
+    readOnly,
     onsave,
     ondelete,
   }: {
     open: boolean;
     server?: Server;
+    readOnly?: boolean;
     onsave: (saved: Server, existingId?: string) => Promise<void> | void;
     ondelete: (id: string) => Promise<void> | void;
   } = $props();
+
+  let isReadOnly = $derived(readOnly ?? !clientMode.canEdit);
 
   let label = $state("");
   let host = $state("");
@@ -65,7 +70,7 @@
   }
 
   async function handleSave() {
-    if (!host.trim() || !label.trim()) return;
+    if (isReadOnly || !host.trim() || !label.trim()) return;
 
     const payload: Server = {
       id: server?.id ?? "",
@@ -85,9 +90,8 @@
   }
 
   async function handleDelete() {
-    if (server) {
-      await ondelete(server.id);
-    }
+    if (isReadOnly || !server) return;
+    await ondelete(server.id);
   }
 </script>
 
@@ -95,6 +99,7 @@
   bind:open
   title={server ? server.label : "Add Server"}
   isExisting={Boolean(server)}
+  readOnly={isReadOnly}
   maxWidth="30rem"
   {logs}
   {logsLoading}

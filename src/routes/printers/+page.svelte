@@ -320,6 +320,7 @@
   isColor={detailPrinterState?.isColor}
   isDuplex={detailPrinterState?.isDuplex}
   now={store.now}
+  canEdit={clientMode.canEdit}
   onwebui={(p) => openWebInterface(p)}
   onconfigure={(p) => openEditModal(p)}
 />

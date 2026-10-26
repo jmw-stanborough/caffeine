@@ -1,5 +1,6 @@
 <script lang="ts">
   import ConfigHistoryModal from "$lib/components/config-history-modal.svelte";
+  import { clientMode } from "$lib/client-mode.svelte";
   import { DEFAULT_LOG_LIMIT, DEFAULT_SNMP_COMMUNITY } from "$lib/constants";
   import { invoke } from "@tauri-apps/api/core";
   import type { Printer, PrinterLog } from "./types";
@@ -7,14 +8,18 @@
   let {
     open = $bindable(false),
     printer = undefined,
+    readOnly,
     onsave,
     ondelete,
   }: {
     open: boolean;
     printer?: Printer;
+    readOnly?: boolean;
     onsave: (saved: Printer, existingId?: string) => Promise<void> | void;
     ondelete: (id: string) => Promise<void> | void;
   } = $props();
+
+  let isReadOnly = $derived(readOnly ?? !clientMode.canEdit);
 
   let label = $state("");
   let host = $state("");
@@ -59,7 +64,7 @@
   }
 
   async function handleSave() {
-    if (!host.trim() || !label.trim()) return;
+    if (isReadOnly || !host.trim() || !label.trim()) return;
 
     const payload: Printer = {
       id: printer?.id ?? "",
@@ -77,9 +82,8 @@
   }
 
   async function handleDelete() {
-    if (printer) {
-      await ondelete(printer.id);
-    }
+    if (isReadOnly || !printer) return;
+    await ondelete(printer.id);
   }
 </script>
 
@@ -87,6 +91,7 @@
   bind:open
   title={printer ? printer.label : "Add Printer"}
   isExisting={Boolean(printer)}
+  readOnly={isReadOnly}
   maxWidth="36rem"
   {logs}
   {logsLoading}

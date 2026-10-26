@@ -14,24 +14,26 @@
     open = $bindable(false),
     title,
     isExisting = false,
+    readOnly = false,
     maxWidth = "32rem",
     logs = [],
     logsLoading = false,
     logsError = null,
-    onsave,
-    ondelete,
+    onsave = () => {},
+    ondelete = () => {},
     children,
   }: {
     open: boolean;
     title: string;
     isExisting?: boolean;
+    readOnly?: boolean;
     maxWidth?: string;
     logs?: LogItem[];
     logsLoading?: boolean;
     logsError?: string | null;
-    onsave: () => Promise<void> | void;
-    ondelete: () => Promise<void> | void;
-    children: Snippet;
+    onsave?: () => Promise<void> | void;
+    ondelete?: () => Promise<void> | void;
+    children?: Snippet;
   } = $props();
 
   let activeTab = $state<"details" | "history">("details");
@@ -40,7 +42,7 @@
   $effect(() => {
     if (open) {
       confirmDelete = false;
-      activeTab = "details";
+      activeTab = readOnly ? "history" : "details";
     }
   });
 
@@ -58,7 +60,7 @@
   <div class="modal-header">
     <div class="header-main">
       <h2 class="modal-title">{title}</h2>
-      {#if isExisting}
+      {#if isExisting && !readOnly}
         <div class="tab-nav">
           <button
             type="button"
@@ -82,9 +84,9 @@
     <button type="button" class="btn-close" onclick={() => (open = false)}>✕</button>
   </div>
 
-  {#if activeTab === "details"}
+  {#if activeTab === "details" && !readOnly}
     <div class="modal-body">
-      {@render children()}
+      {@render children?.()}
     </div>
 
     <div class="modal-footer">

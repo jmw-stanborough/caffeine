@@ -160,11 +160,7 @@
             lastEvent={hostState?.lastEvent}
             lastEventAt={hostState?.lastEventAt}
             now={store.now}
-            onclick={() => {
-              if (clientMode.canEdit) {
-                openEditModal(server);
-              }
-            }}
+            onclick={() => openEditModal(server)}
           />
         </div>
       {/each}
