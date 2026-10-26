@@ -22,7 +22,7 @@ struct StaticHardwareInfo {
     fast_startup_enabled: bool,
 }
 
-pub fn check_os_support() -> OsSupportInfo {
+pub fn check_os_support() -> Result<OsSupportInfo, String> {
     let is_windows = cfg!(target_os = "windows");
     let os_name = System::name().unwrap_or_else(|| std::env::consts::OS.to_string());
     let os_version = System::os_version().unwrap_or_default();
@@ -37,14 +37,21 @@ pub fn check_os_support() -> OsSupportInfo {
         None
     };
 
-    OsSupportInfo {
+    let is_admin = if is_windows {
+        native::query_is_admin()?
+    } else {
+        false
+    };
+
+    Ok(OsSupportInfo {
         is_windows,
         os_name,
         os_version,
         architecture,
         hostname,
         error_message,
-    }
+        is_admin,
+    })
 }
 
 pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
@@ -281,5 +288,15 @@ mod tests {
         assert!(!info.cpu.model_name.is_empty());
         assert!(info.memory.total_bytes > 0);
         assert_eq!(info.system.fast_startup_enabled, true);
+    }
+
+    #[test]
+    fn test_check_os_support_includes_admin_status() {
+        let support = check_os_support().expect("check_os_support should succeed");
+        if cfg!(target_os = "windows") {
+            assert!(support.is_windows);
+        } else {
+            assert!(!support.is_admin);
+        }
     }
 }

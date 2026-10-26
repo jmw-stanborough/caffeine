@@ -15,7 +15,7 @@ use types::{
 pub async fn endpoint_check_os_support() -> Result<OsSupportInfo, String> {
     tokio::task::spawn_blocking(system::check_os_support)
         .await
-        .map_err(|e| format!("Failed to check OS support: {e}"))
+        .map_err(|e| format!("Failed to check OS support: {e}"))?
 }
 
 #[tauri::command]

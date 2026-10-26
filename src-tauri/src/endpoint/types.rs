@@ -8,6 +8,7 @@ pub struct OsSupportInfo {
     pub architecture: String,
     pub hostname: String,
     pub error_message: Option<String>,
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

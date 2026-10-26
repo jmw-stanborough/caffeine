@@ -159,6 +159,9 @@ $Downloader = $Session.CreateUpdateDownloader()
 $UpdatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
 foreach ($u in $SearchResult.Updates) {{
     if (-not $targetId -or $u.Identity.UpdateID -eq $targetId) {{
+        if (-not $u.EulaAccepted) {{
+            $u.AcceptEula()
+        }}
         $UpdatesToDownload.Add($u) | Out-Null
     }}
 }}
@@ -176,9 +179,16 @@ $Downloader.Updates = $UpdatesToDownload
 $downloadResult = $Downloader.Download()
 $succeeded = ($downloadResult.ResultCode -eq 2)
 $reboot = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
+$msg = switch ($downloadResult.ResultCode) {{
+    2 {{ "Download completed successfully." }}
+    3 {{ "Download completed with errors." }}
+    4 {{ "Download failed (code 4). Administrative privileges or a system restart may be required." }}
+    5 {{ "Download was aborted (code 5)." }}
+    default {{ "Download completed with code " + $downloadResult.ResultCode }}
+}}
 [PSCustomObject]@{{
     Success = $succeeded
-    Message = "Download completed with code " + $downloadResult.ResultCode
+    Message = $msg
     SucceededCount = $(if ($succeeded) {{ $UpdatesToDownload.Count }} else {{ 0 }})
     FailedCount = $(if ($succeeded) {{ 0 }} else {{ $UpdatesToDownload.Count }})
     RebootRequired = $reboot
@@ -205,6 +215,9 @@ $SearchResult = $Searcher.Search("IsInstalled=0 and Type='Software' and IsHidden
 $UpdatesToInstall = New-Object -ComObject Microsoft.Update.UpdateColl
 foreach ($u in $SearchResult.Updates) {{
     if ((-not $targetId -or $u.Identity.UpdateID -eq $targetId) -and $u.IsDownloaded) {{
+        if (-not $u.EulaAccepted) {{
+            $u.AcceptEula()
+        }}
         $UpdatesToInstall.Add($u) | Out-Null
     }}
 }}
@@ -223,11 +236,19 @@ $Installer.Updates = $UpdatesToInstall
 $Installer.ForceQuiet = $true
 $installResult = $Installer.Install()
 $reboot = [bool]$installResult.RebootRequired -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
+$succeeded = ($installResult.ResultCode -eq 2)
+$msg = switch ($installResult.ResultCode) {{
+    2 {{ "Installation completed successfully." }}
+    3 {{ "Installation completed with errors." }}
+    4 {{ "Installation failed (code 4). Administrative privileges or a system restart may be required." }}
+    5 {{ "Installation was aborted (code 5)." }}
+    default {{ "Installation finished with code " + $installResult.ResultCode }}
+}}
 [PSCustomObject]@{{
-    Success = ($installResult.ResultCode -eq 2)
-    Message = "Installation finished with code " + $installResult.ResultCode
-    SucceededCount = $(if ($installResult.ResultCode -eq 2) {{ $UpdatesToInstall.Count }} else {{ 0 }})
-    FailedCount = $(if ($installResult.ResultCode -eq 2) {{ 0 }} else {{ $UpdatesToInstall.Count }})
+    Success = $succeeded
+    Message = $msg
+    SucceededCount = $(if ($succeeded) {{ $UpdatesToInstall.Count }} else {{ 0 }})
+    FailedCount = $(if ($succeeded) {{ 0 }} else {{ $UpdatesToInstall.Count }})
     RebootRequired = $reboot
 }} | ConvertTo-Json -Compress
 "#

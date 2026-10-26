@@ -2,10 +2,15 @@
 mod win {
     use super::super::types::{BatteryInfo, GpuInfo, MotherboardInfo};
     use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::NetworkManagement::NetManagement::{
         NetApiBufferFree, NetGetJoinInformation,
     };
+    use windows_sys::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
     use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
     use winreg::enums::HKEY_LOCAL_MACHINE;
     use winreg::RegKey;
 
@@ -179,6 +184,34 @@ mod win {
             Err(e) => Err(format!("Failed to read HiberbootEnabled registry value: {e}")),
         }
     }
+
+    pub fn query_is_admin() -> Result<bool, String> {
+        let mut token = null_mut();
+        let success = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) };
+        if success == 0 {
+            return Err("Failed to open process token".to_string());
+        }
+
+        let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut return_length = 0;
+        let success = unsafe {
+            GetTokenInformation(
+                token,
+                TokenElevation,
+                &mut elevation as *mut _ as *mut _,
+                std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+                &mut return_length,
+            )
+        };
+
+        unsafe { CloseHandle(token) };
+
+        if success == 0 {
+            return Err("Failed to query token elevation information".to_string());
+        }
+
+        Ok(elevation.TokenIsElevated != 0)
+    }
 }
 
 #[cfg(windows)]
@@ -211,6 +244,10 @@ mod non_win {
     pub fn query_fast_startup_enabled() -> Result<bool, String> {
         Ok(false)
     }
+
+    pub fn query_is_admin() -> Result<bool, String> {
+        Ok(false)
+    }
 }
 
 #[cfg(not(windows))]
@@ -231,6 +268,13 @@ mod tests {
     fn test_query_fast_startup_enabled_returns_boolean() {
         let result = query_fast_startup_enabled();
         assert!(result.is_ok(), "Failed to query fast startup status: {:?}", result.err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_query_is_admin_returns_boolean() {
+        let result = query_is_admin();
+        assert!(result.is_ok(), "Failed to query admin elevation status: {:?}", result.err());
     }
 
     #[test]
