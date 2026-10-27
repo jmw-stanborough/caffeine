@@ -254,6 +254,15 @@ pub fn is_self_serving(host: &str) -> bool {
     trimmed == "127.0.0.1" || trimmed == "localhost" || trimmed == "::1" || trimmed == "0.0.0.0"
 }
 
+pub fn build_http_base_url(host: &str, port: u16) -> String {
+    format!("http://{host}:{port}")
+}
+
+pub fn build_ws_url(host: &str, port: u16, path: &str) -> String {
+    let clean_path = path.trim_start_matches('/');
+    format!("ws://{host}:{port}/{clean_path}")
+}
+
 pub fn sanitize_host_slug(host: &str, port: u16) -> String {
     let stripped = host
         .trim()

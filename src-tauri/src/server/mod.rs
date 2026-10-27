@@ -46,7 +46,7 @@ impl ActiveServer {
         port: u16,
         db_path: PathBuf,
     ) -> Result<SocketAddr, String> {
-        let instance = start_embedded_server(app, bind_ip, port, db_path).await?;
+        let instance = start_embedded_server(app, bind_ip, port, db_path, None).await?;
         let addr = instance.bound_addr;
 
         let mut guard = self
@@ -117,6 +117,7 @@ pub async fn start_embedded_server(
     bind_ip: &str,
     port: u16,
     db_path: PathBuf,
+    admin_token_override: Option<String>,
 ) -> Result<ServerInstance, String> {
     let conn = init_server_db(&db_path)?;
     crate::db::init_db_schema(&conn)?;
@@ -124,10 +125,19 @@ pub async fn start_embedded_server(
     let (broadcast_tx, _) = broadcast::channel::<ServerBroadcastEvent>(512);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
+    let admin_token = admin_token_override.or_else(|| {
+        crate::config::load_machine_settings()
+            .ok()
+            .and_then(|m| m.admin_token)
+            .filter(|t| !t.trim().is_empty())
+    });
+
     let app_state = Arc::new(ServerAppState {
         db: Mutex::new(conn),
         broadcast_tx: broadcast_tx.clone(),
         app,
+        nonce_cache: Mutex::new(auth::NonceCache::new()),
+        admin_token,
     });
 
     let router = create_router(app_state);
@@ -198,6 +208,92 @@ mod tests {
         assert!(body.printers.is_empty());
 
         active_server.stop().expect("Failed to stop server");
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[tokio::test]
+    async fn test_hmac_auth_mutations_and_rejections() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("caffeine_test_hmac_{nanos}.db"));
+        let token = "caff_integration_test_secret";
+
+        let server_instance = start_embedded_server(
+            None,
+            "127.0.0.1",
+            0,
+            db_path.clone(),
+            Some(token.to_string()),
+        )
+        .await
+        .expect("Failed to start test server");
+
+        let addr = server_instance.bound_addr;
+        let client = reqwest::Client::new();
+        let servers_url = format!("http://{addr}/api/v1/servers");
+        let server_payload = r#"{"id":"srv-1","host":"10.0.0.1","label":"Test Server","description":null,"agent":null,"sort_order":0}"#;
+
+        let bearer_res = client
+            .post(&servers_url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
+            .body(server_payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bearer_res.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let no_auth_res = client
+            .post(&servers_url)
+            .header("Content-Type", "application/json")
+            .body(server_payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(no_auth_res.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let nonce = "test_unique_nonce_1";
+        let canonical = crate::crypto::compute_canonical_string(
+            "POST",
+            "/api/v1/servers",
+            timestamp,
+            nonce,
+            server_payload.as_bytes(),
+        );
+        let signature = crate::crypto::compute_hmac_sha256(token, &canonical).unwrap();
+
+        let valid_res = client
+            .post(&servers_url)
+            .header("X-Caffeine-Timestamp", timestamp.to_string())
+            .header("X-Caffeine-Nonce", nonce)
+            .header("X-Caffeine-Signature", signature.clone())
+            .header("Content-Type", "application/json")
+            .body(server_payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(valid_res.status(), reqwest::StatusCode::OK);
+
+        let replay_res = client
+            .post(&servers_url)
+            .header("X-Caffeine-Timestamp", timestamp.to_string())
+            .header("X-Caffeine-Nonce", nonce)
+            .header("X-Caffeine-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(server_payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(replay_res.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let mut server_instance = server_instance;
+        server_instance.stop();
         let _ = std::fs::remove_file(db_path);
     }
 }

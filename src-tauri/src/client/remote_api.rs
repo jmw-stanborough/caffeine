@@ -20,15 +20,42 @@ where
         "Mutations are disabled in read-only client mode. Enter a valid admin access token in Settings to edit or delete resources on this server.".to_string()
     })?;
 
-    let url = format!(
-        "http://{}:{}/api/v1/{endpoint}",
-        settings.target_host, settings.target_port
+    let base_url = crate::config::build_http_base_url(&settings.target_host, settings.target_port);
+    let path = format!("/api/v1/{endpoint}");
+    let url = format!("{base_url}{path}");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("System clock error: {e}"))?
+        .as_secs();
+
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+
+    let body_bytes = match body {
+        Some(payload) => serde_json::to_vec(payload)
+            .map_err(|e| format!("Payload serialization error: {e}"))?,
+        None => Vec::new(),
+    };
+
+    let canonical = crate::crypto::compute_canonical_string(
+        method.as_str(),
+        &path,
+        timestamp,
+        &nonce,
+        &body_bytes,
     );
 
+    let signature = crate::crypto::compute_hmac_sha256(token.trim(), &canonical)?;
+
     let client = reqwest::Client::new();
-    let mut req = client.request(method, &url).bearer_auth(token.trim());
-    if let Some(payload) = body {
-        req = req.json(payload);
+    let mut req = client
+        .request(method, &url)
+        .header("X-Caffeine-Timestamp", timestamp.to_string())
+        .header("X-Caffeine-Nonce", nonce)
+        .header("X-Caffeine-Signature", signature);
+
+    if !body_bytes.is_empty() {
+        req = req.header("Content-Type", "application/json").body(body_bytes);
     }
 
     let response = req
@@ -67,10 +94,8 @@ where
         return Ok(None);
     }
 
-    let url = format!(
-        "http://{}:{}/api/v1/{endpoint}",
-        settings.target_host, settings.target_port
-    );
+    let base_url = crate::config::build_http_base_url(&settings.target_host, settings.target_port);
+    let url = format!("{base_url}/api/v1/{endpoint}");
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))

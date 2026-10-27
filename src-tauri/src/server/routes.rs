@@ -1,4 +1,4 @@
-use super::auth::{authenticate_and_create_session, validate_admin_token};
+use super::auth::authenticate_and_create_session;
 use super::types::{HistorySyncResponse, LoginRequest, LoginResponse, ServerBroadcastEvent, SnapshotResponse};
 use crate::printer_dashboard::db::{
     delete_printer_entry, get_printer_filter_tags, get_printers, insert_printer,
@@ -10,8 +10,9 @@ use crate::server_monitor::db::{
 };
 use crate::server_monitor::types::Server;
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State, WebSocketUpgrade},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Json},
     routing::{get, post, put},
     Router,
@@ -26,6 +27,8 @@ pub struct ServerAppState {
     pub db: Mutex<Connection>,
     pub broadcast_tx: broadcast::Sender<ServerBroadcastEvent>,
     pub app: Option<AppHandle>,
+    pub nonce_cache: Mutex<super::auth::NonceCache>,
+    pub admin_token: Option<String>,
 }
 
 fn notify_entities_updated(state: &ServerAppState) {
@@ -47,22 +50,80 @@ pub struct LogQuery {
     pub limit: Option<i64>,
 }
 
-fn check_admin_auth(headers: &HeaderMap, conn: &Connection) -> Result<(), (StatusCode, String)> {
-    let auth_header = headers
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok())
-        .ok_or((StatusCode::UNAUTHORIZED, "Missing Authorization header".to_string()))?;
-
-    let token = auth_header
-        .strip_prefix("Bearer ")
-        .map(str::trim)
-        .ok_or((StatusCode::UNAUTHORIZED, "Invalid Authorization scheme".to_string()))?;
-
-    match validate_admin_token(conn, token) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err((StatusCode::FORBIDDEN, "Admin privileges required".to_string())),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+fn check_admin_auth(
+    headers: &HeaderMap,
+    method: &str,
+    uri_path: &str,
+    body: &[u8],
+    state: &ServerAppState,
+) -> Result<(), (StatusCode, String)> {
+    if headers.contains_key("Authorization") {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Plaintext Bearer tokens are prohibited. HMAC-SHA256 request signing is required.".to_string(),
+        ));
     }
+
+    let ts_str = headers
+        .get("X-Caffeine-Timestamp")
+        .and_then(|h| h.to_str().ok())
+        .ok_or((StatusCode::UNAUTHORIZED, "Missing X-Caffeine-Timestamp header".to_string()))?;
+
+    let timestamp = ts_str
+        .parse::<u64>()
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid X-Caffeine-Timestamp header format".to_string()))?;
+
+    let nonce = headers
+        .get("X-Caffeine-Nonce")
+        .and_then(|h| h.to_str().ok())
+        .ok_or((StatusCode::UNAUTHORIZED, "Missing X-Caffeine-Nonce header".to_string()))?;
+
+    if nonce.trim().is_empty() {
+        return Err((StatusCode::UNAUTHORIZED, "Empty X-Caffeine-Nonce header".to_string()));
+    }
+
+    let signature = headers
+        .get("X-Caffeine-Signature")
+        .and_then(|h| h.to_str().ok())
+        .ok_or((StatusCode::UNAUTHORIZED, "Missing X-Caffeine-Signature header".to_string()))?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .as_secs();
+
+    let mut nonce_guard = state
+        .nonce_cache
+        .lock()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Nonce cache lock error: {e}")))?;
+
+    nonce_guard
+        .check_and_record(nonce, timestamp, now)
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+
+    let token = crate::config::load_machine_settings()
+        .ok()
+        .and_then(|m| m.admin_token)
+        .or_else(|| state.admin_token.clone())
+        .filter(|t| !t.trim().is_empty())
+        .ok_or((StatusCode::FORBIDDEN, "Server has no admin token configured".to_string()))?;
+
+    let valid = super::auth::validate_hmac_signature(
+        token.trim(),
+        method,
+        uri_path,
+        timestamp,
+        nonce,
+        body,
+        signature,
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    if !valid {
+        return Err((StatusCode::FORBIDDEN, "Invalid HMAC-SHA256 signature".to_string()));
+    }
+
+    Ok(())
 }
 
 async fn get_snapshot(
@@ -157,12 +218,16 @@ async fn login(
 }
 
 async fn handle_post_server(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     State(state): State<Arc<ServerAppState>>,
-    Json(server): Json<Server>,
+    bytes: Bytes,
 ) -> Result<Json<Vec<Server>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &bytes, &state)?;
+    let server: Server = serde_json::from_slice(&bytes)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid server payload: {e}")))?;
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     insert_server(&conn, &server).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);
     let servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -170,13 +235,17 @@ async fn handle_post_server(
 }
 
 async fn handle_put_server(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     Path(id): Path<String>,
     State(state): State<Arc<ServerAppState>>,
-    Json(server): Json<Server>,
+    bytes: Bytes,
 ) -> Result<Json<Vec<Server>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &bytes, &state)?;
+    let server: Server = serde_json::from_slice(&bytes)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid server payload: {e}")))?;
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     update_server_entry(&conn, &id, &server).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);
     let servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -184,12 +253,14 @@ async fn handle_put_server(
 }
 
 async fn handle_delete_server(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     Path(id): Path<String>,
     State(state): State<Arc<ServerAppState>>,
 ) -> Result<Json<Vec<Server>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &[], &state)?;
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     delete_server_entry(&conn, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);
     let servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -197,12 +268,16 @@ async fn handle_delete_server(
 }
 
 async fn handle_reorder_servers(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     State(state): State<Arc<ServerAppState>>,
-    Json(servers): Json<Vec<Server>>,
+    bytes: Bytes,
 ) -> Result<Json<Vec<Server>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &bytes, &state)?;
+    let servers: Vec<Server> = serde_json::from_slice(&bytes)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid servers payload: {e}")))?;
     let mut conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     crate::server_monitor::db::update_sort_order(&mut conn, &servers)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);
@@ -223,12 +298,16 @@ async fn handle_get_server_logs(
 }
 
 async fn handle_post_printer(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     State(state): State<Arc<ServerAppState>>,
-    Json(printer): Json<Printer>,
+    bytes: Bytes,
 ) -> Result<Json<Vec<Printer>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &bytes, &state)?;
+    let printer: Printer = serde_json::from_slice(&bytes)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid printer payload: {e}")))?;
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     insert_printer(&conn, &printer).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);
     let printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -236,13 +315,17 @@ async fn handle_post_printer(
 }
 
 async fn handle_put_printer(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     Path(id): Path<String>,
     State(state): State<Arc<ServerAppState>>,
-    Json(printer): Json<Printer>,
+    bytes: Bytes,
 ) -> Result<Json<Vec<Printer>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &bytes, &state)?;
+    let printer: Printer = serde_json::from_slice(&bytes)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid printer payload: {e}")))?;
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     update_printer_entry(&conn, &id, &printer).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);
     let printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -250,12 +333,14 @@ async fn handle_put_printer(
 }
 
 async fn handle_delete_printer(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     Path(id): Path<String>,
     State(state): State<Arc<ServerAppState>>,
 ) -> Result<Json<Vec<Printer>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &[], &state)?;
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     delete_printer_entry(&conn, &id).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);
     let printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -263,12 +348,16 @@ async fn handle_delete_printer(
 }
 
 async fn handle_reorder_printers(
+    method: Method,
+    uri: Uri,
     headers: HeaderMap,
     State(state): State<Arc<ServerAppState>>,
-    Json(printers): Json<Vec<Printer>>,
+    bytes: Bytes,
 ) -> Result<Json<Vec<Printer>>, (StatusCode, String)> {
+    check_admin_auth(&headers, method.as_str(), uri.path(), &bytes, &state)?;
+    let printers: Vec<Printer> = serde_json::from_slice(&bytes)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid printers payload: {e}")))?;
     let mut conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    check_admin_auth(&headers, &conn)?;
     crate::printer_dashboard::db::update_printer_sort_order(&mut conn, &printers)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     notify_entities_updated(&state);

@@ -2,6 +2,7 @@ use tauri::Manager;
 
 pub mod client;
 pub mod config;
+pub mod crypto;
 pub mod db;
 pub mod endpoint;
 pub mod net;

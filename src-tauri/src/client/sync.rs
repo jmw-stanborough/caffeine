@@ -53,8 +53,8 @@ pub fn start_client_sync_worker(app: AppHandle) {
                 continue;
             }
 
-            let base_url = format!("http://{}:{}", settings.target_host, settings.target_port);
-            let ws_url = format!("ws://{}:{}/api/v1/stream", settings.target_host, settings.target_port);
+            let base_url = crate::config::build_http_base_url(&settings.target_host, settings.target_port);
+            let ws_url = crate::config::build_ws_url(&settings.target_host, settings.target_port, "api/v1/stream");
 
             match fetch_initial_snapshot(&http_client, &base_url).await {
                 Ok(snapshot) => {
