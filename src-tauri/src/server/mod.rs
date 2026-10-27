@@ -117,7 +117,7 @@ pub async fn start_embedded_server(
     bind_ip: &str,
     port: u16,
     db_path: PathBuf,
-    admin_token_override: Option<String>,
+    server_tokens_override: Option<Vec<crate::config::ServerTokenEntry>>,
 ) -> Result<ServerInstance, String> {
     let conn = init_server_db(&db_path)?;
     crate::db::init_db_schema(&conn)?;
@@ -125,19 +125,12 @@ pub async fn start_embedded_server(
     let (broadcast_tx, _) = broadcast::channel::<ServerBroadcastEvent>(512);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-    let admin_token = admin_token_override.or_else(|| {
-        crate::config::load_machine_settings()
-            .ok()
-            .and_then(|m| m.admin_token)
-            .filter(|t| !t.trim().is_empty())
-    });
-
     let app_state = Arc::new(ServerAppState {
         db: Mutex::new(conn),
         broadcast_tx: broadcast_tx.clone(),
         app,
         nonce_cache: Mutex::new(auth::NonceCache::new()),
-        admin_token,
+        server_tokens: server_tokens_override,
     });
 
     let router = create_router(app_state);
@@ -225,7 +218,12 @@ mod tests {
             "127.0.0.1",
             0,
             db_path.clone(),
-            Some(token.to_string()),
+            Some(vec![crate::config::ServerTokenEntry {
+                id: "tok-1".to_string(),
+                label: "Admin Console".to_string(),
+                token: token.to_string(),
+                created_at: "2026-10-27T00:00:00Z".to_string(),
+            }]),
         )
         .await
         .expect("Failed to start test server");
@@ -291,6 +289,92 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(replay_res.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let mut server_instance = server_instance;
+        server_instance.stop();
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[tokio::test]
+    async fn test_token_map_multi_user_isolation_and_rotation() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("caffeine_test_tokens_{nanos}.db"));
+
+        let token_user_a = "caff_sec_user_a_initial_key";
+        let token_user_b = "caff_sec_user_b_isolated_key";
+
+        let server_instance = start_embedded_server(
+            None,
+            "127.0.0.1",
+            0,
+            db_path.clone(),
+            Some(vec![
+                crate::config::ServerTokenEntry {
+                    id: "usr-a".to_string(),
+                    label: "User A Workstation".to_string(),
+                    token: token_user_a.to_string(),
+                    created_at: "2026-10-27T00:00:00Z".to_string(),
+                },
+                crate::config::ServerTokenEntry {
+                    id: "usr-b".to_string(),
+                    label: "User B Laptop".to_string(),
+                    token: token_user_b.to_string(),
+                    created_at: "2026-10-27T00:00:00Z".to_string(),
+                },
+            ]),
+        )
+        .await
+        .expect("Failed to start server");
+
+        let addr = server_instance.bound_addr;
+        let client = reqwest::Client::new();
+        let servers_url = format!("http://{addr}/api/v1/servers");
+        let payload = r#"{"id":"srv-multi","host":"10.0.0.99","label":"Test Server Multi","description":null,"agent":null,"sort_order":0}"#;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let nonce_a = "nonce_usr_a_1";
+        let canonical_a = crate::crypto::compute_canonical_string("POST", "/api/v1/servers", now, nonce_a, payload.as_bytes());
+        let sig_a = crate::crypto::compute_hmac_sha256(token_user_a, &canonical_a).unwrap();
+        let res_a = client.post(&servers_url)
+            .header("X-Caffeine-Timestamp", now.to_string())
+            .header("X-Caffeine-Nonce", nonce_a)
+            .header("X-Caffeine-Signature", sig_a)
+            .header("Content-Type", "application/json")
+            .body(payload)
+            .send().await.unwrap();
+        assert_eq!(res_a.status(), reqwest::StatusCode::OK);
+
+        let payload_b = r#"{"id":"srv-multi-2","host":"10.0.0.98","label":"Test Server Multi 2","description":null,"agent":null,"sort_order":0}"#;
+        let nonce_b = "nonce_usr_b_1";
+        let canonical_b = crate::crypto::compute_canonical_string("POST", "/api/v1/servers", now, nonce_b, payload_b.as_bytes());
+        let sig_b = crate::crypto::compute_hmac_sha256(token_user_b, &canonical_b).unwrap();
+        let res_b = client.post(&servers_url)
+            .header("X-Caffeine-Timestamp", now.to_string())
+            .header("X-Caffeine-Nonce", nonce_b)
+            .header("X-Caffeine-Signature", sig_b)
+            .header("Content-Type", "application/json")
+            .body(payload_b)
+            .send().await.unwrap();
+        assert_eq!(res_b.status(), reqwest::StatusCode::OK);
+
+        let nonce_c = "nonce_usr_c_1";
+        let canonical_c = crate::crypto::compute_canonical_string("POST", "/api/v1/servers", now, nonce_c, payload.as_bytes());
+        let sig_c = crate::crypto::compute_hmac_sha256("caff_sec_invalid_key", &canonical_c).unwrap();
+        let res_c = client.post(&servers_url)
+            .header("X-Caffeine-Timestamp", now.to_string())
+            .header("X-Caffeine-Nonce", nonce_c)
+            .header("X-Caffeine-Signature", sig_c)
+            .header("Content-Type", "application/json")
+            .body(payload)
+            .send().await.unwrap();
+        assert_eq!(res_c.status(), reqwest::StatusCode::FORBIDDEN);
 
         let mut server_instance = server_instance;
         server_instance.stop();

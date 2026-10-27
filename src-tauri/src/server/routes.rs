@@ -28,7 +28,7 @@ pub struct ServerAppState {
     pub broadcast_tx: broadcast::Sender<ServerBroadcastEvent>,
     pub app: Option<AppHandle>,
     pub nonce_cache: Mutex<super::auth::NonceCache>,
-    pub admin_token: Option<String>,
+    pub server_tokens: Option<Vec<crate::config::ServerTokenEntry>>,
 }
 
 fn notify_entities_updated(state: &ServerAppState) {
@@ -101,25 +101,46 @@ fn check_admin_auth(
         .check_and_record(nonce, timestamp, now)
         .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
 
-    let token = crate::config::load_machine_settings()
-        .ok()
-        .and_then(|m| m.admin_token)
-        .or_else(|| state.admin_token.clone())
-        .filter(|t| !t.trim().is_empty())
-        .ok_or((StatusCode::FORBIDDEN, "Server has no admin token configured".to_string()))?;
+    let active_tokens: Vec<String> = if let Some(override_tokens) = &state.server_tokens {
+        override_tokens.iter().map(|t| t.token.clone()).collect()
+    } else {
+        crate::config::load_machine_settings()
+            .ok()
+            .map(|m| m.server_tokens.into_iter().map(|t| t.token).collect())
+            .unwrap_or_default()
+    };
 
-    let valid = super::auth::validate_hmac_signature(
-        token.trim(),
-        method,
-        uri_path,
-        timestamp,
-        nonce,
-        body,
-        signature,
-    )
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    if active_tokens.is_empty() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Server has no admin tokens configured".to_string(),
+        ));
+    }
 
-    if !valid {
+    let mut authorized = false;
+    for token in &active_tokens {
+        if token.trim().is_empty() {
+            continue;
+        }
+        match super::auth::validate_hmac_signature(
+            token.trim(),
+            method,
+            uri_path,
+            timestamp,
+            nonce,
+            body,
+            signature,
+        ) {
+            Ok(true) => {
+                authorized = true;
+                break;
+            }
+            Ok(false) => {}
+            Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+        }
+    }
+
+    if !authorized {
         return Err((StatusCode::FORBIDDEN, "Invalid HMAC-SHA256 signature".to_string()));
     }
 

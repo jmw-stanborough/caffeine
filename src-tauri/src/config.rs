@@ -41,6 +41,30 @@ impl Default for UserProfileSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerTokenEntry {
+    pub id: String,
+    pub label: String,
+    pub token: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServerTokenPublic {
+    pub id: String,
+    pub label: String,
+    pub created_at: String,
+    pub token_preview: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GeneratedTokenResponse {
+    pub id: String,
+    pub label: String,
+    pub token: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MachineSettings {
     #[serde(default)]
     pub server_mode: bool,
@@ -49,6 +73,8 @@ pub struct MachineSettings {
     #[serde(default = "default_server_bind")]
     pub server_bind: String,
     #[serde(default)]
+    pub server_tokens: Vec<ServerTokenEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admin_token: Option<String>,
 }
 
@@ -58,6 +84,7 @@ impl Default for MachineSettings {
             server_mode: false,
             server_port: default_port(),
             server_bind: default_server_bind(),
+            server_tokens: Vec::new(),
             admin_token: None,
         }
     }
@@ -75,6 +102,8 @@ pub struct AppSettings {
     pub server_port: u16,
     #[serde(default = "default_server_bind")]
     pub server_bind: String,
+    #[serde(default)]
+    pub server_tokens: Vec<ServerTokenPublic>,
     #[serde(default)]
     pub server_admin_token: Option<String>,
     #[serde(default)]
@@ -119,6 +148,7 @@ impl Default for AppSettings {
             server_mode: false,
             server_port: default_port(),
             server_bind: default_server_bind(),
+            server_tokens: Vec::new(),
             server_admin_token: None,
             admin_token: None,
             theme: default_theme(),
@@ -159,8 +189,23 @@ pub fn load_machine_settings() -> Result<MachineSettings, String> {
     let contents = fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read machine settings at {:?}: {e}", path))?;
 
-    serde_json::from_str::<MachineSettings>(&contents)
-        .map_err(|e| format!("Failed to parse machine settings JSON at {:?}: {e}", path))
+    let mut settings = serde_json::from_str::<MachineSettings>(&contents)
+        .map_err(|e| format!("Failed to parse machine settings JSON at {:?}: {e}", path))?;
+
+    if settings.server_tokens.is_empty() {
+        if let Some(tok) = &settings.admin_token {
+            if !tok.trim().is_empty() {
+                settings.server_tokens.push(ServerTokenEntry {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    label: "Default Admin".to_string(),
+                    token: tok.trim().to_string(),
+                    created_at: current_utc_iso(),
+                });
+            }
+        }
+    }
+
+    Ok(settings)
 }
 
 pub fn save_machine_settings(settings: &MachineSettings) -> Result<(), String> {
@@ -203,6 +248,16 @@ pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
     };
 
     let machine_settings = load_machine_settings().unwrap_or_default();
+    let public_tokens = machine_settings
+        .server_tokens
+        .iter()
+        .map(|e| ServerTokenPublic {
+            id: e.id.clone(),
+            label: e.label.clone(),
+            created_at: e.created_at.clone(),
+            token_preview: mask_token(&e.token),
+        })
+        .collect();
 
     Ok(AppSettings {
         target_host: user_settings.target_host,
@@ -210,6 +265,7 @@ pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
         server_mode: machine_settings.server_mode,
         server_port: machine_settings.server_port,
         server_bind: machine_settings.server_bind,
+        server_tokens: public_tokens,
         server_admin_token: machine_settings.admin_token,
         admin_token: user_settings.admin_token,
         theme: user_settings.theme,
@@ -234,14 +290,15 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), 
     fs::write(&user_path, user_serialized)
         .map_err(|e| format!("Failed to write user settings to {:?}: {e}", user_path))?;
 
+    let current_machine_settings = load_machine_settings().unwrap_or_default();
     let new_machine_settings = MachineSettings {
         server_mode: settings.server_mode,
         server_port: settings.server_port,
         server_bind: settings.server_bind.clone(),
-        admin_token: settings.server_admin_token.clone(),
+        server_tokens: current_machine_settings.server_tokens.clone(),
+        admin_token: None,
     };
 
-    let current_machine_settings = load_machine_settings().unwrap_or_default();
     if new_machine_settings != current_machine_settings {
         save_machine_settings(&new_machine_settings)?;
     }
@@ -328,6 +385,179 @@ pub async fn update_app_settings_cmd(
     Ok(settings)
 }
 
+pub fn mask_token(token: &str) -> String {
+    let suffix = if token.len() >= 4 {
+        &token[token.len() - 4..]
+    } else {
+        token
+    };
+    format!("caff_••••••••{suffix}")
+}
+
+pub fn generate_secure_token() -> String {
+    let mut bytes = [0u8; 32];
+    argon2::password_hash::rand_core::RngCore::fill_bytes(
+        &mut argon2::password_hash::rand_core::OsRng,
+        &mut bytes,
+    );
+    format!("caff_sec_{}", hex::encode(bytes))
+}
+
+pub fn current_utc_iso() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format_epoch_secs_as_iso(secs)
+}
+
+pub fn format_epoch_secs_as_iso(secs: u64) -> String {
+    let days = secs / 86400;
+    let rem_secs = secs % 86400;
+    let hours = rem_secs / 3600;
+    let minutes = (rem_secs % 3600) / 60;
+    let seconds = rem_secs % 60;
+
+    let mut year = 1970;
+    let mut d = days;
+
+    loop {
+        let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        let days_in_year = if leap { 366 } else { 365 };
+        if d < days_in_year {
+            break;
+        }
+        d -= days_in_year;
+        year += 1;
+    }
+
+    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let days_in_months = [
+        31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    ];
+
+    let mut month = 1;
+    for &dim in &days_in_months {
+        if d < dim {
+            break;
+        }
+        d -= dim;
+        month += 1;
+    }
+    let day = d + 1;
+
+    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
+}
+
+pub fn add_server_token(label: &str) -> Result<GeneratedTokenResponse, String> {
+    let trimmed_label = label.trim();
+    if trimmed_label.is_empty() {
+        return Err("Token label cannot be empty".to_string());
+    }
+
+    let mut machine = load_machine_settings()?;
+    if machine
+        .server_tokens
+        .iter()
+        .any(|t| t.label.eq_ignore_ascii_case(trimmed_label))
+    {
+        return Err(format!("A token with the label '{trimmed_label}' already exists"));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let token = generate_secure_token();
+    let created_at = current_utc_iso();
+
+    let entry = ServerTokenEntry {
+        id: id.clone(),
+        label: trimmed_label.to_string(),
+        token: token.clone(),
+        created_at: created_at.clone(),
+    };
+
+    machine.server_tokens.push(entry);
+    save_machine_settings(&machine)?;
+
+    Ok(GeneratedTokenResponse {
+        id,
+        label: trimmed_label.to_string(),
+        token,
+        created_at,
+    })
+}
+
+pub fn regenerate_server_token(id: &str) -> Result<GeneratedTokenResponse, String> {
+    let mut machine = load_machine_settings()?;
+    let entry = machine
+        .server_tokens
+        .iter_mut()
+        .find(|t| t.id == id)
+        .ok_or_else(|| format!("Token with ID '{id}' not found"))?;
+
+    let new_token = generate_secure_token();
+    let new_created_at = current_utc_iso();
+
+    entry.token = new_token.clone();
+    entry.created_at = new_created_at.clone();
+    let label = entry.label.clone();
+    let token_id = entry.id.clone();
+
+    save_machine_settings(&machine)?;
+
+    Ok(GeneratedTokenResponse {
+        id: token_id,
+        label,
+        token: new_token,
+        created_at: new_created_at,
+    })
+}
+
+pub fn delete_server_token(id: &str) -> Result<(), String> {
+    let mut machine = load_machine_settings()?;
+    let original_len = machine.server_tokens.len();
+    machine.server_tokens.retain(|t| t.id != id);
+
+    if machine.server_tokens.len() == original_len {
+        return Err(format!("Token with ID '{id}' not found"));
+    }
+
+    save_machine_settings(&machine)
+}
+
+pub fn list_server_tokens() -> Result<Vec<ServerTokenPublic>, String> {
+    let machine = load_machine_settings()?;
+    Ok(machine
+        .server_tokens
+        .into_iter()
+        .map(|t| ServerTokenPublic {
+            id: t.id,
+            label: t.label,
+            created_at: t.created_at,
+            token_preview: mask_token(&t.token),
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn get_server_tokens_cmd() -> Result<Vec<ServerTokenPublic>, String> {
+    list_server_tokens()
+}
+
+#[tauri::command]
+pub fn create_server_token_cmd(label: String) -> Result<GeneratedTokenResponse, String> {
+    add_server_token(&label)
+}
+
+#[tauri::command]
+pub fn regenerate_server_token_cmd(id: String) -> Result<GeneratedTokenResponse, String> {
+    regenerate_server_token(&id)
+}
+
+#[tauri::command]
+pub fn delete_server_token_cmd(id: String) -> Result<(), String> {
+    delete_server_token(&id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,6 +606,7 @@ mod tests {
             server_mode: true,
             server_port: 6310,
             server_bind: "127.0.0.1".to_string(),
+            server_tokens: Vec::new(),
             admin_token: Some("machine_server_token".to_string()),
         };
 
@@ -394,6 +625,7 @@ mod tests {
             server_mode: false,
             server_port: 6310,
             server_bind: "0.0.0.0".to_string(),
+            server_tokens: Vec::new(),
             admin_token: None,
         };
         let ms2 = MachineSettings::default();
@@ -403,8 +635,32 @@ mod tests {
             server_mode: true,
             server_port: 6310,
             server_bind: "0.0.0.0".to_string(),
+            server_tokens: Vec::new(),
             admin_token: None,
         };
         assert_ne!(ms1, ms3);
+    }
+
+    #[test]
+    fn test_mask_token() {
+        assert_eq!(mask_token("caff_sec_abcdef1234"), "caff_••••••••1234");
+        assert_eq!(mask_token("1234"), "caff_••••••••1234");
+        assert_eq!(mask_token("abc"), "caff_••••••••abc");
+    }
+
+    #[test]
+    fn test_generate_secure_token() {
+        let t1 = generate_secure_token();
+        let t2 = generate_secure_token();
+        assert!(t1.starts_with("caff_sec_"));
+        assert!(t2.starts_with("caff_sec_"));
+        assert_ne!(t1, t2);
+        assert_eq!(t1.len(), "caff_sec_".len() + 64);
+    }
+
+    #[test]
+    fn test_format_epoch_secs_as_iso() {
+        assert_eq!(format_epoch_secs_as_iso(0), "1970-01-01T00:00:00Z");
+        assert_eq!(format_epoch_secs_as_iso(1730000000), "2024-10-27T03:33:20Z");
     }
 }

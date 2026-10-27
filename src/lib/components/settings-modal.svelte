@@ -6,12 +6,27 @@
   import { serverStore } from "../../routes/servers/servers.svelte";
   import { invoke } from "@tauri-apps/api/core";
 
+  export interface ServerTokenPublic {
+    id: string;
+    label: string;
+    created_at: string;
+    token_preview: string;
+  }
+
+  export interface GeneratedTokenResponse {
+    id: string;
+    label: string;
+    token: string;
+    created_at: string;
+  }
+
   export interface AppSettings {
     target_host: string;
     target_port: number;
     server_mode: boolean;
     server_port: number;
     server_bind: string;
+    server_tokens?: ServerTokenPublic[];
     server_admin_token?: string | null;
     admin_token: string | null;
     theme: string;
@@ -30,9 +45,13 @@
   let serverMode = $state(false);
   let serverPort = $state(6310);
   let serverBind = $state("0.0.0.0");
-  let serverAdminToken = $state("");
+  let serverTokens = $state<ServerTokenPublic[]>([]);
+  let newLabel = $state("");
+  let generatingToken = $state(false);
+  let tokenActionError = $state<string | null>(null);
+  let revealedSecret = $state<GeneratedTokenResponse | null>(null);
+  let secretCopied = $state(false);
   let adminToken = $state("");
-  let copySuccess = $state(false);
   let theme = $state("system");
   let persistedTheme = $state("system");
   let retentionDays = $state(14);
@@ -62,27 +81,80 @@
     open = false;
   }
 
-  function generateServerToken() {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let token = "caff_";
-    const array = new Uint8Array(28);
-    crypto.getRandomValues(array);
-    for (let i = 0; i < array.length; i++) {
-      token += chars[array[i] % chars.length];
+  async function loadServerTokens() {
+    try {
+      serverTokens = await invoke<ServerTokenPublic[]>("get_server_tokens_cmd");
+    } catch (err) {
+      console.error("Failed to load server tokens", err);
     }
-    serverAdminToken = token;
   }
 
-  async function copyServerToken() {
-    if (!serverAdminToken) return;
+  async function handleCreateToken() {
+    if (!newLabel.trim()) return;
+    generatingToken = true;
+    tokenActionError = null;
     try {
-      await navigator.clipboard.writeText(serverAdminToken);
-      copySuccess = true;
+      const generated = await invoke<GeneratedTokenResponse>("create_server_token_cmd", {
+        label: newLabel.trim(),
+      });
+      revealedSecret = generated;
+      newLabel = "";
+      await loadServerTokens();
+    } catch (err) {
+      tokenActionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      generatingToken = false;
+    }
+  }
+
+  async function handleRegenerateToken(token: ServerTokenPublic) {
+    if (
+      !confirm(
+        `Regenerating the token for "${token.label}" will immediately revoke the previous key. Any remote clients using it will lose access until updated. Proceed?`
+      )
+    ) {
+      return;
+    }
+    tokenActionError = null;
+    try {
+      const regenerated = await invoke<GeneratedTokenResponse>(
+        "regenerate_server_token_cmd",
+        { id: token.id }
+      );
+      revealedSecret = regenerated;
+      await loadServerTokens();
+    } catch (err) {
+      tokenActionError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function handleDeleteToken(token: ServerTokenPublic) {
+    if (
+      !confirm(
+        `Are you sure you want to revoke the token for "${token.label}"? Any remote clients using it will immediately be rejected.`
+      )
+    ) {
+      return;
+    }
+    tokenActionError = null;
+    try {
+      await invoke("delete_server_token_cmd", { id: token.id });
+      await loadServerTokens();
+    } catch (err) {
+      tokenActionError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function copyRevealedSecret() {
+    if (!revealedSecret) return;
+    try {
+      await navigator.clipboard.writeText(revealedSecret.token);
+      secretCopied = true;
       setTimeout(() => {
-        copySuccess = false;
-      }, 2000);
+        secretCopied = false;
+      }, 2500);
     } catch (e) {
-      console.warn("Failed to copy to clipboard", e);
+      console.warn("Failed to copy token", e);
     }
   }
 
@@ -97,7 +169,7 @@
       serverMode = settings.server_mode;
       serverPort = settings.server_port;
       serverBind = settings.server_bind;
-      serverAdminToken = settings.server_admin_token ?? "";
+      serverTokens = settings.server_tokens ?? [];
       adminToken = settings.admin_token ?? "";
       persistedTheme = settings.theme;
       theme = settings.theme;
@@ -122,7 +194,6 @@
         server_mode: serverMode,
         server_port: Number(serverPort) || 6310,
         server_bind: serverBind.trim() || "0.0.0.0",
-        server_admin_token: serverAdminToken.trim() ? serverAdminToken.trim() : null,
         admin_token: adminToken.trim() ? adminToken.trim() : null,
         theme,
         retention_days: Number(retentionDays) || 14,
@@ -268,35 +339,120 @@
                 />
               </div>
             </div>
-            <div class="form-group">
-              <label for="serverAdminToken">Server Admin Token</label>
-              <div class="token-input-row">
+            <div class="token-management-section">
+              <div class="token-section-header">
+                <div>
+                  <h4 class="token-section-title">Client Access Tokens</h4>
+                  <p class="token-section-desc">
+                    Assign labeled keys to authorized remote clients. For security, keys are generated with high entropy and only shown once.
+                  </p>
+                </div>
+              </div>
+
+              {#if tokenActionError}
+                <div class="alert alert-error token-alert">
+                  {tokenActionError}
+                </div>
+              {/if}
+
+              {#if revealedSecret}
+                <div class="revealed-secret-card">
+                  <div class="revealed-secret-header">
+                    <span class="revealed-badge">New Token for "{revealedSecret.label}"</span>
+                    <button
+                      type="button"
+                      class="btn-close-secret"
+                      onclick={() => (revealedSecret = null)}
+                      title="Done"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p class="revealed-warning">
+                    ⚠️ <strong>Copy this key now.</strong> For your security, this key will never be displayed again. If forgotten, you must regenerate it.
+                  </p>
+                  <div class="revealed-key-box">
+                    <code class="revealed-key">{revealedSecret.token}</code>
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm copy-btn"
+                      onclick={copyRevealedSecret}
+                    >
+                      {secretCopied ? "Copied!" : "Copy Key"}
+                    </button>
+                  </div>
+                </div>
+              {/if}
+
+              {#if serverTokens.length > 0}
+                <div class="token-list-container">
+                  <table class="token-table">
+                    <thead>
+                      <tr>
+                        <th>Label</th>
+                        <th>Key Preview</th>
+                        <th>Created</th>
+                        <th class="actions-header">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each serverTokens as token (token.id)}
+                        <tr>
+                          <td class="token-label-cell">
+                            <strong>{token.label}</strong>
+                          </td>
+                          <td class="token-preview-cell">
+                            <code>{token.token_preview}</code>
+                          </td>
+                          <td class="token-date-cell">
+                            {new Date(token.created_at).toLocaleDateString()}
+                          </td>
+                          <td class="token-actions-cell">
+                            <button
+                              type="button"
+                              class="btn btn-secondary btn-xs"
+                              onclick={() => handleRegenerateToken(token)}
+                              title="Regenerate this specific key"
+                            >
+                              Regenerate
+                            </button>
+                            <button
+                              type="button"
+                              class="btn btn-danger btn-xs"
+                              onclick={() => handleDeleteToken(token)}
+                              title="Revoke and delete this key"
+                            >
+                              Revoke
+                            </button>
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {:else}
+                <div class="empty-tokens-placeholder">
+                  No access tokens configured yet. Create one below to grant remote clients edit permissions.
+                </div>
+              {/if}
+
+              <div class="create-token-row">
                 <input
-                  id="serverAdminToken"
                   type="text"
-                  bind:value={serverAdminToken}
-                  placeholder="Optional: Set or generate a token for remote clients"
+                  bind:value={newLabel}
+                  placeholder="Token label (e.g. Josh's Laptop, Reception PC)"
+                  class="token-label-input"
+                  onkeydown={(e) => e.key === "Enter" && handleCreateToken()}
                 />
                 <button
                   type="button"
                   class="btn btn-secondary btn-sm"
-                  onclick={generateServerToken}
+                  onclick={handleCreateToken}
+                  disabled={!newLabel.trim() || generatingToken}
                 >
-                  Generate
+                  {generatingToken ? "Generating..." : "Generate Key"}
                 </button>
-                {#if serverAdminToken}
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-sm"
-                    onclick={copyServerToken}
-                  >
-                    {copySuccess ? "Copied!" : "Copy"}
-                  </button>
-                {/if}
               </div>
-              <span class="field-hint">
-                Provide this token to remote Caffeine clients requiring edit or delete permissions.
-              </span>
             </div>
 
             <p class="field-hint">
@@ -433,16 +589,6 @@
     background-color: var(--color-surface-active);
     padding: 2px 4px;
     border-radius: 4px;
-  }
-
-  .token-input-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .token-input-row input {
-    flex: 1;
   }
 
   .btn-sm {
@@ -601,5 +747,166 @@
   .btn-primary:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .token-management-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: solid var(--width-border) var(--color-border);
+  }
+
+  .token-section-title {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .token-section-desc {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  .revealed-secret-card {
+    background-color: var(--color-surface-active);
+    border: solid var(--width-border) var(--color-primary);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .revealed-secret-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .revealed-badge {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+
+  .btn-close-secret {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 2px 6px;
+  }
+
+  .btn-close-secret:hover {
+    color: var(--color-text);
+  }
+
+  .revealed-warning {
+    margin: 0;
+    font-size: 0.775rem;
+    color: var(--color-text);
+    line-height: 1.3;
+  }
+
+  .revealed-key-box {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background-color: var(--color-base);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 4px;
+    padding: 6px 10px;
+  }
+
+  .revealed-key {
+    flex: 1;
+    font-family: monospace;
+    font-size: 0.8125rem;
+    word-break: break-all;
+    user-select: all;
+    color: var(--color-primary);
+  }
+
+  .token-list-container {
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .token-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    text-align: left;
+  }
+
+  .token-table th {
+    background-color: var(--color-surface-active);
+    color: var(--color-text-muted);
+    font-weight: 500;
+    padding: 6px 10px;
+    border-bottom: solid var(--width-border) var(--color-border);
+  }
+
+  .token-table td {
+    padding: 8px 10px;
+    border-bottom: solid var(--width-border) var(--color-border);
+    color: var(--color-text);
+  }
+
+  .token-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .token-preview-cell code {
+    font-size: 0.75rem;
+    background-color: var(--color-surface-hover);
+    padding: 2px 4px;
+    border-radius: 3px;
+  }
+
+  .token-actions-cell {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  .empty-tokens-placeholder {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding: 8px 0;
+  }
+
+  .create-token-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .token-label-input {
+    flex: 1;
+  }
+
+  .btn-xs {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: 3px;
+  }
+
+  .btn-danger {
+    background-color: transparent;
+    color: var(--color-failure);
+    border-color: rgba(238, 102, 102, 0.4);
+  }
+
+  .btn-danger:hover {
+    background-color: rgba(238, 102, 102, 0.15);
+    border-color: var(--color-failure);
   }
 </style>

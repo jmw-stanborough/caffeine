@@ -79,6 +79,10 @@ pub fn run() {
             endpoint::endpoint_close_terminal,
             config::get_app_settings_cmd,
             config::update_app_settings_cmd,
+            config::get_server_tokens_cmd,
+            config::create_server_token_cmd,
+            config::regenerate_server_token_cmd,
+            config::delete_server_token_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

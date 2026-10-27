@@ -140,6 +140,13 @@ pub fn authenticate_and_create_session(
 
 pub fn validate_admin_token(conn: &Connection, token: &str) -> Result<bool, String> {
     if let Ok(machine) = crate::config::load_machine_settings() {
+        if machine
+            .server_tokens
+            .iter()
+            .any(|t| !t.token.trim().is_empty() && crate::crypto::constant_time_eq(token, t.token.trim()))
+        {
+            return Ok(true);
+        }
         if let Some(configured_token) = machine.admin_token {
             if !configured_token.trim().is_empty() && crate::crypto::constant_time_eq(token, configured_token.trim()) {
                 return Ok(true);
