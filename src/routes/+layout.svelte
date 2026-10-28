@@ -7,7 +7,6 @@
   import { printerStore } from "./printers/printers.svelte";
   import { endpointStore } from "./endpoint/endpoint.svelte";
   import TerminalWindow from "./endpoint/terminal-window.svelte";
-  import UnsupportedOs from "./endpoint/unsupported-os.svelte";
   import { applyTheme } from "$lib/theme";
   import { page } from "$app/state";
   import { invoke } from "@tauri-apps/api/core";
@@ -70,15 +69,11 @@
     {#if hasVisitedTerminal}
       <div class="terminal-persistent-wrapper" class:hidden={!isTerminalRoute}>
         <div class="endpoint-page-shell">
-          {#if !endpointStore.osSupport?.is_windows && !endpointStore.osChecking}
-            <UnsupportedOs osSupport={endpointStore.osSupport} />
-          {:else}
-            <div class="endpoint-workspace">
-              <div class="module-fill">
-                <TerminalWindow shell={endpointStore.shell} active={isTerminalRoute} />
-              </div>
+          <div class="endpoint-workspace">
+            <div class="module-fill">
+              <TerminalWindow shell={endpointStore.shell} active={isTerminalRoute} />
             </div>
-          {/if}
+          </div>
         </div>
       </div>
     {/if}

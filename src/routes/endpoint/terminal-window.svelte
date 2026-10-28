@@ -129,6 +129,9 @@
         <span
           class="shell-badge"
           class:pwsh={effectiveShell.is_pwsh}
+          class:zsh={effectiveShell.shell_name === 'zsh'}
+          class:bash={effectiveShell.shell_name === 'bash'}
+          class:fish={effectiveShell.shell_name === 'fish'}
           title={`Executable: ${effectiveShell.executable_path} (Version: ${effectiveShell.version})`}
         >
           {effectiveShell.shell_name}
@@ -222,6 +225,14 @@
     background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
     color: var(--color-primary);
     border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  }
+
+  .shell-badge.zsh,
+  .shell-badge.bash,
+  .shell-badge.fish {
+    background-color: color-mix(in srgb, var(--color-secondary) 15%, var(--color-surface));
+    color: var(--color-secondary);
+    border-color: color-mix(in srgb, var(--color-secondary) 35%, transparent);
   }
 
   .connecting-label {

@@ -51,16 +51,16 @@ export class EndpointStore {
         this.osChecking = false;
       }
 
+      await this.detectShell().catch((err) => {
+        console.warn("Shell detection failed:", err);
+      });
+
       if (!this.osSupport?.is_windows) {
         return;
       }
 
-      await Promise.allSettled([
-        this.fetchMachineInfo(true),
-        this.detectShell(),
-      ]);
-
       if (this.subscriberCount > 0) {
+        await this.fetchMachineInfo(true);
         this.startAutoRefresh();
       }
     })();

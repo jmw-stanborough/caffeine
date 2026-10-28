@@ -142,4 +142,33 @@ describe("EndpointStore", () => {
     expect(checkCalls).toHaveLength(1);
     expect(store.osChecking).toBe(false);
   });
+
+  it("invokes shell detection during init even on non-windows operating systems", async () => {
+    const mockUnixSupport: OsSupportInfo = {
+      is_windows: false,
+      os_name: "Ubuntu",
+      os_version: "24.04",
+      architecture: "x86_64",
+      hostname: "linux-dev",
+      is_admin: false,
+    };
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_check_os_support") return mockUnixSupport;
+      if (cmd === "endpoint_detect_shell") {
+        return {
+          shell_name: "bash",
+          executable_path: "/bin/bash",
+          version: "GNU bash, version 5.2.21",
+          is_pwsh: false,
+        };
+      }
+      return null;
+    });
+
+    await store.init();
+    expect(store.osSupport?.is_windows).toBe(false);
+    expect(mockInvoke).toHaveBeenCalledWith("endpoint_detect_shell");
+    expect(store.shell?.shell_name).toBe("bash");
+  });
 });
