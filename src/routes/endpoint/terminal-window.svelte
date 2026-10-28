@@ -73,19 +73,6 @@
     });
   }
 
-  function sendData(data: string) {
-    handleData(data);
-  }
-
-  function handleInterrupt() {
-    sendData("\x03");
-  }
-
-  function handleClear() {
-    terminalView?.clear();
-    sendData("Clear-Host\r");
-  }
-
   async function handleRestart() {
     cleanupListeners();
     try {
@@ -153,48 +140,6 @@
     </div>
 
     <div class="header-actions">
-      <div class="quick-commands">
-        <button
-          class="btn-quick"
-          onclick={() => sendData("ping 8.8.8.8\r")}
-          title="Run ping 8.8.8.8"
-        >
-          ping
-        </button>
-        <button
-          class="btn-quick"
-          onclick={() => sendData("ipconfig\r")}
-          title="Run ipconfig"
-        >
-          ipconfig
-        </button>
-        <button
-          class="btn-quick"
-          onclick={() => sendData("Get-Process | Select-Object -First 5\r")}
-          title="Show top 5 processes"
-        >
-          ps
-        </button>
-      </div>
-
-      <div class="action-divider"></div>
-
-      <button
-        class="btn-interrupt"
-        onclick={handleInterrupt}
-        title="Send Ctrl+C to cancel running process"
-      >
-        Ctrl+C
-      </button>
-
-      <button
-        class="btn-action"
-        onclick={handleClear}
-        title="Clear terminal screen"
-      >
-        Clear
-      </button>
-
       <button
         class="btn-action"
         onclick={handleRestart}
@@ -292,55 +237,6 @@
     gap: 0.35rem;
     margin-left: auto;
     flex-shrink: 0;
-  }
-
-  .quick-commands {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .btn-quick {
-    background-color: var(--color-base);
-    border: solid 1px var(--color-border);
-    color: var(--color-text);
-    padding: 0.18rem 0.45rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-family: monospace;
-    cursor: pointer;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
-  }
-
-  .btn-quick:hover {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-primary);
-  }
-
-  .action-divider {
-    width: 1px;
-    height: 14px;
-    background-color: var(--color-border);
-    margin: 0 0.15rem;
-    flex-shrink: 0;
-  }
-
-  .btn-interrupt {
-    background-color: color-mix(in srgb, var(--color-failure) 15%, var(--color-surface));
-    border: solid 1px var(--color-failure);
-    color: var(--color-failure);
-    padding: 0.18rem 0.5rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    font-family: monospace;
-    cursor: pointer;
-    transition: all 0.12s ease;
-  }
-
-  .btn-interrupt:hover {
-    background-color: var(--color-failure);
-    color: var(--color-base);
   }
 
   .btn-action {
