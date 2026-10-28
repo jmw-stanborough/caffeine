@@ -47,7 +47,7 @@
           aria-current={isActive ? "page" : undefined}
           {href}
         >
-          <Icon size={16} />
+          <Icon size={14} />
           <span>{label}</span>
           {#if badgeCount > 0}
             <span
@@ -126,7 +126,7 @@
     padding: 8px 12px 4px 12px;
     color: var(--color-secondary);
     font-family: inherit;
-    font-size: 0.8rem;
+    font-size: 0.95rem;
     font-weight: 600;
     user-select: none;
     cursor: default;
@@ -166,7 +166,8 @@
   }
 
   .nav-item.is-child {
-    padding-left: 24px;
+    padding: 6px 32px 6px 24px;
+    font-size: 0.8rem;
   }
 
   .nav-item:hover {
