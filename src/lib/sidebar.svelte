@@ -3,10 +3,15 @@
   import { Coffee } from "$lib/components/icons";
   import { Cog } from "$lib/icons";
   import SettingsModal from "$lib/components/settings-modal.svelte";
-  import { getSidebarNavigationItems, type SidebarItem } from "$lib/features";
+  import {
+    DASHBOARD_NAV_ITEM,
+    getSidebarSections,
+    type SidebarSection,
+  } from "$lib/features";
 
-  let navigationItems = $derived<SidebarItem[]>(getSidebarNavigationItems());
+  let sections = $derived<SidebarSection[]>(getSidebarSections());
   let isSettingsOpen = $state(false);
+  let isDashboardActive = $derived(page.url.pathname === "/");
 </script>
 
 <aside class="sidebar">
@@ -16,25 +21,44 @@
   </div>
 
   <nav class="nav-list">
-    {#each navigationItems as { href, label, badgeCount = 0, icon: Icon }}
-      {@const isActive = href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href)}
-      <a
-        class="nav-item"
-        class:active={isActive}
-        aria-current={isActive ? "page" : undefined}
-        {href}
-      >
-        <Icon size={16} />
-        <span>{label}</span>
-        {#if badgeCount > 0}
-          <span
-            class="count-badge notification-badge"
-            aria-label="{badgeCount} {badgeCount === 1 ? 'alert' : 'alerts'}"
-          >
-            {badgeCount}
-          </span>
-        {/if}
-      </a>
+    <a
+      class="nav-item"
+      class:active={isDashboardActive}
+      aria-current={isDashboardActive ? "page" : undefined}
+      href={DASHBOARD_NAV_ITEM.href}
+    >
+      <DASHBOARD_NAV_ITEM.icon size={16} />
+      <span>{DASHBOARD_NAV_ITEM.label}</span>
+    </a>
+
+    {#each sections as section, sectionIndex}
+      {#if sectionIndex > 0}
+        <hr class="sidebar-divider" />
+      {/if}
+      <div class="sidebar-subheader">
+        <section.icon size={16} class="subheader-icon" />
+        <span class="subheader-title">{section.label}</span>
+      </div>
+      {#each section.items as { href, label, badgeCount = 0, icon: Icon }}
+        {@const isActive = page.url.pathname.startsWith(href)}
+        <a
+          class="nav-item is-child"
+          class:active={isActive}
+          aria-current={isActive ? "page" : undefined}
+          {href}
+        >
+          <Icon size={16} />
+          <span>{label}</span>
+          {#if badgeCount > 0}
+            <span
+              class="count-badge notification-badge"
+              aria-label="{badgeCount} {badgeCount === 1 ? 'alert' : 'alerts'}"
+            >
+              {badgeCount}
+            </span>
+          {/if}
+        </a>
+      {/each}
     {/each}
   </nav>
 
@@ -95,6 +119,25 @@
     flex: 1;
   }
 
+  .sidebar-subheader {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 8px 12px 4px 12px;
+    color: var(--color-secondary);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    user-select: none;
+    cursor: default;
+  }
+
+  :global(.subheader-icon) {
+    color: var(--color-secondary);
+    flex-shrink: 0;
+  }
+
   .sidebar-footer {
     display: flex;
     flex-direction: column;
@@ -105,6 +148,10 @@
   .sidebar-divider {
     border: none;
     border-top: solid var(--width-border) var(--color-border);
+    margin: 8px 0 4px 0;
+  }
+
+  .sidebar-footer .sidebar-divider {
     margin: 0 0 8px 0;
   }
 
@@ -126,6 +173,10 @@
     color: var(--color-text);
     font-size: 0.95rem;
     transition: background-color 0.12s ease, color 0.12s ease;
+  }
+
+  .nav-item.is-child {
+    padding-left: 24px;
   }
 
   .nav-item:hover {

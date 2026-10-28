@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getDashboardWidgets,
   getSidebarNavigationItems,
+  getSidebarSections,
   registerFeature,
 } from "./registry.svelte";
 
@@ -18,7 +19,30 @@ describe("feature registry", () => {
     );
 
     expect(featureLabels).toEqual(sortedFeatureLabels);
-    expect(featureLabels).toEqual(["Endpoint", "Printers", "Servers"]);
+    expect(featureLabels).toEqual([
+      "Hardware",
+      "Printers",
+      "Servers",
+      "Terminal",
+      "Updates",
+    ]);
+  });
+
+  it("provides sidebar sections grouped by network and endpoint with correct subheaders", () => {
+    const sections = getSidebarSections();
+    expect(sections).toHaveLength(2);
+
+    expect(sections[0].id).toBe("network");
+    expect(sections[0].label).toBe("Network");
+    expect(sections[0].items.map((i) => i.label)).toEqual(["Printers", "Servers"]);
+
+    expect(sections[1].id).toBe("endpoint");
+    expect(sections[1].label).toBe("Endpoint");
+    expect(sections[1].items.map((i) => i.label)).toEqual([
+      "Hardware",
+      "Terminal",
+      "Updates",
+    ]);
   });
 
   it("provides dashboard widgets alphabetically sorted excluding dashboard", () => {
@@ -32,7 +56,7 @@ describe("feature registry", () => {
     );
 
     expect(widgetLabels).toEqual(sortedLabels);
-    expect(widgetLabels).toEqual(["Endpoint", "Printers", "Servers"]);
+    expect(widgetLabels).toEqual(["Hardware", "Printers", "Servers"]);
   });
 
   it("automatically sorts newly registered features in both sidebar and dashboard", () => {

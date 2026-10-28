@@ -1,9 +1,13 @@
 export { default as AlertTriangle } from "$lib/icons/AlertTriangle.svelte";
 export { default as Coffee } from "$lib/icons/Coffee.svelte";
 export { default as Cog } from "$lib/icons/Cog.svelte";
+export { default as Cpu } from "./Cpu.svelte";
 export { default as DesktopPc } from "./DesktopPc.svelte";
 export { default as Filter } from "$lib/icons/Filter.svelte";
 export { default as LayoutDashboard } from "./LayoutDashboard.svelte";
+export { default as Network } from "./Network.svelte";
 export { default as Printer } from "./Printer.svelte";
 export { default as Server } from "./Server.svelte";
 export { default as Sort } from "$lib/icons/Sort.svelte";
+export { default as Terminal } from "./Terminal.svelte";
+export { default as Updates } from "./Updates.svelte";

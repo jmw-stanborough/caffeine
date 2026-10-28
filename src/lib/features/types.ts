@@ -7,6 +7,7 @@ export interface FeatureDefinition {
   icon: Component<{ size?: number | string; class?: string }>;
   badgeCount?: () => number | undefined;
   widget?: Component;
+  group?: string;
 }
 
 export interface SidebarItem {
@@ -14,6 +15,13 @@ export interface SidebarItem {
   label: string;
   icon: Component<{ size?: number | string; class?: string }>;
   badgeCount?: number;
+}
+
+export interface SidebarSection {
+  id: string;
+  label: string;
+  icon: Component<{ size?: number | string; class?: string }>;
+  items: SidebarItem[];
 }
 
 export interface DashboardWidget {
