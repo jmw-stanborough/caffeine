@@ -1,3 +1,4 @@
+pub mod filesystem;
 pub mod native;
 pub mod powershell;
 pub mod system;
