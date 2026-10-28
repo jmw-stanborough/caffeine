@@ -6,20 +6,29 @@
 
   interface Props {
     title: string;
+    enableTelemetry?: boolean;
     children: Snippet;
   }
 
-  let { title, children }: Props = $props();
+  let { title, enableTelemetry = false, children }: Props = $props();
   const store = endpointStore;
 
   onMount(() => {
-    store.subscribe().catch((err) => {
-      console.error("Endpoint initialization failed:", err);
-    });
+    if (enableTelemetry) {
+      store.subscribe().catch((err) => {
+        console.error("Endpoint initialization failed:", err);
+      });
+    } else {
+      store.init().catch((err) => {
+        console.error("Endpoint initialization failed:", err);
+      });
+    }
   });
 
   onDestroy(() => {
-    store.unsubscribe();
+    if (enableTelemetry) {
+      store.unsubscribe();
+    }
   });
 </script>
 

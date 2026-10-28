@@ -6,7 +6,7 @@
   const store = endpointStore;
 </script>
 
-<EndpointModuleShell title="Hardware">
+<EndpointModuleShell title="Hardware" enableTelemetry={true}>
   <div class="module-fill">
     <HardwarePanel
       machine={store.machine}
