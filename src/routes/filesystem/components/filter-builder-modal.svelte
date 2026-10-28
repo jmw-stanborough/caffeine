@@ -239,7 +239,7 @@
               type="text"
               class="input-val"
               bind:value={row.value}
-              placeholder={row.property === "content" ? 'e.g. pineapple' : 'value...'}
+              placeholder={row.property === "content" ? 'text to find...' : 'value...'}
             />
           {/if}
 
@@ -268,7 +268,7 @@
           type="text"
           class="input-filter-name"
           bind:value={filterName}
-          placeholder="Filter name (e.g. Temp files, Text with pineapple)"
+          placeholder="Filter name (e.g. Temp files, Custom logs)"
         />
         <button
           type="button"
@@ -301,7 +301,7 @@
     flex-direction: column;
     gap: 1rem;
     padding: 1.25rem;
-    color: var(--color-text-primary);
+    color: var(--color-text);
   }
 
   .modal-header {
@@ -320,7 +320,7 @@
     border: none;
     background: transparent;
     font-size: 1.25rem;
-    color: var(--color-text-secondary);
+    color: var(--color-text-muted);
     cursor: pointer;
   }
 
@@ -329,7 +329,7 @@
     align-items: center;
     gap: 1rem;
     padding: 0.5rem 0.75rem;
-    background-color: var(--color-background);
+    background-color: var(--color-base);
     border-radius: 0.375rem;
     font-size: 0.8125rem;
   }
@@ -372,9 +372,21 @@
     font-size: 0.8125rem;
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.25rem;
-    background-color: var(--color-background);
-    color: var(--color-text-primary);
+    background-color: var(--color-base);
+    color: var(--color-text);
+    color-scheme: inherit;
     padding: 0.375rem 0.5rem;
+  }
+
+  select:focus,
+  input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+  }
+
+  option {
+    background-color: var(--color-surface);
+    color: var(--color-text);
   }
 
   .select-property {
@@ -407,7 +419,7 @@
   .btn-remove-rule {
     border: none;
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--color-text-muted);
     font-size: 1.25rem;
     cursor: pointer;
     padding: 0 0.25rem;
@@ -443,7 +455,7 @@
   .save-title {
     font-size: 0.75rem;
     font-weight: 600;
-    color: var(--color-text-secondary);
+    color: var(--color-text-muted);
   }
 
   .save-row {
@@ -473,8 +485,8 @@
     font-size: 0.8125rem;
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.25rem;
-    background-color: var(--color-background);
-    color: var(--color-text-primary);
+    background-color: var(--color-base);
+    color: var(--color-text);
     cursor: pointer;
   }
 

@@ -39,7 +39,9 @@ pub fn evaluate_criterion(entry: &FileEntry, criterion: &FilterCriterion) -> boo
         FilterProperty::Path => match_text_condition(&entry.path, &criterion.condition, &criterion.value),
         FilterProperty::Extension => {
             let ext = entry.extension.as_deref().unwrap_or("");
-            let clean_value = criterion.value.trim_start_matches('.');
+            let clean_value = criterion.value
+                .trim_start_matches("*.")
+                .trim_start_matches('.');
             match_text_condition(ext, &criterion.condition, clean_value)
         }
         FilterProperty::Size => {
@@ -64,6 +66,35 @@ fn match_text_condition(actual: &str, condition: &FilterCondition, expected: &st
     let actual_lower = actual.to_lowercase();
     let expected_lower = expected.to_lowercase();
 
+    if expected_lower.contains('*') || expected_lower.contains('?') {
+        let pattern = match condition {
+            FilterCondition::Is => glob_to_regex(&expected_lower),
+            FilterCondition::StartsWith => {
+                let trimmed = expected_lower.trim_end_matches('*');
+                format!("^{}.*$", glob_body(trimmed))
+            }
+            FilterCondition::EndsWith => {
+                let trimmed = expected_lower.trim_start_matches('*');
+                format!("^.*{}$", glob_body(trimmed))
+            }
+            FilterCondition::Contains | FilterCondition::DoesNotContain => {
+                let trimmed = expected_lower.trim_matches('*');
+                format!("^.*{}.*$", glob_body(trimmed))
+            }
+            FilterCondition::Matches => expected.to_string(),
+            _ => return false,
+        };
+
+        if let Ok(re) = Regex::new(&pattern) {
+            let matched = re.is_match(&actual_lower);
+            return if *condition == FilterCondition::DoesNotContain {
+                !matched
+            } else {
+                matched
+            };
+        }
+    }
+
     match condition {
         FilterCondition::Is => actual_lower == expected_lower,
         FilterCondition::StartsWith => actual_lower.starts_with(&expected_lower),
@@ -77,6 +108,26 @@ fn match_text_condition(actual: &str, condition: &FilterCondition, expected: &st
         }
         _ => false,
     }
+}
+
+fn glob_body(pattern: &str) -> String {
+    let mut regex = String::new();
+    for c in pattern.chars() {
+        match c {
+            '*' => regex.push_str(".*"),
+            '?' => regex.push('.'),
+            '.' | '+' | '(' | ')' | '|' | '^' | '$' | '[' | ']' | '{' | '}' | '\\' => {
+                regex.push('\\');
+                regex.push(c);
+            }
+            _ => regex.push(c),
+        }
+    }
+    regex
+}
+
+fn glob_to_regex(pattern: &str) -> String {
+    format!("^{}$", glob_body(pattern))
 }
 
 fn search_file_content(path: &Path, condition: &FilterCondition, query: &str) -> bool {
@@ -291,5 +342,46 @@ mod tests {
             value: "4000".to_string(),
         };
         assert!(evaluate_criterion(&dir_entry, &dir_criterion));
+    }
+
+    #[test]
+    fn test_filter_extension_wildcards() {
+        let entry = FileEntry {
+            path: "/data/report.BESPOKE-EXTENSION-ABC".to_string(),
+            name: "report.BESPOKE-EXTENSION-ABC".to_string(),
+            is_dir: false,
+            size_bytes: 2048,
+            drive_usage_percent: 0.1,
+            modified_timestamp: None,
+            extension: Some("BESPOKE-EXTENSION-ABC".to_string()),
+            child_count: None,
+        };
+
+        let wildcard_criterion = FilterCriterion {
+            target: FilterTarget::Files,
+            property: FilterProperty::Extension,
+            condition: FilterCondition::Is,
+            value: ".BESPOKE-EXTENSION-*".to_string(),
+        };
+        assert!(evaluate_criterion(&entry, &wildcard_criterion));
+
+        let tmp_entry = FileEntry {
+            path: "/tmp/scratch.tmp".to_string(),
+            name: "scratch.tmp".to_string(),
+            is_dir: false,
+            size_bytes: 100,
+            drive_usage_percent: 0.01,
+            modified_timestamp: None,
+            extension: Some("tmp".to_string()),
+            child_count: None,
+        };
+
+        let tmp_star = FilterCriterion {
+            target: FilterTarget::Files,
+            property: FilterProperty::Extension,
+            condition: FilterCondition::Is,
+            value: "*.tmp".to_string(),
+        };
+        assert!(evaluate_criterion(&tmp_entry, &tmp_star));
     }
 }

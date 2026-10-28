@@ -96,7 +96,7 @@
   .progress-track {
     width: 100%;
     height: 3px;
-    background-color: var(--color-background);
+    background-color: var(--color-base);
     border-radius: 999px;
     overflow: hidden;
     position: relative;
@@ -126,8 +126,8 @@
     font-size: 0.75rem;
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.25rem;
-    background-color: var(--color-background);
-    color: var(--color-text-primary);
+    background-color: var(--color-base);
+    color: var(--color-text);
     cursor: pointer;
   }
 
