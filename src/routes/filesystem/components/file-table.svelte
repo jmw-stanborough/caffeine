@@ -118,14 +118,23 @@
               </button>
             </td>
             <td class="td-size">
-              {#if entry.is_dir && entry.size_bytes === 0}
+              {#if entry.is_dir && entry.is_calculating}
+                <span class="calculating-badge">
+                  <span class="mini-spinner"></span>
+                  <span>Calculating...</span>
+                </span>
+              {:else if entry.is_dir && entry.size_bytes === 0}
                 <span class="muted-dash">&mdash;</span>
               {:else}
                 {formatBytes(entry.size_bytes)}
               {/if}
             </td>
             <td class="td-percent">
-              {#if entry.is_dir && entry.size_bytes === 0}
+              {#if entry.is_dir && entry.is_calculating}
+                <div class="calculating-bar-track" aria-label="Calculating directory size">
+                  <div class="calculating-bar-pulse"></div>
+                </div>
+              {:else if entry.is_dir && entry.size_bytes === 0}
                 <span class="muted-dash">&mdash;</span>
               {:else}
                 <div class="percent-wrap">
@@ -246,6 +255,52 @@
 
   .muted-dash {
     color: var(--color-text-muted, #7c6f64);
+  }
+
+  .calculating-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    font-style: italic;
+  }
+
+  .mini-spinner {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .calculating-bar-track {
+    width: 100%;
+    height: 4px;
+    background-color: var(--color-base);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .calculating-bar-pulse {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 35%;
+    background-color: var(--color-border);
+    border-radius: 999px;
+    animation: pulse-indeterminate 1.4s infinite ease-in-out;
+  }
+
+  @keyframes pulse-indeterminate {
+    0% {
+      left: -35%;
+    }
+    100% {
+      left: 100%;
+    }
   }
 
   .percent-label {

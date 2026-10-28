@@ -46,6 +46,7 @@ export class FilesystemStore {
   private unlistenProgress: UnlistenFn | null = null;
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
+  private currentScanGeneration = 0;
 
   async init(): Promise<void> {
     if (this.isInitialized) return;
@@ -110,6 +111,9 @@ export class FilesystemStore {
   }
 
   async navigateTo(path: string): Promise<void> {
+    this.currentScanGeneration++;
+    const generation = this.currentScanGeneration;
+
     this.isLoading = true;
     this.error = null;
     this.searchResults = null;
@@ -123,12 +127,51 @@ export class FilesystemStore {
         driveTotalBytes: driveTotal,
         calculateFolderSizes: false,
       });
+
+      for (const entry of result.entries) {
+        if (entry.is_dir) {
+          entry.is_calculating = true;
+        }
+      }
+
       this.listing = result;
       this.currentPath = result.path;
+      this.isLoading = false;
+
+      this.processFolderSizingQueue(generation, driveTotal);
     } catch (err: unknown) {
       this.error = String(err);
-    } finally {
       this.isLoading = false;
+    }
+  }
+
+  private async processFolderSizingQueue(generation: number, driveTotal: number): Promise<void> {
+    if (!this.listing) return;
+
+    for (let i = 0; i < this.listing.entries.length; i++) {
+      if (this.currentScanGeneration !== generation) return;
+
+      const entry = this.listing.entries[i];
+      if (!entry.is_dir || !entry.is_calculating) continue;
+
+      try {
+        const size = await invoke<number>("filesystem_calculate_folder_size", {
+          path: entry.path,
+        });
+
+        if (this.currentScanGeneration !== generation) return;
+
+        entry.size_bytes = size;
+        entry.drive_usage_percent = driveTotal > 0 ? (size / driveTotal) * 100 : 0;
+      } catch {
+        // Ignored for unreadable/permission-denied system directories
+      } finally {
+        if (this.currentScanGeneration === generation) {
+          entry.is_calculating = false;
+        }
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
     }
   }
 

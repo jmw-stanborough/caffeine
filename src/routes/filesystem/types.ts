@@ -19,6 +19,7 @@ export interface FileEntry {
   modified_timestamp?: number | null;
   extension?: string | null;
   child_count?: number | null;
+  is_calculating?: boolean;
 }
 
 export interface DirectoryListing {
