@@ -31,6 +31,7 @@
 
   async function startTerminalSession() {
     if (!terminalView) return;
+    cleanupListeners();
     const dims = terminalView.getDimensions();
 
     try {
@@ -48,13 +49,16 @@
       return;
     }
 
-    unlistenData = await listen<string>("terminal://data", (event) => {
+    const dataUnlisten = await listen<string>("terminal://data", (event) => {
       terminalView?.write(event.payload);
     });
 
-    unlistenExit = await listen("terminal://exit", () => {
+    const exitUnlisten = await listen("terminal://exit", () => {
       terminalView?.writeln("\r\n\x1b[33m[Process completed]\x1b[0m\r\n");
     });
+
+    unlistenData = dataUnlisten;
+    unlistenExit = exitUnlisten;
   }
 
   function handleData(data: string) {
@@ -84,9 +88,11 @@
 
   async function handleRestart() {
     cleanupListeners();
-    invoke("endpoint_close_terminal").catch((err) => {
+    try {
+      await invoke("endpoint_close_terminal");
+    } catch (err: unknown) {
       console.error("Failed to close terminal session:", err);
-    });
+    }
     terminalView?.clear();
     isConnecting = true;
     await startTerminalSession();
@@ -109,9 +115,6 @@
 
   onDestroy(() => {
     cleanupListeners();
-    invoke("endpoint_close_terminal").catch((err) => {
-      console.error("Failed to close terminal session:", err);
-    });
   });
 </script>
 

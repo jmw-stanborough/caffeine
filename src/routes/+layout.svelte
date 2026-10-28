@@ -6,8 +6,8 @@
   import { serverStore } from "./servers/servers.svelte";
   import { printerStore } from "./printers/printers.svelte";
   import { endpointStore } from "./endpoint/endpoint.svelte";
-  import EndpointModuleShell from "./endpoint/endpoint-module-shell.svelte";
   import TerminalWindow from "./endpoint/terminal-window.svelte";
+  import UnsupportedOs from "./endpoint/unsupported-os.svelte";
   import { applyTheme } from "$lib/theme";
   import { page } from "$app/state";
   import { invoke } from "@tauri-apps/api/core";
@@ -69,11 +69,17 @@
     </div>
     {#if hasVisitedTerminal}
       <div class="terminal-persistent-wrapper" class:hidden={!isTerminalRoute}>
-        <EndpointModuleShell title="Terminal">
-          <div class="module-fill">
-            <TerminalWindow shell={endpointStore.shell} active={isTerminalRoute} />
-          </div>
-        </EndpointModuleShell>
+        <div class="endpoint-page-shell">
+          {#if !endpointStore.osSupport?.is_windows && !endpointStore.osChecking}
+            <UnsupportedOs osSupport={endpointStore.osSupport} />
+          {:else}
+            <div class="endpoint-workspace">
+              <div class="module-fill">
+                <TerminalWindow shell={endpointStore.shell} active={isTerminalRoute} />
+              </div>
+            </div>
+          {/if}
+        </div>
       </div>
     {/if}
   </main>
@@ -97,9 +103,28 @@
   }
 
   .view-wrapper,
-  .terminal-persistent-wrapper {
+  .terminal-persistent-wrapper,
+  .endpoint-page-shell {
     width: 100%;
     height: 100%;
+  }
+
+  .endpoint-page-shell {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--color-base);
+  }
+
+  .endpoint-workspace {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    padding: 0.85rem;
+    gap: 0.85rem;
+    box-sizing: border-box;
+    background-color: var(--color-base);
   }
 
   .module-fill {

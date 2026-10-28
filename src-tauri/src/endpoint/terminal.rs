@@ -14,6 +14,8 @@ struct ActiveTerminalSession {
 static ACTIVE_SESSION: LazyLock<Mutex<Option<ActiveTerminalSession>>> =
     LazyLock::new(|| Mutex::new(None));
 
+static SESSION_ID: LazyLock<Mutex<u64>> = LazyLock::new(|| Mutex::new(0));
+
 static DETECTED_SHELL: LazyLock<Mutex<Option<ShellDetectionResult>>> =
     LazyLock::new(|| Mutex::new(None));
 
@@ -131,6 +133,14 @@ pub fn start_terminal_session(
 
     let exec = shell.executable_path.clone();
 
+    let session_id = {
+        let mut id = SESSION_ID
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *id += 1;
+        *id
+    };
+
     let pty_system = native_pty_system();
     let size = PtySize {
         rows: rows.max(10),
@@ -193,8 +203,21 @@ pub fn start_terminal_session(
                 Err(_) => break,
             }
         }
-        close_terminal_session();
-        let _ = app.emit("terminal://exit", ());
+        let is_current = {
+            let mut id = SESSION_ID
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if *id == session_id {
+                *id += 1;
+                true
+            } else {
+                false
+            }
+        };
+        if is_current {
+            close_terminal_session();
+            let _ = app.emit("terminal://exit", ());
+        }
     });
 
     Ok(shell)
@@ -243,6 +266,12 @@ pub fn resize_terminal(cols: u16, rows: u16) -> Result<(), String> {
 }
 
 pub fn close_terminal_session() {
+    {
+        let mut id = SESSION_ID
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *id += 1;
+    }
     let mut active = ACTIVE_SESSION
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
