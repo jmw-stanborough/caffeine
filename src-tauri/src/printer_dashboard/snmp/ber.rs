@@ -275,7 +275,6 @@ pub fn parse_snmp_pdu(packet: &[u8]) -> Option<SnmpPduResponse> {
     let error_status = decode_signed_int(&packet[err_start..err_start + err_len]);
     let (_, err_idx_start, err_idx_len) = parse_ber_tlv(packet, &mut pdu_pos)?;
     let error_index = decode_signed_int(&packet[err_idx_start..err_idx_start + err_idx_len]);
-    let _ = parse_ber_tlv(packet, &mut pdu_pos)?;
     let (vbl_tag, vbl_start, vbl_len) = parse_ber_tlv(packet, &mut pdu_pos)?;
     if vbl_tag != ASN1_SEQUENCE || pdu_pos > pdu_start + pdu_len {
         return None;
