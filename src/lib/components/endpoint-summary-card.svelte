@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, DesktopPc } from "$lib/components/icons";
+  import { AlertTriangle, Cpu } from "$lib/components/icons";
   import { endpointStore } from "../../routes/endpoint/endpoint.svelte";
   import {
     formatBytes,
@@ -43,11 +43,11 @@
   );
 </script>
 
-<a href="/endpoint" class="card" aria-label="Endpoint system summary">
+<a href="/hardware" class="card" aria-label="Hardware system summary">
   <div class="card-header-row">
     <h2 class="card-header">
-      <DesktopPc size={20} />
-      <span>Endpoint</span>
+      <Cpu size={20} />
+      <span>Hardware</span>
     </h2>
     {#if store.machine?.system.computer_name}
       <span class="host-badge">{store.machine.system.computer_name}</span>
