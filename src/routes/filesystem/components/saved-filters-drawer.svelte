@@ -92,7 +92,7 @@
     flex-direction: column;
     gap: 1rem;
     padding: 1.25rem;
-    color: var(--color-text-primary);
+    color: var(--color-text);
   }
 
   .modal-header {
@@ -111,7 +111,7 @@
     border: none;
     background: transparent;
     font-size: 1.25rem;
-    color: var(--color-text-secondary);
+    color: var(--color-text-muted);
     cursor: pointer;
   }
 
@@ -128,7 +128,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.625rem 0.75rem;
-    background-color: var(--color-background);
+    background-color: var(--color-base);
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.375rem;
   }
@@ -214,8 +214,8 @@
     font-size: 0.8125rem;
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.25rem;
-    background-color: var(--color-background);
-    color: var(--color-text-primary);
+    background-color: var(--color-base);
+    color: var(--color-text);
     cursor: pointer;
   }
 </style>

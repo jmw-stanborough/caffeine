@@ -179,8 +179,8 @@
     height: 28px;
     border-radius: 0.25rem;
     border: solid var(--width-border) var(--color-border);
-    background-color: var(--color-background);
-    color: var(--color-text-primary);
+    background-color: var(--color-base);
+    color: var(--color-text);
     cursor: pointer;
     transition: background-color 0.15s ease;
   }
@@ -215,12 +215,12 @@
   }
 
   .crumb-btn:hover {
-    color: var(--color-text-primary);
-    background-color: var(--color-background);
+    color: var(--color-text);
+    background-color: var(--color-base);
   }
 
   .crumb-btn.is-last {
-    color: var(--color-text-primary);
+    color: var(--color-text);
     font-weight: 600;
   }
 
@@ -267,8 +267,8 @@
     font-weight: 500;
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.25rem;
-    background-color: var(--color-background);
-    color: var(--color-text-primary);
+    background-color: var(--color-base);
+    color: var(--color-text);
     cursor: pointer;
   }
 

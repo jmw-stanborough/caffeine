@@ -246,7 +246,7 @@
   .mini-bar-track {
     flex: 1;
     height: 5px;
-    background-color: var(--color-background);
+    background-color: var(--color-base);
     border-radius: 999px;
     overflow: hidden;
   }

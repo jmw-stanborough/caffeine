@@ -141,7 +141,7 @@
   .fs-tag {
     font-size: 0.6875rem;
     padding: 0.125rem 0.375rem;
-    background-color: var(--color-background);
+    background-color: var(--color-base);
     border-radius: 0.25rem;
     color: var(--color-text-secondary);
     text-transform: uppercase;
@@ -165,7 +165,7 @@
   .progress-track {
     width: 100%;
     height: 6px;
-    background-color: var(--color-background);
+    background-color: var(--color-base);
     border-radius: 999px;
     overflow: hidden;
   }
