@@ -242,12 +242,12 @@ pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
         let contents = fs::read_to_string(&user_path)
             .map_err(|e| format!("Failed to read settings file at {:?}: {e}", user_path))?;
         serde_json::from_str::<UserProfileSettings>(&contents)
-            .unwrap_or_default()
+            .map_err(|e| format!("Failed to parse user settings JSON at {:?}: {e}", user_path))?
     } else {
         UserProfileSettings::default()
     };
 
-    let machine_settings = load_machine_settings().unwrap_or_default();
+    let machine_settings = load_machine_settings()?;
     let public_tokens = machine_settings
         .server_tokens
         .iter()
@@ -290,7 +290,7 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), 
     fs::write(&user_path, user_serialized)
         .map_err(|e| format!("Failed to write user settings to {:?}: {e}", user_path))?;
 
-    let current_machine_settings = load_machine_settings().unwrap_or_default();
+    let current_machine_settings = load_machine_settings()?;
     let new_machine_settings = MachineSettings {
         server_mode: settings.server_mode,
         server_port: settings.server_port,
@@ -358,7 +358,7 @@ pub async fn update_app_settings_cmd(
     active_server: tauri::State<'_, crate::server::ActiveServer>,
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
-    let old_settings = load_app_settings(&app).unwrap_or_default();
+    let old_settings = load_app_settings(&app)?;
     save_app_settings(&app, &settings)?;
 
     if old_settings.server_mode != settings.server_mode
