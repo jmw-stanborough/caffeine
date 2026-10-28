@@ -1,6 +1,7 @@
 import {
   Cpu,
   DesktopPc,
+  HardDrive,
   LayoutDashboard,
   Network,
   Printer,
@@ -48,6 +49,13 @@ const registeredFeatures = $state<FeatureDefinition[]>([
     href: "/hardware",
     icon: Cpu,
     widget: EndpointSummaryCard,
+    group: "endpoint",
+  },
+  {
+    id: "filesystem",
+    label: "File System",
+    href: "/filesystem",
+    icon: HardDrive,
     group: "endpoint",
   },
   {
