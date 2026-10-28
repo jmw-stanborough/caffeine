@@ -117,9 +117,19 @@ pub fn start_terminal_session(
     }
 
     let shell = detect_shell()?;
-    let exec = shell.executable_path.clone();
 
-    close_terminal_session();
+    {
+        let active = ACTIVE_SESSION
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.is_some() {
+            drop(active);
+            let _ = resize_terminal(cols, rows);
+            return Ok(shell);
+        }
+    }
+
+    let exec = shell.executable_path.clone();
 
     let pty_system = native_pty_system();
     let size = PtySize {
@@ -183,6 +193,7 @@ pub fn start_terminal_session(
                 Err(_) => break,
             }
         }
+        close_terminal_session();
         let _ = app.emit("terminal://exit", ());
     });
 
