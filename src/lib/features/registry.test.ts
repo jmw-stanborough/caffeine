@@ -21,6 +21,7 @@ describe("feature registry", () => {
 
     expect(featureLabels).toEqual(sortedFeatureLabels);
     expect(featureLabels).toEqual([
+      "File System",
       "Hardware",
       "Printers",
       "Servers",
@@ -36,6 +37,7 @@ describe("feature registry", () => {
     expect(sections[0].id).toBe("endpoint");
     expect(sections[0].label).toBe("Endpoint");
     expect(sections[0].items.map((i) => i.label)).toEqual([
+      "File System",
       "Hardware",
       "Terminal",
       "Updates",
