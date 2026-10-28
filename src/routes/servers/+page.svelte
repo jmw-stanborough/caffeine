@@ -12,11 +12,13 @@
   import { clientMode } from "$lib/client-mode.svelte";
   import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";
   import type { SortRule } from "$lib/sort/types";
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
   import ServerCard from "./server-card.svelte";
   import ServerModal from "./server-modal.svelte";
+  import ServerTerminalDrawer from "./server-terminal-drawer.svelte";
   import { serverStore } from "./servers.svelte";
   import { SERVER_SORT_FIELDS, SERVER_SORT_STORAGE_KEY } from "./sort";
   import type { Server } from "./types";
@@ -25,11 +27,13 @@
   const noc = createNocController(() => {
     isModalOpen = false;
     isSortModalOpen = false;
+    terminalServer = null;
   });
 
   let isModalOpen = $state(false);
   let isSortModalOpen = $state(false);
   let editingServer = $state<Server | undefined>(undefined);
+  let terminalServer = $state<Server | null>(null);
   let sortRules = $state<SortRule[]>(loadSavedSortRules(SERVER_SORT_STORAGE_KEY));
 
   $effect(() => {
@@ -51,6 +55,7 @@
   function openEditModal(server: Server) {
     if (noc.isNocMode) return;
     isSortModalOpen = false;
+    terminalServer = null;
     editingServer = server;
     isModalOpen = true;
   }
@@ -58,7 +63,28 @@
   function openSortModal() {
     if (noc.isNocMode) return;
     isModalOpen = false;
+    terminalServer = null;
     isSortModalOpen = true;
+  }
+
+  function handleOpenTerminal(server: Server) {
+    if (noc.isNocMode) return;
+    isModalOpen = false;
+    isSortModalOpen = false;
+    terminalServer = server;
+  }
+
+  async function handleLaunchRemoteDesktop(server: Server) {
+    if (noc.isNocMode) return;
+    try {
+      await invoke("launch_remote_desktop", {
+        host: server.host,
+        port: server.rdp_port ?? 3389,
+        username: server.remote_username || null,
+      });
+    } catch (err) {
+      console.error("Failed to launch Remote Desktop:", err);
+    }
   }
 
   onMount(() => {
@@ -66,7 +92,9 @@
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (isModalOpen) {
+        if (terminalServer) {
+          terminalServer = null;
+        } else if (isModalOpen) {
           isModalOpen = false;
         } else if (isSortModalOpen) {
           isSortModalOpen = false;
@@ -161,6 +189,8 @@
             lastEventAt={hostState?.lastEventAt}
             now={store.now}
             onclick={() => openEditModal(server)}
+            onterminal={handleOpenTerminal}
+            onremotedesktop={handleLaunchRemoteDesktop}
           />
         </div>
       {/each}
@@ -199,6 +229,13 @@
   ondelete={(id) => store.deleteServer(id)}
 />
 
+{#if terminalServer}
+  <ServerTerminalDrawer
+    server={terminalServer}
+    onclose={() => (terminalServer = null)}
+  />
+{/if}
+
 <style>
   .server-grid {
     display: grid;
@@ -209,27 +246,17 @@
   }
 
   .server-grid.noc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--noc-min-width, 16rem)), 1fr));
-    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--noc-min-width, 24rem)), 1fr));
   }
 
-  .drag-wrapper,
+  .drag-wrapper {
+    display: contents;
+  }
+
   .add-card-wrapper {
-    height: 100%;
+    display: flex;
     min-height: var(--card-min-height, 8.5rem);
-    outline: none;
-  }
-
-  .readonly-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.625rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--color-text-muted);
-    background-color: var(--color-surface);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 4px;
+    width: 100%;
   }
 
   .add-server-card {
@@ -238,39 +265,83 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    min-height: var(--card-min-height, 8.5rem);
-    height: 100%;
     width: 100%;
-    box-sizing: border-box;
-    margin: 0;
-    padding: 1rem;
+    height: 100%;
+    min-height: var(--card-min-height, 8.5rem);
     background-color: transparent;
-    border: 2px dashed var(--color-border);
+    border: dashed var(--width-border) var(--color-border);
     border-radius: 0.5rem;
     color: var(--color-text-muted);
     cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
   }
 
   .add-server-card:hover {
-    background-color: color-mix(in srgb, var(--color-surface) 30%, transparent);
     border-color: var(--color-primary);
     color: var(--color-primary);
-  }
-
-  .add-server-card:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
+    background-color: color-mix(in srgb, var(--color-primary) 5%, transparent);
   }
 
   .plus-icon {
-    font-size: calc(2rem * var(--card-font-scale, 1));
-    font-weight: 300;
+    font-size: 1.5rem;
     line-height: 1;
+    font-weight: 300;
   }
 
   .add-title {
-    font-size: calc(1rem * var(--card-font-scale, 1));
+    font-size: 0.85rem;
     font-weight: 600;
+  }
+
+  .status-message {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    margin: 2rem 0;
+    text-align: center;
+  }
+
+  .btn-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.375rem;
+    border: solid var(--width-border) var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+
+  .btn-sort:hover,
+  .btn-sort.active {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+  }
+
+  .btn-sort.active {
+    background-color: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  }
+
+  .sort-count-badge {
+    background-color: var(--color-primary);
+    color: var(--color-base);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.25rem;
+    line-height: 1.2;
+  }
+
+  .readonly-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    background-color: color-mix(in srgb, var(--color-warning) 15%, var(--color-surface));
+    color: var(--color-warning);
+    border: solid var(--width-border) color-mix(in srgb, var(--color-warning) 30%, transparent);
   }
 </style>

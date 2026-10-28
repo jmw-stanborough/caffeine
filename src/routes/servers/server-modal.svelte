@@ -27,6 +27,9 @@
   let hasAgent = $state(false);
   let agentPort = $state(DEFAULT_AGENT_PORT);
   let agentApiKey = $state("");
+  let sshPort = $state<number | undefined>(22);
+  let rdpPort = $state<number | undefined>(3389);
+  let remoteUsername = $state("");
 
   let logs = $state<ServerLog[]>([]);
   let logsLoading = $state(false);
@@ -41,6 +44,9 @@
         hasAgent = Boolean(server.agent);
         agentPort = server.agent?.port ?? DEFAULT_AGENT_PORT;
         agentApiKey = server.agent?.api_key ?? "";
+        sshPort = server.ssh_port ?? 22;
+        rdpPort = server.rdp_port ?? 3389;
+        remoteUsername = server.remote_username ?? "";
         fetchLogs(server.id);
       } else {
         label = "";
@@ -49,6 +55,9 @@
         hasAgent = false;
         agentPort = DEFAULT_AGENT_PORT;
         agentApiKey = "";
+        sshPort = 22;
+        rdpPort = 3389;
+        remoteUsername = "";
         logs = [];
       }
     }
@@ -83,6 +92,9 @@
             api_key: agentApiKey.trim(),
           }
         : undefined,
+      ssh_port: sshPort ? Number(sshPort) : undefined,
+      rdp_port: rdpPort ? Number(rdpPort) : undefined,
+      remote_username: remoteUsername.trim() || undefined,
     };
 
     await onsave(payload, server?.id);
@@ -122,6 +134,24 @@
     <input type="text" bind:value={description} placeholder="e.g. Primary web gateway" />
   </label>
 
+  <div class="remote-fields-group">
+    <div class="remote-fields-header">Remote Access (Optional)</div>
+    <label class="form-field">
+      <span>Remote Username</span>
+      <input type="text" bind:value={remoteUsername} placeholder="e.g. administrator or root" />
+    </label>
+    <div class="ports-row">
+      <label class="form-field">
+        <span>SSH Port</span>
+        <input type="number" bind:value={sshPort} placeholder="22" />
+      </label>
+      <label class="form-field">
+        <span>RDP Port</span>
+        <input type="number" bind:value={rdpPort} placeholder="3389" />
+      </label>
+    </div>
+  </div>
+
   <label class="checkbox-field">
     <input type="checkbox" bind:checked={hasAgent} />
     <span>Enable Agent Integration</span>
@@ -142,6 +172,34 @@
 </ConfigHistoryModal>
 
 <style>
+  .remote-fields-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 0.75rem;
+    background-color: color-mix(in srgb, var(--color-base) 40%, transparent);
+    border: solid 1px var(--color-border);
+    border-radius: 0.375rem;
+    margin-top: 0.25rem;
+  }
+
+  .remote-fields-header {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .ports-row {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .ports-row .form-field {
+    flex: 1;
+  }
+
   .checkbox-field {
     display: flex;
     align-items: center;

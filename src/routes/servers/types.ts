@@ -9,6 +9,9 @@ export interface Server {
   label: string;
   description?: string;
   agent?: Agent;
+  ssh_port?: number;
+  rdp_port?: number;
+  remote_username?: string;
 }
 
 export type StatusKind = "online" | "offline" | "degraded" | "checking";

@@ -11,6 +11,8 @@
     now = Date.now(),
     nocMode = false,
     onclick,
+    onterminal,
+    onremotedesktop,
   }: {
     server: Server;
     status?: HostState["status"];
@@ -20,6 +22,8 @@
     now?: number;
     nocMode?: boolean;
     onclick?: () => void;
+    onterminal?: (server: Server) => void;
+    onremotedesktop?: (server: Server) => void;
   } = $props();
 
   let relativeTime = $derived(formatRelativeTime(lastEventAt, now));
@@ -59,15 +63,78 @@
       {/if}
     </div>
 
-    <span class="card-latency">
-      {#if latencyMs !== undefined}
-        {latencyMs} ms
-      {:else if status === "checking"}
-        ...
-      {:else}
-        —
+    <div class="footer-right">
+      {#if !nocMode}
+        <div class="card-actions">
+          <button
+            type="button"
+            class="btn-card-action"
+            onclick={(e) => {
+              e.stopPropagation();
+              onterminal?.(server);
+            }}
+            title={status === "offline"
+              ? "Terminal (Host is offline)"
+              : `Open Terminal (${server.ssh_port ?? 22})`}
+            aria-label="Open SSH Terminal"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" x2="20" y1="19" y2="19" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            class="btn-card-action"
+            onclick={(e) => {
+              e.stopPropagation();
+              onremotedesktop?.(server);
+            }}
+            title={status === "offline"
+              ? "Remote Desktop (Host is offline)"
+              : `Launch Remote Desktop (${server.rdp_port ?? 3389})`}
+            aria-label="Launch Remote Desktop"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+          </button>
+        </div>
       {/if}
-    </span>
+
+      <span class="card-latency">
+        {#if latencyMs !== undefined}
+          {latencyMs} ms
+        {:else if status === "checking"}
+          ...
+        {:else}
+          —
+        {/if}
+      </span>
+    </div>
   </div>
 </div>
 
@@ -181,9 +248,18 @@
     font-size: calc(0.7rem * var(--card-font-scale, 1));
     padding: 0.15rem 0.35rem;
     border-radius: 0.25rem;
-    background-color: color-mix(in srgb, var(--status-color, var(--color-primary)) 20%, transparent);
+    background-color: color-mix(
+      in srgb,
+      var(--status-color, var(--color-primary)) 20%,
+      transparent
+    );
     color: var(--status-color, var(--color-primary));
-    border: solid var(--width-border) color-mix(in srgb, var(--status-color, var(--color-primary)) 40%, transparent);
+    border: solid var(--width-border)
+      color-mix(
+        in srgb,
+        var(--status-color, var(--color-primary)) 40%,
+        transparent
+      );
     margin-left: auto;
   }
 
@@ -211,6 +287,37 @@
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
+  }
+
+  .footer-right {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .btn-card-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: color-mix(in srgb, var(--color-surface) 70%, transparent);
+    border: solid 1px var(--color-border);
+    color: var(--color-text);
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+
+  .btn-card-action:hover {
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
   }
 
   .card-host {
