@@ -1,11 +1,8 @@
 <script lang="ts">
+  import TerminalView from "$lib/terminal/terminal-view.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { FitAddon } from "@xterm/addon-fit";
-  import { Terminal } from "@xterm/xterm";
-  import "@xterm/xterm/css/xterm.css";
   import { onDestroy, onMount } from "svelte";
-  import { getTerminalTheme } from "./terminal-theme";
   import type { ShellDetectionResult } from "./types";
 
   interface Props {
@@ -14,119 +11,47 @@
 
   let { shell }: Props = $props();
 
-  let terminalContainer = $state<HTMLDivElement | null>(null);
-  let term: Terminal | null = null;
-  let fitAddon: FitAddon | null = null;
-  let resizeObserver: ResizeObserver | null = null;
+  let terminalView = $state<ReturnType<typeof TerminalView> | null>(null);
   let unlistenData: UnlistenFn | null = null;
   let unlistenExit: UnlistenFn | null = null;
   let isConnecting = $state(true);
-  let darkModeMql: MediaQueryList | null = null;
-  let themeListener: ((e: MediaQueryListEvent) => void) | null = null;
-  let themeObserver: MutationObserver | null = null;
 
-  function isDarkThemeActive(): boolean {
-    if (typeof document === "undefined") return true;
-    const explicit = document.documentElement.dataset.theme;
-    if (explicit === "dark") return true;
-    if (explicit === "light") return false;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  }
-
-  async function initTerminal() {
-    if (!terminalContainer) return;
-
-    darkModeMql = window.matchMedia("(prefers-color-scheme: dark)");
-    const theme = getTerminalTheme(isDarkThemeActive());
-
-    term = new Terminal({
-      cursorBlink: true,
-      cursorStyle: "bar",
-      fontSize: 13,
-      lineHeight: 1.25,
-      fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
-      theme,
-      convertEol: true,
-      allowProposedApi: true,
-    });
-
-    themeListener = () => {
-      if (term) {
-        term.options.theme = getTerminalTheme(isDarkThemeActive());
-      }
-    };
-    darkModeMql.addEventListener("change", themeListener);
-
-    themeObserver = new MutationObserver(() => {
-      if (term) {
-        term.options.theme = getTerminalTheme(isDarkThemeActive());
-      }
-    });
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-
-    fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(terminalContainer);
-
-    if (terminalContainer.clientWidth > 0 && terminalContainer.clientHeight > 0) {
-      fitAddon.fit();
-    }
-
-    const cols = term.cols || 80;
-    const rows = term.rows || 24;
+  async function startTerminalSession() {
+    if (!terminalView) return;
+    const dims = terminalView.getDimensions();
 
     try {
-      await invoke("endpoint_start_terminal", { cols, rows });
+      await invoke("endpoint_start_terminal", { cols: dims.cols, rows: dims.rows });
       isConnecting = false;
     } catch (err: unknown) {
-      term.writeln(`\r\n\x1b[31mFailed to launch embedded terminal: ${err}\x1b[0m\r\n`);
+      terminalView.writeln(`\r\n\x1b[31mFailed to launch embedded terminal: ${err}\x1b[0m\r\n`);
       isConnecting = false;
       return;
     }
 
     unlistenData = await listen<string>("terminal://data", (event) => {
-      term?.write(event.payload);
+      terminalView?.write(event.payload);
     });
 
     unlistenExit = await listen("terminal://exit", () => {
-      term?.writeln("\r\n\x1b[33m[Process completed]\x1b[0m\r\n");
+      terminalView?.writeln("\r\n\x1b[33m[Process completed]\x1b[0m\r\n");
     });
+  }
 
-    term.onData((data) => {
-      invoke("endpoint_write_terminal", { data }).catch((err) => {
-        console.error("Failed to send terminal input:", err);
-      });
+  function handleData(data: string) {
+    invoke("endpoint_write_terminal", { data }).catch((err) => {
+      console.error("Failed to send terminal input:", err);
     });
+  }
 
-    resizeObserver = new ResizeObserver(() => {
-      if (
-        fitAddon &&
-        term &&
-        terminalContainer &&
-        terminalContainer.clientWidth > 0 &&
-        terminalContainer.clientHeight > 0
-      ) {
-        fitAddon.fit();
-        invoke("endpoint_resize_terminal", {
-          cols: term.cols,
-          rows: term.rows,
-        }).catch((err) => {
-          console.error("Failed to resize terminal:", err);
-        });
-      }
+  function handleResize(cols: number, rows: number) {
+    invoke("endpoint_resize_terminal", { cols, rows }).catch((err) => {
+      console.error("Failed to resize terminal:", err);
     });
-
-    resizeObserver.observe(terminalContainer);
-    term.focus();
   }
 
   function sendData(data: string) {
-    invoke("endpoint_write_terminal", { data }).catch((err) => {
-      console.error("Failed to write to terminal:", err);
-    });
+    handleData(data);
   }
 
   function handleInterrupt() {
@@ -134,29 +59,21 @@
   }
 
   function handleClear() {
-    term?.clear();
+    terminalView?.clear();
     sendData("Clear-Host\r");
   }
 
   async function handleRestart() {
-    cleanup();
-    if (terminalContainer) {
-      terminalContainer.innerHTML = "";
-    }
+    cleanupListeners();
+    invoke("endpoint_close_terminal").catch((err) => {
+      console.error("Failed to close terminal session:", err);
+    });
+    terminalView?.clear();
     isConnecting = true;
-    await initTerminal();
+    await startTerminalSession();
   }
 
-  function cleanup() {
-    if (themeObserver) {
-      themeObserver.disconnect();
-      themeObserver = null;
-    }
-    if (darkModeMql && themeListener) {
-      darkModeMql.removeEventListener("change", themeListener);
-      themeListener = null;
-      darkModeMql = null;
-    }
+  function cleanupListeners() {
     if (unlistenData) {
       unlistenData();
       unlistenData = null;
@@ -165,25 +82,17 @@
       unlistenExit();
       unlistenExit = null;
     }
-    if (resizeObserver) {
-      resizeObserver.disconnect();
-      resizeObserver = null;
-    }
-    invoke("endpoint_close_terminal").catch((err) => {
-      console.error("Failed to close terminal session:", err);
-    });
-    if (term) {
-      term.dispose();
-      term = null;
-    }
   }
 
   onMount(() => {
-    initTerminal();
+    startTerminalSession();
   });
 
   onDestroy(() => {
-    cleanup();
+    cleanupListeners();
+    invoke("endpoint_close_terminal").catch((err) => {
+      console.error("Failed to close terminal session:", err);
+    });
   });
 </script>
 
@@ -274,7 +183,13 @@
     </div>
   </div>
 
-  <div class="terminal-body" bind:this={terminalContainer}></div>
+  <div class="terminal-body">
+    <TerminalView
+      bind:this={terminalView}
+      onData={handleData}
+      onResize={handleResize}
+    />
+  </div>
 </div>
 
 <style>
@@ -430,13 +345,5 @@
     padding: 0.4rem 0.5rem;
     background-color: var(--color-base);
     overflow: hidden;
-  }
-
-  :global(.terminal-body .xterm) {
-    height: 100%;
-  }
-
-  :global(.terminal-body .xterm-viewport) {
-    overflow-y: auto !important;
   }
 </style>
