@@ -160,8 +160,14 @@
     border: none;
     cursor: pointer;
     width: 100%;
-    text-align: left;
+    justify-content: center;
+    padding: 8px 0;
     font-family: inherit;
+    color: var(--color-link);
+  }
+
+  .settings-button:hover {
+    color: var(--color-link-hover);
   }
 
   .nav-item {
