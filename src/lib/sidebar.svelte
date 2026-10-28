@@ -155,21 +155,6 @@
     margin: 0 0 8px 0;
   }
 
-  .settings-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    width: 100%;
-    justify-content: center;
-    padding: 8px 0;
-    font-family: inherit;
-    color: var(--color-link);
-  }
-
-  .settings-button:hover {
-    color: var(--color-link-hover);
-  }
-
   .nav-item {
     display: flex;
     align-items: center;
@@ -193,6 +178,21 @@
     background-color: var(--color-surface-active);
     color: var(--color-primary);
     font-weight: 600;
+  }
+
+  .nav-item.settings-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    justify-content: center;
+    padding: 8px 0;
+    font-family: inherit;
+    color: var(--color-link);
+  }
+
+  .nav-item.settings-button:hover {
+    color: var(--color-link-hover);
   }
 
   .notification-badge {
