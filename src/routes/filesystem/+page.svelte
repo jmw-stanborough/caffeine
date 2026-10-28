@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onMount } from "svelte";
   import { formatBytes } from "../endpoint/metrics";
   import BreadcrumbsBar from "./components/breadcrumbs-bar.svelte";
   import DeleteConfirmModal from "./components/delete-confirm-modal.svelte";
@@ -19,10 +19,6 @@
 
   onMount(() => {
     store.init();
-  });
-
-  onDestroy(() => {
-    store.destroy();
   });
 
   function handleOpenEntry(entry: FileEntry) {

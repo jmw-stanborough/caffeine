@@ -45,30 +45,40 @@ export class FilesystemStore {
 
   private unlistenProgress: UnlistenFn | null = null;
   private isInitialized = false;
+  private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
     if (this.isInitialized) return;
-    this.isInitialized = true;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      try {
+        this.unlistenProgress = await listen<OperationProgress>(
+          "fs:progress",
+          (event) => {
+            this.progress = event.payload;
+            if (event.payload.is_complete) {
+              this.activeTaskId = null;
+              this.isSearching = false;
+            }
+          },
+        );
+      } catch {
+        // Event listening may not be available in mock or web test runners
+      }
+
+      await Promise.all([this.loadVolumes(), this.loadSavedFilters()]);
+
+      if (this.volumes.length > 0 && !this.selectedVolume) {
+        await this.selectVolume(this.volumes[0]);
+      }
+      this.isInitialized = true;
+    })();
 
     try {
-      this.unlistenProgress = await listen<OperationProgress>(
-        "fs:progress",
-        (event) => {
-          this.progress = event.payload;
-          if (event.payload.is_complete) {
-            this.activeTaskId = null;
-            this.isSearching = false;
-          }
-        },
-      );
-    } catch {
-      // Event listening may not be available in mock or web test runners
-    }
-
-    await Promise.all([this.loadVolumes(), this.loadSavedFilters()]);
-
-    if (this.volumes.length > 0 && !this.selectedVolume) {
-      await this.selectVolume(this.volumes[0]);
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
     }
   }
 
