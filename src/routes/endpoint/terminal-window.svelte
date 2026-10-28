@@ -7,21 +7,40 @@
 
   interface Props {
     shell: ShellDetectionResult | null;
+    active?: boolean;
   }
 
-  let { shell }: Props = $props();
+  let { shell, active = true }: Props = $props();
+
+  let localShell = $state<ShellDetectionResult | null>(null);
+  let effectiveShell = $derived(shell ?? localShell);
 
   let terminalView = $state<ReturnType<typeof TerminalView> | null>(null);
   let unlistenData: UnlistenFn | null = null;
   let unlistenExit: UnlistenFn | null = null;
   let isConnecting = $state(true);
 
+  $effect(() => {
+    if (active && terminalView) {
+      requestAnimationFrame(() => {
+        terminalView?.fit();
+        terminalView?.focus();
+      });
+    }
+  });
+
   async function startTerminalSession() {
     if (!terminalView) return;
     const dims = terminalView.getDimensions();
 
     try {
-      await invoke("endpoint_start_terminal", { cols: dims.cols, rows: dims.rows });
+      const detected = await invoke<ShellDetectionResult>("endpoint_start_terminal", {
+        cols: dims.cols,
+        rows: dims.rows,
+      });
+      if (detected) {
+        localShell = detected;
+      }
       isConnecting = false;
     } catch (err: unknown) {
       terminalView.writeln(`\r\n\x1b[31mFailed to launch embedded terminal: ${err}\x1b[0m\r\n`);
@@ -116,13 +135,13 @@
         </svg>
       </div>
       <h3 class="window-title">Terminal</h3>
-      {#if shell}
+      {#if effectiveShell}
         <span
           class="shell-badge"
-          class:pwsh={shell.is_pwsh}
-          title={`Executable: ${shell.executable_path} (Version: ${shell.version})`}
+          class:pwsh={effectiveShell.is_pwsh}
+          title={`Executable: ${effectiveShell.executable_path} (Version: ${effectiveShell.version})`}
         >
-          {shell.shell_name}
+          {effectiveShell.shell_name}
         </span>
       {/if}
       {#if isConnecting}
