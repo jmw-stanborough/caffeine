@@ -68,9 +68,10 @@
   .brand {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     height: 48px;
-    padding-inline: 16px;
+    padding: 0;
     border-bottom: solid var(--width-border) var(--color-border);
   }
 
