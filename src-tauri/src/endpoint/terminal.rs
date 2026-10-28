@@ -34,10 +34,14 @@ pub fn detect_shell() -> Result<ShellDetectionResult, String> {
 }
 
 fn detect_shell_internal() -> Result<ShellDetectionResult, String> {
-    if !cfg!(target_os = "windows") {
-        return Err("Terminal is only supported on Windows.".to_string());
+    if cfg!(target_os = "windows") {
+        detect_windows_shell()
+    } else {
+        detect_unix_shell()
     }
+}
 
+fn detect_windows_shell() -> Result<ShellDetectionResult, String> {
     let mut pwsh_cmd = Command::new("pwsh");
     pwsh_cmd.args([
         "-NoProfile",
@@ -109,15 +113,76 @@ fn detect_shell_internal() -> Result<ShellDetectionResult, String> {
     })
 }
 
+fn detect_unix_shell() -> Result<ShellDetectionResult, String> {
+    let mut candidates = Vec::new();
+
+    if let Ok(env_shell) = std::env::var("SHELL") {
+        let trimmed = env_shell.trim();
+        if !trimmed.is_empty() {
+            candidates.push(trimmed.to_string());
+        }
+    }
+
+    if cfg!(target_os = "macos") {
+        candidates.push("/bin/zsh".to_string());
+        candidates.push("/bin/bash".to_string());
+    } else {
+        candidates.push("/bin/bash".to_string());
+        candidates.push("/usr/bin/bash".to_string());
+        candidates.push("/bin/zsh".to_string());
+    }
+    candidates.push("/bin/sh".to_string());
+
+    for path in candidates {
+        let std_path = std::path::Path::new(&path);
+        if !std_path.is_file() {
+            continue;
+        }
+
+        let shell_name = std_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("sh")
+            .to_string();
+
+        let version = Command::new(&path)
+            .arg("--version")
+            .output()
+            .ok()
+            .and_then(|out| {
+                if out.status.success() {
+                    let first_line = String::from_utf8_lossy(&out.stdout)
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if !first_line.is_empty() {
+                        return Some(first_line);
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let is_pwsh = shell_name.eq_ignore_ascii_case("pwsh");
+
+        return Ok(ShellDetectionResult {
+            shell_name,
+            executable_path: path,
+            version,
+            is_pwsh,
+        });
+    }
+
+    Err("No supported shell found in environment or standard paths".to_string())
+}
+
 pub fn start_terminal_session(
     app: AppHandle,
     cols: u16,
     rows: u16,
 ) -> Result<ShellDetectionResult, String> {
-    if !cfg!(target_os = "windows") {
-        return Err("Terminal is only supported on Windows.".to_string());
-    }
-
     let shell = detect_shell()?;
 
     {
@@ -151,13 +216,24 @@ pub fn start_terminal_session(
 
     let pair = pty_system
         .openpty(size)
-        .map_err(|e| format!("Failed to open ConPTY pseudo-terminal: {e}"))?;
+        .map_err(|e| format!("Failed to open pseudo-terminal: {e}"))?;
 
     let mut cmd = CommandBuilder::new(&exec);
-    cmd.args(["-NoLogo"]);
 
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        cmd.cwd(home);
+    if cfg!(target_os = "windows") {
+        if shell.is_pwsh || shell.shell_name.eq_ignore_ascii_case("powershell") {
+            cmd.args(["-NoLogo"]);
+        }
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            cmd.cwd(home);
+        }
+    } else {
+        cmd.args(["-l"]);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        if let Ok(home) = std::env::var("HOME") {
+            cmd.cwd(home);
+        }
     }
 
     pair.slave
