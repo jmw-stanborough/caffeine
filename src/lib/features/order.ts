@@ -48,3 +48,17 @@ export function orderFeatures<
     .slice()
     .sort(compareFeaturesAlphabetically);
 }
+
+export function orderSidebarSections<
+  I extends { label: string },
+  S extends { label: string; items: readonly I[] },
+>(sections: readonly S[]): (Omit<S, "items"> & { items: I[] })[] {
+  return sections
+    .slice()
+    .sort(compareFeaturesAlphabetically)
+    .map((section) => ({
+      ...section,
+      items: section.items.slice().sort(compareFeaturesAlphabetically),
+    }));
+}
+
