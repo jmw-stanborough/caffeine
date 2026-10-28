@@ -189,6 +189,9 @@ pub fn init_db_schema(conn: &Connection) -> Result<(), String> {
             description TEXT,
             agent_port INTEGER,
             agent_api_key TEXT,
+            ssh_port INTEGER,
+            rdp_port INTEGER,
+            remote_username TEXT,
             sort_order INTEGER NOT NULL DEFAULT 0
         );
 
@@ -237,7 +240,35 @@ pub fn init_db_schema(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("Failed to run schema migrations: {e}"))?;
 
     migrate_printer_filter_tags_table(conn)?;
+    migrate_servers_remote_access_columns(conn)?;
     deduplicate_consecutive_printer_logs(conn)?;
+    Ok(())
+}
+
+fn migrate_servers_remote_access_columns(conn: &Connection) -> Result<(), String> {
+    let existing_columns: Vec<String> = {
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(servers)")
+            .map_err(|e| e.to_string())?;
+        let cols = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?;
+        cols.filter_map(Result::ok).collect()
+    };
+
+    if !existing_columns.iter().any(|c| c == "ssh_port") {
+        conn.execute("ALTER TABLE servers ADD COLUMN ssh_port INTEGER", [])
+            .map_err(|e| format!("Failed to add ssh_port column to servers: {e}"))?;
+    }
+    if !existing_columns.iter().any(|c| c == "rdp_port") {
+        conn.execute("ALTER TABLE servers ADD COLUMN rdp_port INTEGER", [])
+            .map_err(|e| format!("Failed to add rdp_port column to servers: {e}"))?;
+    }
+    if !existing_columns.iter().any(|c| c == "remote_username") {
+        conn.execute("ALTER TABLE servers ADD COLUMN remote_username TEXT", [])
+            .map_err(|e| format!("Failed to add remote_username column to servers: {e}"))?;
+    }
+
     Ok(())
 }
 

@@ -14,6 +14,12 @@ pub struct Server {
     pub label: String,
     pub description: Option<String>,
     pub agent: Option<Agent>,
+    #[serde(default)]
+    pub ssh_port: Option<u16>,
+    #[serde(default)]
+    pub rdp_port: Option<u16>,
+    #[serde(default)]
+    pub remote_username: Option<String>,
 }
 
 fn new_id() -> String {
