@@ -85,7 +85,7 @@
     try {
       serverTokens = await invoke<ServerTokenPublic[]>("get_server_tokens_cmd");
     } catch (err) {
-      console.error("Failed to load server tokens", err);
+      tokenActionError = err instanceof Error ? err.message : String(err);
     }
   }
 
