@@ -218,6 +218,9 @@ where
             let size_bytes = if is_dir { 0 } else { meta.len() };
             bytes_processed = bytes_processed.saturating_add(size_bytes);
             items_processed += 1;
+            if items_processed % 1024 == 0 {
+                std::thread::yield_now();
+            }
 
             if is_dir && !meta.file_type().is_symlink() {
                 stack.push(path.clone());

@@ -121,7 +121,7 @@ export class FilesystemStore {
       const result = await invoke<DirectoryListing>("filesystem_read_directory", {
         path,
         driveTotalBytes: driveTotal,
-        calculateFolderSizes: true,
+        calculateFolderSizes: false,
       });
       this.listing = result;
       this.currentPath = result.path;
