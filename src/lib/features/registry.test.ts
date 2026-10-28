@@ -5,6 +5,7 @@ import {
   getSidebarNavigationItems,
   getSidebarSections,
   registerFeature,
+  registerSidebarSubheader,
 } from "./registry.svelte";
 
 describe("feature registry", () => {
@@ -28,21 +29,21 @@ describe("feature registry", () => {
     ]);
   });
 
-  it("provides sidebar sections grouped by network and endpoint with correct subheaders", () => {
+  it("provides sidebar sections ordered alphabetically with alphabetically ordered children", () => {
     const sections = getSidebarSections();
     expect(sections).toHaveLength(2);
 
-    expect(sections[0].id).toBe("network");
-    expect(sections[0].label).toBe("Network");
-    expect(sections[0].items.map((i) => i.label)).toEqual(["Printers", "Servers"]);
-
-    expect(sections[1].id).toBe("endpoint");
-    expect(sections[1].label).toBe("Endpoint");
-    expect(sections[1].items.map((i) => i.label)).toEqual([
+    expect(sections[0].id).toBe("endpoint");
+    expect(sections[0].label).toBe("Endpoint");
+    expect(sections[0].items.map((i) => i.label)).toEqual([
       "Hardware",
       "Terminal",
       "Updates",
     ]);
+
+    expect(sections[1].id).toBe("network");
+    expect(sections[1].label).toBe("Network");
+    expect(sections[1].items.map((i) => i.label)).toEqual(["Printers", "Servers"]);
   });
 
   it("provides dashboard widgets alphabetically sorted excluding dashboard", () => {
@@ -75,5 +76,57 @@ describe("feature registry", () => {
 
     const widgets = getDashboardWidgets();
     expect(widgets[0].label).toBe("Analytics");
+  });
+
+  it("automatically sorts newly registered subheaders and their children alphabetically", () => {
+    const DummyComponent = (() => null) as unknown as Component;
+    registerSidebarSubheader("compliance", {
+      label: "Compliance",
+      icon: DummyComponent,
+    });
+    registerFeature({
+      id: "audits",
+      label: "Audits",
+      href: "/audits",
+      icon: DummyComponent,
+      group: "compliance",
+    });
+    registerFeature({
+      id: "access",
+      label: "Access Control",
+      href: "/access",
+      icon: DummyComponent,
+      group: "compliance",
+    });
+
+    const sections = getSidebarSections();
+    const complianceSection = sections.find((s) => s.id === "compliance");
+    expect(complianceSection).toBeDefined();
+    expect(complianceSection?.label).toBe("Compliance");
+    expect(complianceSection?.items.map((i) => i.label)).toEqual([
+      "Access Control",
+      "Audits",
+    ]);
+
+    const sectionLabels = sections.map((s) => s.label);
+    const sortedSectionLabels = [...sectionLabels].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }),
+    );
+    expect(sectionLabels).toEqual(sortedSectionLabels);
+  });
+
+  it("throws descriptive error when feature has unregistered sidebar group", () => {
+    const DummyComponent = (() => null) as unknown as Component;
+    registerFeature({
+      id: "orphan",
+      label: "Orphan Feature",
+      href: "/orphan",
+      icon: DummyComponent,
+      group: "nonexistent-group",
+    });
+
+    expect(() => getSidebarSections()).toThrowError(
+      'Missing sidebar subheader definition for group "nonexistent-group" in feature "orphan"',
+    );
   });
 });

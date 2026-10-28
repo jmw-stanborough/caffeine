@@ -13,7 +13,12 @@ import PrinterSummaryCard from "$lib/components/printer-summary-card.svelte";
 import ServerSummaryCard from "$lib/components/server-summary-card.svelte";
 import { printerStore } from "../../routes/printers/printers.svelte";
 import { serverStore } from "../../routes/servers/servers.svelte";
-import { orderDashboardWidgets, orderFeatures, orderSidebarItems } from "./order";
+import {
+  orderDashboardWidgets,
+  orderFeatures,
+  orderSidebarItems,
+  orderSidebarSections,
+} from "./order";
 import type { DashboardWidget, FeatureDefinition, SidebarItem, SidebarSection } from "./types";
 
 export const DASHBOARD_NAV_ITEM: SidebarItem = {
@@ -92,31 +97,48 @@ export function getRegisteredFeatures(): FeatureDefinition[] {
   return orderFeatures(registeredFeatures);
 }
 
+export function registerSidebarSubheader(
+  groupId: string,
+  meta: { label: string; icon: FeatureDefinition["icon"] },
+): void {
+  SIDEBAR_SUBHEADERS[groupId] = meta;
+}
+
 export function getSidebarSections(): SidebarSection[] {
-  const groupOrder = ["network", "endpoint"];
   const features = getRegisteredFeatures();
 
-  return groupOrder.map((groupId) => {
-    const meta = SIDEBAR_SUBHEADERS[groupId];
-    const items: SidebarItem[] = features
-      .filter((f) => f.group === groupId)
-      .map((feature) => ({
-        href: feature.href,
-        label: feature.label,
-        icon: feature.icon,
-        badgeCount:
-          typeof feature.badgeCount === "function"
-            ? feature.badgeCount()
-            : undefined,
-      }));
+  for (const feature of features) {
+    if (feature.group && !SIDEBAR_SUBHEADERS[feature.group]) {
+      throw new Error(
+        `Missing sidebar subheader definition for group "${feature.group}" in feature "${feature.id}"`,
+      );
+    }
+  }
 
-    return {
-      id: groupId,
-      label: meta.label,
-      icon: meta.icon,
-      items,
-    };
-  });
+  const sections: SidebarSection[] = Object.entries(SIDEBAR_SUBHEADERS).map(
+    ([groupId, meta]) => {
+      const items: SidebarItem[] = features
+        .filter((f) => f.group === groupId)
+        .map((feature) => ({
+          href: feature.href,
+          label: feature.label,
+          icon: feature.icon,
+          badgeCount:
+            typeof feature.badgeCount === "function"
+              ? feature.badgeCount()
+              : undefined,
+        }));
+
+      return {
+        id: groupId,
+        label: meta.label,
+        icon: meta.icon,
+        items,
+      };
+    },
+  );
+
+  return orderSidebarSections(sections);
 }
 
 export function getSidebarNavigationItems(): SidebarItem[] {
