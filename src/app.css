@@ -10,8 +10,8 @@
 
   --color-base: #fbf1c7;
   --color-surface: #ebdbb2;
-  --color-surface-hover: #e0cf9d;
-  --color-surface-active: #d5c4a1;
+  --color-surface-hover: #d5c4a1;
+  --color-surface-active: #bdae93;
   --color-border: #d5c4a1;
 
   --color-text: #3c3836;
@@ -20,13 +20,13 @@
   --color-primary: #98971a;
   --color-secondary: #af3a03;
 
-  --color-success: #2e7d32;
-  --color-warning: #b45309;
+  --color-success: #79740e;
+  --color-warning: #b57614;
   --color-failure: #cc241d;
 
-  --color-tag-text-success: #ffffff;
-  --color-tag-text-warning: #ffffff;
-  --color-tag-text-failure: #ffffff;
+  --color-tag-text-success: #fbf1c7;
+  --color-tag-text-warning: #fbf1c7;
+  --color-tag-text-failure: #fbf1c7;
 
   --color-link: #458588;
   --color-link-hover: #689d6a;
@@ -48,13 +48,13 @@
     --color-primary: #b8bb26;
     --color-secondary: #fe8019;
 
-    --color-success: #73c936;
+    --color-success: #b8bb26;
     --color-warning: #fabd2f;
     --color-failure: #fb4934;
 
-    --color-tag-text-success: #1c1917;
-    --color-tag-text-warning: #1c1917;
-    --color-tag-text-failure: #1c1917;
+    --color-tag-text-success: #1d2021;
+    --color-tag-text-warning: #1d2021;
+    --color-tag-text-failure: #1d2021;
 
     --color-link: #83a598;
     --color-link-hover: #8ec07c;
@@ -74,13 +74,13 @@
   --color-primary: #b8bb26;
   --color-secondary: #fe8019;
 
-  --color-success: #73c936;
+  --color-success: #b8bb26;
   --color-warning: #fabd2f;
   --color-failure: #fb4934;
 
-  --color-tag-text-success: #1c1917;
-  --color-tag-text-warning: #1c1917;
-  --color-tag-text-failure: #1c1917;
+  --color-tag-text-success: #1d2021;
+  --color-tag-text-warning: #1d2021;
+  --color-tag-text-failure: #1d2021;
 
   --color-link: #83a598;
   --color-link-hover: #8ec07c;
@@ -89,8 +89,8 @@
 :root[data-theme="light"] {
   --color-base: #fbf1c7;
   --color-surface: #ebdbb2;
-  --color-surface-hover: #e0cf9d;
-  --color-surface-active: #d5c4a1;
+  --color-surface-hover: #d5c4a1;
+  --color-surface-active: #bdae93;
   --color-border: #d5c4a1;
 
   --color-text: #3c3836;
@@ -99,13 +99,13 @@
   --color-primary: #98971a;
   --color-secondary: #af3a03;
 
-  --color-success: #2e7d32;
-  --color-warning: #b45309;
+  --color-success: #79740e;
+  --color-warning: #b57614;
   --color-failure: #cc241d;
 
-  --color-tag-text-success: #ffffff;
-  --color-tag-text-warning: #ffffff;
-  --color-tag-text-failure: #ffffff;
+  --color-tag-text-success: #fbf1c7;
+  --color-tag-text-warning: #fbf1c7;
+  --color-tag-text-failure: #fbf1c7;
 
   --color-link: #458588;
   --color-link-hover: #689d6a;
