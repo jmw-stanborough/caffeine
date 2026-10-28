@@ -118,19 +118,27 @@
               </button>
             </td>
             <td class="td-size">
-              {formatBytes(entry.size_bytes)}
+              {#if entry.is_dir && entry.size_bytes === 0}
+                <span class="muted-dash">&mdash;</span>
+              {:else}
+                {formatBytes(entry.size_bytes)}
+              {/if}
             </td>
             <td class="td-percent">
-              <div class="percent-wrap">
-                <span class="percent-label" style:color>{percentDisplay}</span>
-                <div class="mini-bar-track">
-                  <div
-                    class="mini-bar-fill"
-                    style:width={`${Math.min(100, Math.max(1, entry.drive_usage_percent))}%`}
-                    style:background-color={color}
-                  ></div>
+              {#if entry.is_dir && entry.size_bytes === 0}
+                <span class="muted-dash">&mdash;</span>
+              {:else}
+                <div class="percent-wrap">
+                  <span class="percent-label" style:color>{percentDisplay}</span>
+                  <div class="mini-bar-track">
+                    <div
+                      class="mini-bar-fill"
+                      style:width={`${Math.min(100, Math.max(1, entry.drive_usage_percent))}%`}
+                      style:background-color={color}
+                    ></div>
+                  </div>
                 </div>
-              </div>
+              {/if}
             </td>
           </tr>
         {/each}
@@ -234,6 +242,10 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+  }
+
+  .muted-dash {
+    color: var(--color-text-muted, #7c6f64);
   }
 
   .percent-label {

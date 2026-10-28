@@ -108,6 +108,7 @@ pub fn read_directory(
 pub fn calculate_dir_size(dir_path: &Path, cancel: Option<&AtomicBool>) -> Result<u64, String> {
     let mut total = 0u64;
     let mut stack = vec![dir_path.to_path_buf()];
+    let mut items_count = 0usize;
 
     while let Some(current) = stack.pop() {
         if let Some(c) = cancel {
@@ -122,6 +123,11 @@ pub fn calculate_dir_size(dir_path: &Path, cancel: Option<&AtomicBool>) -> Resul
         };
 
         for item in read_dir {
+            items_count += 1;
+            if items_count % 1024 == 0 {
+                std::thread::yield_now();
+            }
+
             let entry = match item {
                 Ok(e) => e,
                 Err(_) => continue,
