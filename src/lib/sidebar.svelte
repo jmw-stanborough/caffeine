@@ -125,10 +125,9 @@
     gap: 0.5rem;
     padding: 8px 12px 4px 12px;
     color: var(--color-secondary);
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
     user-select: none;
     cursor: default;
   }
