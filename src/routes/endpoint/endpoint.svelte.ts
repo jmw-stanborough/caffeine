@@ -28,31 +28,47 @@ export class EndpointStore {
   private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private isRefreshing = false;
   private subscriberCount = 0;
+  private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
-    this.osChecking = true;
-
-    try {
-      this.osSupport = await invoke<OsSupportInfo>("endpoint_check_os_support");
-    } catch (err: unknown) {
-      this.osSupport = null;
-      this.machineError = String(err);
-      throw err;
-    } finally {
-      this.osChecking = false;
-    }
-
-    if (!this.osSupport?.is_windows) {
+    if (this.osSupport) {
       return;
     }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
 
-    await Promise.allSettled([
-      this.fetchMachineInfo(true),
-      this.detectShell(),
-    ]);
+    this.initPromise = (async () => {
+      this.osChecking = true;
 
-    if (this.subscriberCount > 0) {
-      this.startAutoRefresh();
+      try {
+        this.osSupport = await invoke<OsSupportInfo>("endpoint_check_os_support");
+      } catch (err: unknown) {
+        this.osSupport = null;
+        this.machineError = String(err);
+        throw err;
+      } finally {
+        this.osChecking = false;
+      }
+
+      if (!this.osSupport?.is_windows) {
+        return;
+      }
+
+      await Promise.allSettled([
+        this.fetchMachineInfo(true),
+        this.detectShell(),
+      ]);
+
+      if (this.subscriberCount > 0) {
+        this.startAutoRefresh();
+      }
+    })();
+
+    try {
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
     }
   }
 

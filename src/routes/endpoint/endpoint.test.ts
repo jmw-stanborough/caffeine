@@ -91,4 +91,55 @@ describe("EndpointStore", () => {
     expect(store.operationStatus).toBeNull();
     expect(store.installingId).toBeNull();
   });
+
+  it("does not re-invoke OS checks or detectShell when osSupport is already populated", async () => {
+    const mockSupport: OsSupportInfo = {
+      is_windows: true,
+      os_name: "Windows 11 Pro",
+      os_version: "10.0.26100",
+      architecture: "x86_64",
+      hostname: "DESKTOP-TEST",
+      is_admin: true,
+    };
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_check_os_support") return mockSupport;
+      return null;
+    });
+
+    await store.init();
+    expect(mockInvoke).toHaveBeenCalledWith("endpoint_check_os_support");
+    expect(store.osChecking).toBe(false);
+
+    mockInvoke.mockClear();
+    await store.init();
+    expect(mockInvoke).not.toHaveBeenCalledWith("endpoint_check_os_support");
+    expect(store.osChecking).toBe(false);
+  });
+
+  it("deduplicates concurrent init calls into a single invocation", async () => {
+    const mockSupport: OsSupportInfo = {
+      is_windows: true,
+      os_name: "Windows 11 Pro",
+      os_version: "10.0.26100",
+      architecture: "x86_64",
+      hostname: "DESKTOP-TEST",
+      is_admin: true,
+    };
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_check_os_support") {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return mockSupport;
+      }
+      return null;
+    });
+
+    await Promise.all([store.init(), store.init(), store.init()]);
+    const checkCalls = mockInvoke.mock.calls.filter(
+      (call) => call[0] === "endpoint_check_os_support",
+    );
+    expect(checkCalls).toHaveLength(1);
+    expect(store.osChecking).toBe(false);
+  });
 });
