@@ -31,15 +31,6 @@ export function orderSidebarItems<
   return dashboardItem ? [dashboardItem, ...featureItems] : featureItems;
 }
 
-export function orderDashboardWidgets<
-  T extends { href?: string; id?: string; label: string },
->(widgets: readonly T[]): T[] {
-  return widgets
-    .filter((widget) => !isDashboardFeature(widget))
-    .slice()
-    .sort(compareFeaturesAlphabetically);
-}
-
 export function orderFeatures<
   T extends { href?: string; id?: string; label: string },
 >(features: readonly T[]): T[] {
@@ -47,6 +38,12 @@ export function orderFeatures<
     .filter((feature) => !isDashboardFeature(feature))
     .slice()
     .sort(compareFeaturesAlphabetically);
+}
+
+export function orderDashboardWidgets<
+  T extends { href?: string; id?: string; label: string },
+>(widgets: readonly T[]): T[] {
+  return orderFeatures(widgets);
 }
 
 export function orderSidebarSections<
