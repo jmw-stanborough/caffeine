@@ -62,24 +62,20 @@
   }
 
   function handleData(data: string) {
-    invoke("endpoint_write_terminal", { data }).catch((err) => {
-      console.error("Failed to send terminal input:", err);
+    invoke("endpoint_write_terminal", { data }).catch((err: unknown) => {
+      terminalView?.writeln(`\r\n\x1b[31mFailed to send terminal input: ${err}\x1b[0m\r\n`);
     });
   }
 
   function handleResize(cols: number, rows: number) {
-    invoke("endpoint_resize_terminal", { cols, rows }).catch((err) => {
-      console.error("Failed to resize terminal:", err);
+    invoke("endpoint_resize_terminal", { cols, rows }).catch((err: unknown) => {
+      terminalView?.writeln(`\r\n\x1b[31mFailed to resize terminal: ${err}\x1b[0m\r\n`);
     });
   }
 
   async function handleRestart() {
     cleanupListeners();
-    try {
-      await invoke("endpoint_close_terminal");
-    } catch (err: unknown) {
-      console.error("Failed to close terminal session:", err);
-    }
+    await invoke("endpoint_close_terminal");
     terminalView?.clear();
     isConnecting = true;
     await startTerminalSession();

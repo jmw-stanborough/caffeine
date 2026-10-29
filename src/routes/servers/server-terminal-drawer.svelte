@@ -61,8 +61,8 @@
     invoke("write_server_ssh_terminal", {
       serverId: server.id,
       data,
-    }).catch((err) => {
-      console.error("Failed to send terminal data:", err);
+    }).catch((err: unknown) => {
+      terminalView?.writeln(`\r\n\x1b[31mFailed to send terminal data: ${err}\x1b[0m\r\n`);
     });
   }
 
@@ -71,8 +71,8 @@
       serverId: server.id,
       cols,
       rows,
-    }).catch((err) => {
-      console.error("Failed to resize terminal session:", err);
+    }).catch((err: unknown) => {
+      terminalView?.writeln(`\r\n\x1b[31mFailed to resize terminal session: ${err}\x1b[0m\r\n`);
     });
   }
 
@@ -99,9 +99,7 @@
       unlistenExit();
       unlistenExit = null;
     }
-    invoke("close_server_ssh_terminal", { serverId: server.id }).catch((err) => {
-      console.error("Failed to close SSH session:", err);
-    });
+    invoke("close_server_ssh_terminal", { serverId: server.id });
   }
 
   onMount(() => {
