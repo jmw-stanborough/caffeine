@@ -1,10 +1,5 @@
-pub fn sanitize_host(host: &str) -> Result<String, String> {
-    let trimmed = host.trim();
-    if trimmed.is_empty() {
-        return Err("Host cannot be empty".to_string());
-    }
-
-    if trimmed.chars().any(|c| {
+fn contains_unsafe_chars(s: &str) -> bool {
+    s.chars().any(|c| {
         c.is_whitespace()
             || c == ';'
             || c == '&'
@@ -13,7 +8,16 @@ pub fn sanitize_host(host: &str) -> Result<String, String> {
             || c == '$'
             || c == '\''
             || c == '"'
-    }) {
+    })
+}
+
+pub fn sanitize_host(host: &str) -> Result<String, String> {
+    let trimmed = host.trim();
+    if trimmed.is_empty() {
+        return Err("Host cannot be empty".to_string());
+    }
+
+    if contains_unsafe_chars(trimmed) {
         return Err("Host contains invalid or unsafe characters".to_string());
     }
 
@@ -28,16 +32,7 @@ pub fn sanitize_username(username: Option<&str>) -> Result<Option<String>, Strin
             if trimmed.is_empty() {
                 return Ok(None);
             }
-            if trimmed.chars().any(|c| {
-                c.is_whitespace()
-                    || c == ';'
-                    || c == '&'
-                    || c == '|'
-                    || c == '`'
-                    || c == '$'
-                    || c == '\''
-                    || c == '"'
-            }) {
+            if contains_unsafe_chars(trimmed) {
                 return Err("Username contains invalid or unsafe characters".to_string());
             }
             Ok(Some(trimmed.to_string()))

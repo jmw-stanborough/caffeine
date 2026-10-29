@@ -76,15 +76,11 @@
 
   async function handleLaunchRemoteDesktop(server: Server) {
     if (noc.isNocMode) return;
-    try {
-      await invoke("launch_remote_desktop", {
-        host: server.host,
-        port: server.rdp_port ?? 3389,
-        username: server.remote_username || null,
-      });
-    } catch (err) {
-      console.error("Failed to launch Remote Desktop:", err);
-    }
+    await invoke("launch_remote_desktop", {
+      host: server.host,
+      port: server.rdp_port ?? 3389,
+      username: server.remote_username || null,
+    });
   }
 
   onMount(() => {
