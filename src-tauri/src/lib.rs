@@ -27,7 +27,8 @@ pub fn run() {
             let active_server = server::ActiveServer::new();
             app.manage(active_server.clone());
 
-            let settings = config::load_app_settings(app.handle()).unwrap_or_default();
+            let settings =
+                config::load_app_settings(app.handle()).map_err(std::io::Error::other)?;
             if settings.server_mode {
                 if let Ok(machine_db) = db::get_machine_db_path() {
                     let bind = settings.server_bind.clone();

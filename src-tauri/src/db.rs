@@ -147,7 +147,7 @@ pub fn get_local_db_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn resolve_active_db_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let settings = crate::config::load_app_settings(app).unwrap_or_default();
+    let settings = crate::config::load_app_settings(app)?;
     if settings.server_mode {
         get_machine_db_path()
     } else if !crate::config::is_self_serving(&settings.target_host) {
