@@ -382,6 +382,7 @@ async fn read_http_response<R: AsyncReadExt + Unpin>(
         if let (Some(end), Some(expected)) = (header_end, body_expected)
             && buf.len() >= end + expected
         {
+            buf.truncate(end + expected);
             break;
         }
     }

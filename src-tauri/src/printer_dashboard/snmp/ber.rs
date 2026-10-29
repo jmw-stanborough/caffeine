@@ -468,8 +468,9 @@ mod tests {
         // Sequence tag (0x30) + length, then Integer version (0x02, 0x01, 0x00)
         assert_eq!(pkt[0], ASN1_SEQUENCE);
         let mut pos = 0;
-        let (_, _, _) = parse_ber_tlv(&pkt, &mut pos).unwrap();
-        let (ver_tag, ver_start, ver_len) = parse_ber_tlv(&pkt, &mut pos).unwrap();
+        let (_, seq_start, _) = parse_ber_tlv(&pkt, &mut pos).unwrap();
+        let mut inner_pos = seq_start;
+        let (ver_tag, ver_start, ver_len) = parse_ber_tlv(&pkt, &mut inner_pos).unwrap();
         assert_eq!(ver_tag, ASN1_INTEGER);
         assert_eq!(decode_signed_int(&pkt[ver_start..ver_start + ver_len]), 0);
 
