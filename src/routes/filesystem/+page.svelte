@@ -18,7 +18,7 @@
   let isDeleteConfirmOpen = $state(false);
 
   onMount(() => {
-    store.init();
+    store.init().catch(() => {});
   });
 
   function handleOpenEntry(entry: FileEntry) {

@@ -64,8 +64,9 @@ export class FilesystemStore {
             }
           },
         );
-      } catch {
-        // Event listening may not be available in mock or web test runners
+      } catch (err: unknown) {
+        this.error = String(err);
+        throw err;
       }
 
       await Promise.all([this.loadVolumes(), this.loadSavedFilters()]);
@@ -100,6 +101,7 @@ export class FilesystemStore {
       }
     } catch (err: unknown) {
       this.error = String(err);
+      throw err;
     }
   }
 
@@ -142,6 +144,7 @@ export class FilesystemStore {
     } catch (err: unknown) {
       this.error = String(err);
       this.isLoading = false;
+      throw err;
     }
   }
 
@@ -163,8 +166,9 @@ export class FilesystemStore {
 
         entry.size_bytes = size;
         entry.drive_usage_percent = driveTotal > 0 ? (size / driveTotal) * 100 : 0;
-      } catch {
-        // Ignored for unreadable/permission-denied system directories
+      } catch (err: unknown) {
+        this.error = String(err);
+        throw err;
       } finally {
         if (this.currentScanGeneration === generation) {
           entry.is_calculating = false;
@@ -211,6 +215,7 @@ export class FilesystemStore {
       this.searchResults = results;
     } catch (err: unknown) {
       this.error = String(err);
+      throw err;
     } finally {
       this.isSearching = false;
       this.activeTaskId = null;
@@ -223,6 +228,7 @@ export class FilesystemStore {
       await invoke("filesystem_cancel_task", { taskId: this.activeTaskId });
     } catch (err: unknown) {
       this.error = String(err);
+      throw err;
     } finally {
       this.isSearching = false;
       this.activeTaskId = null;
@@ -276,6 +282,7 @@ export class FilesystemStore {
       }
     } catch (err: unknown) {
       this.error = String(err);
+      throw err;
     } finally {
       this.isDeleting = false;
     }
@@ -286,17 +293,18 @@ export class FilesystemStore {
       this.savedFilters = await invoke<SavedFilter[]>("filesystem_load_filters");
     } catch (err: unknown) {
       this.error = String(err);
+      throw err;
     }
   }
 
-  async saveFilter(filter: SavedFilter): Promise<SavedFilter | null> {
+  async saveFilter(filter: SavedFilter): Promise<SavedFilter> {
     try {
       const saved = await invoke<SavedFilter>("filesystem_save_filter", { filter });
       await this.loadSavedFilters();
       return saved;
     } catch (err: unknown) {
       this.error = String(err);
-      return null;
+      throw err;
     }
   }
 
@@ -306,6 +314,7 @@ export class FilesystemStore {
       await this.loadSavedFilters();
     } catch (err: unknown) {
       this.error = String(err);
+      throw err;
     }
   }
 }

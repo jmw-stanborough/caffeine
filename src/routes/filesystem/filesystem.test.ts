@@ -73,7 +73,6 @@ describe("FilesystemStore", () => {
       },
     ];
 
-    // Mock navigateTo to avoid Tauri IPC in node unit test
     store.navigateTo = async (p: string) => {
       store.currentPath = p;
     };
