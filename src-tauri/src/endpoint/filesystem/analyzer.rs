@@ -48,7 +48,7 @@ pub fn read_directory(
         let (size_bytes, child_count) = if is_dir {
             total_dirs += 1;
             if calculate_folder_sizes && !symlink_meta.file_type().is_symlink() {
-                let size = calculate_dir_size(&path, cancel).unwrap_or(0);
+                let size = calculate_dir_size(&path, cancel)?;
                 (size, count_direct_children(&path))
             } else {
                 (0, count_direct_children(&path))

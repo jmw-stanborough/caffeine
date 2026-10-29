@@ -122,7 +122,7 @@ pub fn save_saved_filter(app: &AppHandle, mut filter: SavedFilter) -> Result<Sav
     filter.is_preset = false;
 
     let path = get_filters_path(app)?;
-    let mut filters = load_saved_filters(app).unwrap_or_else(|_| get_preset_filters());
+    let mut filters = load_saved_filters(app)?;
 
     if let Some(idx) = filters.iter().position(|f| f.id == filter.id) {
         filters[idx] = filter.clone();

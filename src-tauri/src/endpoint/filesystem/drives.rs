@@ -1,5 +1,4 @@
 use super::types::StorageVolume;
-use std::path::Path;
 use sysinfo::Disks;
 
 pub fn list_storage_volumes() -> Result<Vec<StorageVolume>, String> {
@@ -42,16 +41,6 @@ pub fn list_storage_volumes() -> Result<Vec<StorageVolume>, String> {
 
     volumes.sort_by(|a, b| a.mount_point.cmp(&b.mount_point));
     Ok(volumes)
-}
-
-pub fn get_volume_for_path(path: &Path) -> Option<StorageVolume> {
-    let volumes = list_storage_volumes().ok()?;
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-
-    volumes
-        .into_iter()
-        .filter(|v| canonical.starts_with(Path::new(&v.mount_point)))
-        .max_by_key(|v| v.mount_point.len())
 }
 
 fn md5_digest(bytes: &[u8]) -> u128 {

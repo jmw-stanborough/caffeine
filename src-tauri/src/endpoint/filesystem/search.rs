@@ -45,7 +45,9 @@ pub fn evaluate_criterion(entry: &FileEntry, criterion: &FilterCriterion) -> boo
             match_text_condition(ext, &criterion.condition, clean_value)
         }
         FilterProperty::Size => {
-            let target_size = criterion.value.parse::<u64>().unwrap_or(0);
+            let Ok(target_size) = criterion.value.parse::<u64>() else {
+                return false;
+            };
             match criterion.condition {
                 FilterCondition::Gt => entry.size_bytes > target_size,
                 FilterCondition::Lt => entry.size_bytes < target_size,
