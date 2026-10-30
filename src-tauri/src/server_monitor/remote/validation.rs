@@ -1,14 +1,6 @@
 fn contains_unsafe_chars(s: &str) -> bool {
-    s.chars().any(|c| {
-        c.is_whitespace()
-            || c == ';'
-            || c == '&'
-            || c == '|'
-            || c == '`'
-            || c == '$'
-            || c == '\''
-            || c == '"'
-    })
+    s.chars()
+        .any(|c| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '`' | '$' | '\'' | '"'))
 }
 
 pub fn sanitize_host(host: &str) -> Result<String, String> {
