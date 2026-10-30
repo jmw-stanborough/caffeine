@@ -140,7 +140,9 @@ export class FilesystemStore {
       this.currentPath = result.path;
       this.isLoading = false;
 
-      this.processFolderSizingQueue(generation, driveTotal);
+      this.processFolderSizingQueue(generation, driveTotal).catch((err: unknown) => {
+        console.error("Folder sizing queue failed:", err);
+      });
     } catch (err: unknown) {
       this.error = String(err);
       this.isLoading = false;

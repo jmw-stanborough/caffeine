@@ -18,7 +18,9 @@
   let isDeleteConfirmOpen = $state(false);
 
   onMount(() => {
-    store.init().catch(() => {});
+    store.init().catch((err: unknown) => {
+      console.error("Failed to initialize filesystem store:", err);
+    });
   });
 
   function handleOpenEntry(entry: FileEntry) {
