@@ -502,7 +502,38 @@
     <div class="status-banner">
       <div class="status-content">
         <span class="mini-spinner"></span>
-        <span>{effectiveOperationStatus}</span>
+        <div class="status-text-block">
+          <div class="status-title-row">
+            <span>{effectiveOperationStatus}</span>
+            {#if store.updateProgress}
+              <span class="progress-percent-label">{store.updateProgress.percent_complete}%</span>
+            {/if}
+          </div>
+          {#if store.updateProgress}
+            <div
+              class="status-progress-track"
+              role="progressbar"
+              aria-valuenow={store.updateProgress.percent_complete}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                class="status-progress-fill"
+                style:width="{store.updateProgress.percent_complete}%"
+              ></div>
+            </div>
+            <div class="status-progress-meta">
+              {#if store.updateProgress.total_count > 1}
+                <span>Processing update {store.updateProgress.current_index + 1} of {store.updateProgress.total_count}</span>
+              {:else}
+                <span>{store.updateProgress.phase === 'download' ? 'Downloading package...' : 'Installing package...'}</span>
+              {/if}
+              {#if store.updateProgress.phase === 'download' && store.updateProgress.bytes_downloaded != null && store.updateProgress.total_bytes}
+                <span>{formatBytes(store.updateProgress.bytes_downloaded)} / {formatBytes(store.updateProgress.total_bytes)}</span>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </div>
       {#if store.operationQueue.length > 0}
         <div class="queue-info">
@@ -741,6 +772,7 @@
             isSelected={selectedIds.has(update.id)}
             isDownloading={store.isUpdateDownloading(update.id)}
             isInstalling={store.isUpdateInstalling(update.id)}
+            progress={store.getUpdateProgress(update.id)}
             isQueued={store.isUpdateQueued(update.id)}
             queuedType={store.getQueuedOperation(update.id)?.type}
             {isBusy}
@@ -1079,19 +1111,64 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.45rem 1rem;
+    padding: 0.55rem 1rem;
     background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
     border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-primary) 40%, transparent);
     color: var(--color-primary);
     font-size: 0.8rem;
     font-weight: 500;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
 
   .status-content {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    flex: 1;
+  }
+
+  .status-text-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex: 1;
+    max-width: 550px;
+  }
+
+  .status-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .progress-percent-label {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .status-progress-track {
+    width: 100%;
+    height: 6px;
+    background-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .status-progress-fill {
+    height: 100%;
+    background-color: var(--color-primary);
+    border-radius: 3px;
+    transition: width 0.25s ease-out;
+  }
+
+  .status-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    opacity: 0.85;
+    font-variant-numeric: tabular-nums;
   }
 
   .queue-info {

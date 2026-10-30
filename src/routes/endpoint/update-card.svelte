@@ -1,13 +1,18 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { formatBytes } from "./metrics";
-  import type { SystemUpdateItem, UpdateOperationType } from "./types";
+  import type {
+    SystemUpdateItem,
+    UpdateOperationType,
+    UpdateProgressEvent,
+  } from "./types";
 
   interface Props {
     update: SystemUpdateItem;
     isSelected: boolean;
     isDownloading: boolean;
     isInstalling: boolean;
+    progress?: UpdateProgressEvent | null;
     isQueued: boolean;
     queuedType?: UpdateOperationType;
     isBusy: boolean;
@@ -24,6 +29,7 @@
     isSelected,
     isDownloading,
     isInstalling,
+    progress,
     isQueued,
     queuedType,
     isBusy,
@@ -196,9 +202,37 @@
 
   <div class="update-card-actions">
     {#if isDownloading || isInstalling}
-      <div class="btn-working-indicator">
-        <span class="mini-spinner"></span>
-        <span>{isDownloading ? "Downloading..." : "Installing..."}</span>
+      <div class="card-progress-indicator">
+        <div class="card-progress-header">
+          <div class="card-progress-label-group">
+            <span class="mini-spinner"></span>
+            <span class="card-progress-label">
+              {isDownloading ? "Downloading..." : "Installing..."}
+            </span>
+          </div>
+          {#if progress}
+            <span class="card-progress-percent">{progress.percent_complete}%</span>
+          {/if}
+        </div>
+        {#if progress}
+          <div
+            class="card-progress-track"
+            role="progressbar"
+            aria-valuenow={progress.percent_complete}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              class="card-progress-fill"
+              style:width="{progress.percent_complete}%"
+            ></div>
+          </div>
+          {#if isDownloading && progress.bytes_downloaded != null && progress.total_bytes}
+            <div class="card-progress-bytes">
+              {formatBytes(progress.bytes_downloaded)} / {formatBytes(progress.total_bytes)}
+            </div>
+          {/if}
+        {/if}
       </div>
     {:else if isQueued}
       <button
@@ -648,16 +682,62 @@
     cursor: not-allowed;
   }
 
-  .btn-working-indicator {
-    display: inline-flex;
+  .card-progress-indicator {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 155px;
+    padding: 0.38rem 0.65rem;
+    border-radius: 0.35rem;
+    background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+    border: solid 1px color-mix(in srgb, var(--color-primary) 40%, transparent);
+  }
+
+  .card-progress-header {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.4rem;
-    padding: 0.38rem 0.8rem;
-    border-radius: 0.3rem;
-    background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
-    border: solid 1px var(--color-primary);
-    color: var(--color-primary);
-    font-size: 0.78rem;
+  }
+
+  .card-progress-label-group {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .card-progress-label {
+    font-size: 0.76rem;
     font-weight: 600;
+    color: var(--color-primary);
+  }
+
+  .card-progress-percent {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card-progress-track {
+    width: 100%;
+    height: 5px;
+    background-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .card-progress-fill {
+    height: 100%;
+    background-color: var(--color-primary);
+    border-radius: 3px;
+    transition: width 0.25s ease-out;
+  }
+
+  .card-progress-bytes {
+    font-size: 0.68rem;
+    color: var(--color-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 </style>
