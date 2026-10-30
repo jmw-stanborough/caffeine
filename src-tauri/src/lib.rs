@@ -78,6 +78,7 @@ pub fn run() {
             endpoint::endpoint_check_updates,
             endpoint::endpoint_download_updates,
             endpoint::endpoint_install_updates,
+            endpoint::endpoint_restart_system,
             endpoint::endpoint_detect_shell,
             endpoint::endpoint_start_terminal,
             endpoint::endpoint_write_terminal,
