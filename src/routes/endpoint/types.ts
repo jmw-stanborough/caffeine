@@ -128,6 +128,17 @@ export interface UpdateOperationResult {
   failed_count: number;
 }
 
+export type UpdateOperationType = "download" | "install" | "download_and_install";
+
+export interface QueuedUpdateItem {
+  id: string;
+  title: string;
+  type: UpdateOperationType;
+}
+
+export type UpdateFilterCategory = "all" | "pending_download" | "ready_to_install" | "mandatory";
+export type UpdateSortOption = "severity" | "size" | "title" | "kb";
+
 export interface ShellDetectionResult {
   shell_name: string;
   executable_path: string;

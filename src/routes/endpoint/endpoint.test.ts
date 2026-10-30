@@ -171,4 +171,131 @@ describe("EndpointStore", () => {
     expect(mockInvoke).toHaveBeenCalledWith("endpoint_detect_shell");
     expect(store.shell?.shell_name).toBe("bash");
   });
+
+  it("blocks installUpdates immediately when reboot_required is true", async () => {
+    store.updates = {
+      updates: [
+        {
+          id: "upd-1",
+          title: "KB1001",
+          categories: ["Security"],
+          is_mandatory: false,
+          is_downloaded: true,
+        },
+      ],
+      reboot_required: true,
+      last_checked: "Just now",
+    };
+
+    const res = await store.installUpdates("upd-1");
+    expect(res.success).toBe(false);
+    expect(res.reboot_required).toBe(true);
+    expect(store.updatesError).toContain("restart is required");
+    expect(mockInvoke).not.toHaveBeenCalledWith("endpoint_install_updates", expect.anything());
+  });
+
+  it("supports batch download updates with multiple IDs", async () => {
+    const successOp: UpdateOperationResult = {
+      success: true,
+      reboot_required: false,
+      message: "Downloaded 2 updates.",
+      succeeded_count: 2,
+      failed_count: 0,
+    };
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_download_updates") return successOp;
+      if (cmd === "endpoint_check_updates") {
+        return { updates: [], reboot_required: false, last_checked: "Just now" };
+      }
+      return null;
+    });
+
+    const res = await store.downloadUpdates(["id-1", "id-2"]);
+    expect(res.success).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith("endpoint_download_updates", {
+      targetIds: ["id-1", "id-2"],
+      targetId: null,
+    });
+  });
+
+  it("coordinates downloadAndInstallUpdates pipeline", async () => {
+    const downloadOp: UpdateOperationResult = {
+      success: true,
+      reboot_required: false,
+      message: "Download succeeded",
+      succeeded_count: 1,
+      failed_count: 0,
+    };
+    const installOp: UpdateOperationResult = {
+      success: true,
+      reboot_required: false,
+      message: "Install succeeded",
+      succeeded_count: 1,
+      failed_count: 0,
+    };
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_download_updates") return downloadOp;
+      if (cmd === "endpoint_install_updates") return installOp;
+      if (cmd === "endpoint_check_updates") {
+        return { updates: [], reboot_required: false, last_checked: "Just now" };
+      }
+      return null;
+    });
+
+    const res = await store.downloadAndInstallUpdates("id-combo");
+    expect(res.success).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith("endpoint_download_updates", {
+      targetIds: ["id-combo"],
+      targetId: "id-combo",
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("endpoint_install_updates", {
+      targetIds: ["id-combo"],
+      targetId: "id-combo",
+    });
+  });
+
+  it("queues operations and processes them sequentially without blocking", async () => {
+    const successOp: UpdateOperationResult = {
+      success: true,
+      reboot_required: false,
+      message: "Done",
+      succeeded_count: 1,
+      failed_count: 0,
+    };
+
+    let downloadCalls = 0;
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_download_updates") {
+        downloadCalls++;
+        await new Promise((r) => setTimeout(r, 20));
+        return successOp;
+      }
+      if (cmd === "endpoint_check_updates") {
+        return { updates: [], reboot_required: false, last_checked: "Just now" };
+      }
+      return null;
+    });
+
+    store.queueOperation({ id: "item-1", title: "Item 1", type: "download" });
+    store.queueOperation({ id: "item-2", title: "Item 2", type: "download" });
+
+    expect(store.isUpdateActive("item-1")).toBe(true);
+    expect(store.isUpdateQueued("item-2")).toBe(true);
+
+    await new Promise((r) => setTimeout(r, 70));
+    expect(downloadCalls).toBe(2);
+    expect(store.operationQueue).toHaveLength(0);
+  });
+
+  it("invokes endpoint_restart_system on restartSystem", async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_restart_system") return null;
+      return null;
+    });
+
+    await store.restartSystem();
+    expect(mockInvoke).toHaveBeenCalledWith("endpoint_restart_system");
+  });
 });
