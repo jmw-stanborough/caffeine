@@ -8,18 +8,7 @@
 
 <EndpointModuleShell title="Updates">
   <div class="module-fill">
-    <UpdatesWindow
-      updates={store.updates}
-      isChecking={store.updatesChecking}
-      downloadingId={store.downloadingId}
-      installingId={store.installingId}
-      operationStatus={store.operationStatus}
-      errorMessage={store.updatesError}
-      isAdmin={store.isAdmin}
-      onCheck={() => store.checkForUpdates()}
-      onDownload={(id) => store.downloadUpdates(id)}
-      onInstall={(id) => store.installUpdates(id)}
-    />
+    <UpdatesWindow {store} />
   </div>
 </EndpointModuleShell>
 
