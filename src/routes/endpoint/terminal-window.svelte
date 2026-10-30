@@ -44,7 +44,7 @@
       }
       isConnecting = false;
     } catch (err: unknown) {
-      terminalView.writeln(`\r\n\x1b[31mFailed to launch embedded terminal: ${err}\x1b[0m\r\n`);
+      terminalView?.writeError("Failed to launch embedded terminal", err);
       isConnecting = false;
       return;
     }
@@ -63,13 +63,13 @@
 
   function handleData(data: string) {
     invoke("endpoint_write_terminal", { data }).catch((err: unknown) => {
-      terminalView?.writeln(`\r\n\x1b[31mFailed to send terminal input: ${err}\x1b[0m\r\n`);
+      terminalView?.writeError("Failed to send terminal input", err);
     });
   }
 
   function handleResize(cols: number, rows: number) {
     invoke("endpoint_resize_terminal", { cols, rows }).catch((err: unknown) => {
-      terminalView?.writeln(`\r\n\x1b[31mFailed to resize terminal: ${err}\x1b[0m\r\n`);
+      terminalView?.writeError("Failed to resize terminal", err);
     });
   }
 

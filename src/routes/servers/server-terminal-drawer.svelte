@@ -40,7 +40,7 @@
       isConnecting = false;
     } catch (err: unknown) {
       connectionError = String(err);
-      terminalView.writeln(`\r\n\x1b[31mFailed to launch SSH session: ${err}\x1b[0m\r\n`);
+      terminalView?.writeError("Failed to launch SSH session", err);
       isConnecting = false;
       return;
     }
@@ -62,7 +62,7 @@
       serverId: server.id,
       data,
     }).catch((err: unknown) => {
-      terminalView?.writeln(`\r\n\x1b[31mFailed to send terminal data: ${err}\x1b[0m\r\n`);
+      terminalView?.writeError("Failed to send terminal data", err);
     });
   }
 
@@ -72,7 +72,7 @@
       cols,
       rows,
     }).catch((err: unknown) => {
-      terminalView?.writeln(`\r\n\x1b[31mFailed to resize terminal session: ${err}\x1b[0m\r\n`);
+      terminalView?.writeError("Failed to resize terminal session", err);
     });
   }
 
@@ -85,12 +85,12 @@
   }
 
   async function handleRestart() {
-    cleanupSession();
+    await cleanupSession();
     terminalView?.clear();
     await startSession();
   }
 
-  function cleanupSession() {
+  async function cleanupSession() {
     if (unlistenData) {
       unlistenData();
       unlistenData = null;
@@ -99,7 +99,7 @@
       unlistenExit();
       unlistenExit = null;
     }
-    invoke("close_server_ssh_terminal", { serverId: server.id });
+    await invoke("close_server_ssh_terminal", { serverId: server.id });
   }
 
   onMount(() => {
@@ -107,7 +107,9 @@
   });
 
   onDestroy(() => {
-    cleanupSession();
+    cleanupSession().catch((err: unknown) => {
+      console.error("Failed to close SSH session:", err);
+    });
   });
 </script>
 

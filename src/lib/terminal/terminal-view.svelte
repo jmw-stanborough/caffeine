@@ -36,6 +36,11 @@
     term?.writeln(data);
   }
 
+  export function writeError(message: string, err?: unknown) {
+    const detail = err !== undefined ? `: ${err}` : "";
+    term?.writeln(`\r\n\x1b[31m${message}${detail}\x1b[0m\r\n`);
+  }
+
   export function clear() {
     term?.clear();
   }
