@@ -3,9 +3,14 @@ import { EndpointStore } from "./endpoint.svelte";
 import type { OsSupportInfo, UpdateOperationResult } from "./types";
 
 const mockInvoke = vi.fn();
+const mockListen = vi.fn().mockResolvedValue(() => {});
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (...args: unknown[]) => mockListen(...args),
 }));
 
 describe("EndpointStore", () => {
@@ -297,5 +302,43 @@ describe("EndpointStore", () => {
 
     await store.restartSystem();
     expect(mockInvoke).toHaveBeenCalledWith("endpoint_restart_system");
+  });
+
+  it("tracks update progress events and resolves progress for target update", async () => {
+    let capturedCallback: ((event: { payload: unknown }) => void) | null = null;
+    mockListen.mockImplementation(async (eventName: string, cb: (event: { payload: unknown }) => void) => {
+      if (eventName === "endpoint:update-progress") {
+        capturedCallback = cb;
+      }
+      return () => {};
+    });
+
+    await store.setupEventListeners();
+    expect(mockListen).toHaveBeenCalledWith("endpoint:update-progress", expect.any(Function));
+
+    capturedCallback!({
+      payload: {
+        phase: "download",
+        percent_complete: 42,
+        current_index: 0,
+        total_count: 2,
+        bytes_downloaded: 1048576,
+        total_bytes: 2097152,
+        current_update_id: "update-123",
+      },
+    });
+
+    expect(store.updateProgress).toEqual({
+      phase: "download",
+      percent_complete: 42,
+      current_index: 0,
+      total_count: 2,
+      bytes_downloaded: 1048576,
+      total_bytes: 2097152,
+      current_update_id: "update-123",
+    });
+
+    expect(store.getUpdateProgress("update-123")).not.toBeNull();
+    expect(store.getUpdateProgress("update-999")).toBeNull();
   });
 });

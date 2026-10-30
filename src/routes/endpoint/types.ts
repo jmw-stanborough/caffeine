@@ -128,6 +128,16 @@ export interface UpdateOperationResult {
   failed_count: number;
 }
 
+export interface UpdateProgressEvent {
+  phase: "download" | "install";
+  percent_complete: number;
+  current_index: number;
+  total_count: number;
+  bytes_downloaded?: number | null;
+  total_bytes?: number | null;
+  current_update_id?: string | null;
+}
+
 export type UpdateOperationType = "download" | "install" | "download_and_install";
 
 export interface QueuedUpdateItem {

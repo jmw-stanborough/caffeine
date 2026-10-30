@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   EndpointMachineInfo,
   OsSupportInfo,
@@ -7,6 +8,7 @@ import type {
   UpdateCheckResult,
   UpdateOperationResult,
   UpdateOperationType,
+  UpdateProgressEvent,
 } from "./types";
 
 function normalizeTargetIds(target?: string | string[]): {
@@ -42,6 +44,7 @@ export class EndpointStore {
   activeUpdateIds = $state<string[]>([]);
   operationStatus = $state<string | null>(null);
   operationQueue = $state<QueuedUpdateItem[]>([]);
+  updateProgress = $state<UpdateProgressEvent | null>(null);
 
   shell = $state<ShellDetectionResult | null>(null);
 
@@ -49,6 +52,7 @@ export class EndpointStore {
   private isRefreshing = false;
   private subscriberCount = 0;
   private initPromise: Promise<void> | null = null;
+  private unlistenProgress: UnlistenFn | null = null;
 
   get isBusy(): boolean {
     return this.updatesChecking || this.downloadingId !== null || this.installingId !== null;
@@ -78,6 +82,27 @@ export class EndpointStore {
     return this.operationQueue.find((item) => item.id === id);
   }
 
+  getUpdateProgress(id: string): UpdateProgressEvent | null {
+    if (!this.updateProgress) return null;
+    if (this.updateProgress.current_update_id === id) return this.updateProgress;
+    if (this.downloadingId === id || this.installingId === id) return this.updateProgress;
+    return null;
+  }
+
+  async setupEventListeners(): Promise<void> {
+    if (this.unlistenProgress) return;
+    try {
+      this.unlistenProgress = await listen<UpdateProgressEvent>(
+        "endpoint:update-progress",
+        (event) => {
+          this.updateProgress = event.payload;
+        },
+      );
+    } catch (err: unknown) {
+      console.warn("Failed to register update progress listener:", err);
+    }
+  }
+
   async init(): Promise<void> {
     if (this.osSupport) {
       return;
@@ -102,6 +127,8 @@ export class EndpointStore {
       await this.detectShell().catch((err) => {
         console.warn("Shell detection failed:", err);
       });
+
+      await this.setupEventListeners();
 
       if (!this.osSupport?.is_windows) {
         return;
@@ -136,6 +163,10 @@ export class EndpointStore {
     this.subscriberCount = Math.max(0, this.subscriberCount - 1);
     if (this.subscriberCount === 0) {
       this.stopAutoRefresh();
+      if (this.unlistenProgress) {
+        this.unlistenProgress();
+        this.unlistenProgress = null;
+      }
     }
   }
 
@@ -241,6 +272,7 @@ export class EndpointStore {
     const { single, list } = normalizeTargetIds(target);
     this.downloadingId = single ?? (list ? (list.length === 1 ? list[0] : "ALL") : "ALL");
     this.activeUpdateIds = list ?? this.updates?.updates.map((u) => u.id) ?? [];
+    this.updateProgress = null;
     this.operationStatus = "Downloading updates in background...";
     this.updatesError = null;
 
@@ -264,6 +296,7 @@ export class EndpointStore {
     } finally {
       this.downloadingId = null;
       this.activeUpdateIds = [];
+      this.updateProgress = null;
       if (this.operationQueue.length > 0 && !this.isBusy) {
         void this.processNextQueueItem();
       }
@@ -287,6 +320,7 @@ export class EndpointStore {
     const { single, list } = normalizeTargetIds(target);
     this.installingId = single ?? (list ? (list.length === 1 ? list[0] : "ALL") : "ALL");
     this.activeUpdateIds = list ?? this.updates?.updates.map((u) => u.id) ?? [];
+    this.updateProgress = null;
     this.operationStatus = "Installing updates in background...";
     this.updatesError = null;
 
@@ -310,6 +344,7 @@ export class EndpointStore {
     } finally {
       this.installingId = null;
       this.activeUpdateIds = [];
+      this.updateProgress = null;
       if (this.operationQueue.length > 0 && !this.isBusy) {
         void this.processNextQueueItem();
       }
