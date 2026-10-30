@@ -40,11 +40,7 @@ export function orderFeatures<
     .sort(compareFeaturesAlphabetically);
 }
 
-export function orderDashboardWidgets<
-  T extends { href?: string; id?: string; label: string },
->(widgets: readonly T[]): T[] {
-  return orderFeatures(widgets);
-}
+export const orderDashboardWidgets = orderFeatures;
 
 export function orderSidebarSections<
   I extends { label: string },
