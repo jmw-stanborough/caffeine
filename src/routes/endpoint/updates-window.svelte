@@ -505,34 +505,35 @@
         <div class="status-text-block">
           <div class="status-title-row">
             <span>{effectiveOperationStatus}</span>
-            {#if store.updateProgress}
-              <span class="progress-percent-label">{store.updateProgress.percent_complete}%</span>
+            <span class="progress-percent-label">
+              {store.updateProgress ? `${store.updateProgress.percent_complete}%` : ""}
+            </span>
+          </div>
+          <div
+            class="status-progress-track"
+            role="progressbar"
+            aria-valuenow={store.updateProgress?.percent_complete ?? 0}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              class="status-progress-fill"
+              class:indeterminate={!store.updateProgress || store.updateProgress.percent_complete === 0}
+              style:width="{store.updateProgress ? Math.max(store.updateProgress.percent_complete, 4) : 100}%"
+            ></div>
+          </div>
+          <div class="status-progress-meta">
+            {#if store.updateProgress && store.updateProgress.total_count > 1}
+              <span>Processing update {store.updateProgress.current_index + 1} of {store.updateProgress.total_count}</span>
+            {:else if store.updateProgress}
+              <span>{store.updateProgress.phase === 'download' ? 'Downloading package...' : 'Installing package...'}</span>
+            {:else}
+              <span>Processing...</span>
+            {/if}
+            {#if store.updateProgress && store.updateProgress.phase === 'download' && store.updateProgress.bytes_downloaded != null && store.updateProgress.total_bytes}
+              <span>{formatBytes(store.updateProgress.bytes_downloaded)} / {formatBytes(store.updateProgress.total_bytes)}</span>
             {/if}
           </div>
-          {#if store.updateProgress}
-            <div
-              class="status-progress-track"
-              role="progressbar"
-              aria-valuenow={store.updateProgress.percent_complete}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <div
-                class="status-progress-fill"
-                style:width="{store.updateProgress.percent_complete}%"
-              ></div>
-            </div>
-            <div class="status-progress-meta">
-              {#if store.updateProgress.total_count > 1}
-                <span>Processing update {store.updateProgress.current_index + 1} of {store.updateProgress.total_count}</span>
-              {:else}
-                <span>{store.updateProgress.phase === 'download' ? 'Downloading package...' : 'Installing package...'}</span>
-              {/if}
-              {#if store.updateProgress.phase === 'download' && store.updateProgress.bytes_downloaded != null && store.updateProgress.total_bytes}
-                <span>{formatBytes(store.updateProgress.bytes_downloaded)} / {formatBytes(store.updateProgress.total_bytes)}</span>
-              {/if}
-            </div>
-          {/if}
         </div>
       </div>
       {#if store.operationQueue.length > 0}
@@ -1161,6 +1162,26 @@
     background-color: var(--color-primary);
     border-radius: 3px;
     transition: width 0.25s ease-out;
+  }
+
+  .status-progress-fill.indeterminate {
+    background: linear-gradient(
+      90deg,
+      var(--color-primary) 0%,
+      color-mix(in srgb, var(--color-primary) 40%, white) 50%,
+      var(--color-primary) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-progress 1.5s infinite linear;
+  }
+
+  @keyframes shimmer-progress {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   .status-progress-meta {

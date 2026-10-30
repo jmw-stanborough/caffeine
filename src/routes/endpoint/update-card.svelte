@@ -210,28 +210,27 @@
               {isDownloading ? "Downloading..." : "Installing..."}
             </span>
           </div>
-          {#if progress}
-            <span class="card-progress-percent">{progress.percent_complete}%</span>
-          {/if}
+          <span class="card-progress-percent">
+            {progress ? `${progress.percent_complete}%` : ""}
+          </span>
         </div>
-        {#if progress}
+        <div
+          class="card-progress-track"
+          role="progressbar"
+          aria-valuenow={progress?.percent_complete ?? 0}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
           <div
-            class="card-progress-track"
-            role="progressbar"
-            aria-valuenow={progress.percent_complete}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              class="card-progress-fill"
-              style:width="{progress.percent_complete}%"
-            ></div>
+            class="card-progress-fill"
+            class:indeterminate={!progress || progress.percent_complete === 0}
+            style:width="{progress ? Math.max(progress.percent_complete, 5) : 100}%"
+          ></div>
+        </div>
+        {#if progress && isDownloading && progress.bytes_downloaded != null && progress.total_bytes}
+          <div class="card-progress-bytes">
+            {formatBytes(progress.bytes_downloaded)} / {formatBytes(progress.total_bytes)}
           </div>
-          {#if isDownloading && progress.bytes_downloaded != null && progress.total_bytes}
-            <div class="card-progress-bytes">
-              {formatBytes(progress.bytes_downloaded)} / {formatBytes(progress.total_bytes)}
-            </div>
-          {/if}
         {/if}
       </div>
     {:else if isQueued}
@@ -732,6 +731,26 @@
     background-color: var(--color-primary);
     border-radius: 3px;
     transition: width 0.25s ease-out;
+  }
+
+  .card-progress-fill.indeterminate {
+    background: linear-gradient(
+      90deg,
+      var(--color-primary) 0%,
+      color-mix(in srgb, var(--color-primary) 40%, white) 50%,
+      var(--color-primary) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-progress 1.5s infinite linear;
+  }
+
+  @keyframes shimmer-progress {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   .card-progress-bytes {

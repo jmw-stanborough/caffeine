@@ -250,11 +250,10 @@ $targetIds = {ids_array}
 $Session = New-Object -ComObject Microsoft.Update.Session
 $Searcher = $Session.CreateUpdateSearcher()
 $SearchResult = $Searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0")
-$Downloader = $Session.CreateUpdateDownloader()
 $UpdatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
 $filterById = ($targetIds.Count -gt 0)
 foreach ($u in $SearchResult.Updates) {{
-    if (-not $filterById -or ($targetIds -contains $u.Identity.UpdateID)) {{
+    if ((-not $filterById -or ($targetIds -contains $u.Identity.UpdateID)) -and (-not $u.IsDownloaded)) {{
         if (-not $u.EulaAccepted) {{
             $u.AcceptEula()
         }}
@@ -264,59 +263,86 @@ foreach ($u in $SearchResult.Updates) {{
 if ($UpdatesToDownload.Count -eq 0) {{
     [PSCustomObject]@{{
         Success = $true
-        Message = "No updates matched to download."
+        Message = "All selected updates are already downloaded."
         SucceededCount = 0
         FailedCount = 0
         RebootRequired = $false
     }} | ConvertTo-Json -Compress
     exit 0
 }}
-$Downloader.Updates = $UpdatesToDownload
 
-try {{
-    $downloadJob = $Downloader.BeginDownload($null, $null, $null)
-    while (-not $downloadJob.IsCompleted) {{
-        $prog = $downloadJob.GetProgress()
-        $idx = [int]$prog.CurrentUpdateIndex
-        $currentId = if ($idx -ge 0 -and $idx -lt $UpdatesToDownload.Count) {{ $UpdatesToDownload.Item($idx).Identity.UpdateID }} else {{ $null }}
-        [PSCustomObject]@{{
-            Type = "progress"
-            Phase = "download"
-            Percent = [int]$prog.PercentComplete
-            CurrentIndex = $idx
-            TotalCount = [int]$UpdatesToDownload.Count
-            BytesDownloaded = [int64]$prog.TotalBytesDownloaded
-            TotalBytes = [int64]$prog.TotalBytesToDownload
-            CurrentUpdateId = $currentId
-        }} | ConvertTo-Json -Compress
-        Start-Sleep -Milliseconds 400
-    }}
-    $downloadResult = $Downloader.EndDownload($downloadJob)
-}} catch {{
+$totalCount = $UpdatesToDownload.Count
+$totalBytes = 0
+for ($i = 0; $i -lt $totalCount; $i++) {{
+    $totalBytes += $UpdatesToDownload.Item($i).MaxDownloadSize
+}}
+
+$accumulatedBytes = 0
+$succeededCount = 0
+$failedCount = 0
+
+for ($i = 0; $i -lt $totalCount; $i++) {{
+    $currentUpdate = $UpdatesToDownload.Item($i)
+    $currId = $currentUpdate.Identity.UpdateID
+    $currBytes = $currentUpdate.MaxDownloadSize
+
+    $pct = [int][math]::Floor(($i / $totalCount) * 100)
     [PSCustomObject]@{{
-        Success = $false
-        Message = "Download failed: " + $_.Exception.Message
-        SucceededCount = 0
-        FailedCount = $UpdatesToDownload.Count
-        RebootRequired = $false
+        Type = "progress"
+        Phase = "download"
+        Percent = $pct
+        CurrentIndex = $i
+        TotalCount = $totalCount
+        BytesDownloaded = $accumulatedBytes
+        TotalBytes = $totalBytes
+        CurrentUpdateId = $currId
     }} | ConvertTo-Json -Compress
-    exit 0
+
+    $singleColl = New-Object -ComObject Microsoft.Update.UpdateColl
+    $singleColl.Add($currentUpdate) | Out-Null
+    $singleDownloader = $Session.CreateUpdateDownloader()
+    $singleDownloader.Updates = $singleColl
+
+    try {{
+        $res = $singleDownloader.Download()
+        if ($res.ResultCode -eq 2) {{
+            $succeededCount++
+            $accumulatedBytes += $currBytes
+        }} else {{
+            $failedCount++
+        }}
+    }} catch {{
+        $failedCount++
+    }}
+
+    $pctAfter = [int][math]::Floor((($i + 1) / $totalCount) * 100)
+    [PSCustomObject]@{{
+        Type = "progress"
+        Phase = "download"
+        Percent = $pctAfter
+        CurrentIndex = $i
+        TotalCount = $totalCount
+        BytesDownloaded = $accumulatedBytes
+        TotalBytes = $totalBytes
+        CurrentUpdateId = $currId
+    }} | ConvertTo-Json -Compress
 }}
 
-$succeeded = ($downloadResult.ResultCode -eq 2)
 $reboot = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
-$msg = switch ($downloadResult.ResultCode) {{
-    2 {{ "Download completed successfully." }}
-    3 {{ "Download completed with errors." }}
-    4 {{ "Download failed (code 4). Administrative privileges or a system restart may be required." }}
-    5 {{ "Download was aborted (code 5)." }}
-    default {{ "Download completed with code " + $downloadResult.ResultCode }}
+$succeeded = ($failedCount -eq 0 -and $succeededCount -gt 0)
+$msg = if ($succeeded) {{
+    "Download completed successfully."
+}} elseif ($succeededCount -gt 0) {{
+    "Download completed with errors ($succeededCount succeeded, $failedCount failed)."
+}} else {{
+    "Download failed. Administrative privileges or a system restart may be required."
 }}
+
 [PSCustomObject]@{{
     Success = $succeeded
     Message = $msg
-    SucceededCount = $(if ($succeeded) {{ $UpdatesToDownload.Count }} else {{ 0 }})
-    FailedCount = $(if ($succeeded) {{ 0 }} else {{ $UpdatesToDownload.Count }})
+    SucceededCount = $succeededCount
+    FailedCount = $failedCount
     RebootRequired = $reboot
 }} | ConvertTo-Json -Compress
 "#
@@ -379,54 +405,76 @@ if ($UpdatesToInstall.Count -eq 0) {{
     }} | ConvertTo-Json -Compress
     exit 0
 }}
-$Installer = $Session.CreateUpdateInstaller()
-$Installer.Updates = $UpdatesToInstall
-$Installer.ForceQuiet = $true
 
-try {{
-    $installationJob = $Installer.BeginInstall($null, $null, $null)
-    while (-not $installationJob.IsCompleted) {{
-        $prog = $installationJob.GetProgress()
-        $idx = [int]$prog.CurrentUpdateIndex
-        $currentId = if ($idx -ge 0 -and $idx -lt $UpdatesToInstall.Count) {{ $UpdatesToInstall.Item($idx).Identity.UpdateID }} else {{ $null }}
-        [PSCustomObject]@{{
-            Type = "progress"
-            Phase = "install"
-            Percent = [int]$prog.PercentComplete
-            CurrentIndex = $idx
-            TotalCount = [int]$UpdatesToInstall.Count
-            BytesDownloaded = $null
-            TotalBytes = $null
-            CurrentUpdateId = $currentId
-        }} | ConvertTo-Json -Compress
-        Start-Sleep -Milliseconds 400
-    }}
-    $installResult = $Installer.EndInstall($installationJob)
-}} catch {{
+$totalCount = $UpdatesToInstall.Count
+$succeededCount = 0
+$failedCount = 0
+$rebootNeeded = $false
+
+for ($i = 0; $i -lt $totalCount; $i++) {{
+    $currentUpdate = $UpdatesToInstall.Item($i)
+    $currId = $currentUpdate.Identity.UpdateID
+
+    $pct = [int][math]::Floor(($i / $totalCount) * 100)
     [PSCustomObject]@{{
-        Success = $false
-        Message = "Installation failed: " + $_.Exception.Message
-        SucceededCount = 0
-        FailedCount = $UpdatesToInstall.Count
-        RebootRequired = $false
+        Type = "progress"
+        Phase = "install"
+        Percent = $pct
+        CurrentIndex = $i
+        TotalCount = $totalCount
+        BytesDownloaded = $null
+        TotalBytes = $null
+        CurrentUpdateId = $currId
     }} | ConvertTo-Json -Compress
-    exit 0
+
+    $singleColl = New-Object -ComObject Microsoft.Update.UpdateColl
+    $singleColl.Add($currentUpdate) | Out-Null
+    $singleInstaller = $Session.CreateUpdateInstaller()
+    $singleInstaller.Updates = $singleColl
+    $singleInstaller.ForceQuiet = $true
+
+    try {{
+        $res = $singleInstaller.Install()
+        if ($res.ResultCode -eq 2) {{
+            $succeededCount++
+        }} else {{
+            $failedCount++
+        }}
+        if ($res.RebootRequired) {{
+            $rebootNeeded = $true
+        }}
+    }} catch {{
+        $failedCount++
+    }}
+
+    $pctAfter = [int][math]::Floor((($i + 1) / $totalCount) * 100)
+    [PSCustomObject]@{{
+        Type = "progress"
+        Phase = "install"
+        Percent = $pctAfter
+        CurrentIndex = $i
+        TotalCount = $totalCount
+        BytesDownloaded = $null
+        TotalBytes = $null
+        CurrentUpdateId = $currId
+    }} | ConvertTo-Json -Compress
 }}
 
-$reboot = [bool]$installResult.RebootRequired -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
-$succeeded = ($installResult.ResultCode -eq 2)
-$msg = switch ($installResult.ResultCode) {{
-    2 {{ "Installation completed successfully." }}
-    3 {{ "Installation completed with errors." }}
-    4 {{ "Installation failed (code 4). Administrative privileges or a system restart may be required." }}
-    5 {{ "Installation was aborted (code 5)." }}
-    default {{ "Installation finished with code " + $installResult.ResultCode }}
+$reboot = $rebootNeeded -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
+$succeeded = ($failedCount -eq 0 -and $succeededCount -gt 0)
+$msg = if ($succeeded) {{
+    "Installation completed successfully."
+}} elseif ($succeededCount -gt 0) {{
+    "Installation completed with errors ($succeededCount succeeded, $failedCount failed)."
+}} else {{
+    "Installation failed. Administrative privileges or a system restart may be required."
 }}
+
 [PSCustomObject]@{{
     Success = $succeeded
     Message = $msg
-    SucceededCount = $(if ($succeeded) {{ $UpdatesToInstall.Count }} else {{ 0 }})
-    FailedCount = $(if ($succeeded) {{ 0 }} else {{ $UpdatesToInstall.Count }})
+    SucceededCount = $succeededCount
+    FailedCount = $failedCount
     RebootRequired = $reboot
 }} | ConvertTo-Json -Compress
 "#

@@ -86,6 +86,12 @@ export class EndpointStore {
     if (!this.updateProgress) return null;
     if (this.updateProgress.current_update_id === id) return this.updateProgress;
     if (this.downloadingId === id || this.installingId === id) return this.updateProgress;
+    if (
+      (this.downloadingId === "ALL" || this.installingId === "ALL") &&
+      (!this.updateProgress.current_update_id || this.activeUpdateIds.includes(id))
+    ) {
+      return this.updateProgress;
+    }
     return null;
   }
 
@@ -272,7 +278,15 @@ export class EndpointStore {
     const { single, list } = normalizeTargetIds(target);
     this.downloadingId = single ?? (list ? (list.length === 1 ? list[0] : "ALL") : "ALL");
     this.activeUpdateIds = list ?? this.updates?.updates.map((u) => u.id) ?? [];
-    this.updateProgress = null;
+    this.updateProgress = {
+      phase: "download",
+      percent_complete: 0,
+      current_index: 0,
+      total_count: this.activeUpdateIds.length || 1,
+      bytes_downloaded: 0,
+      total_bytes: null,
+      current_update_id: single ?? (list && list.length === 1 ? list[0] : null),
+    };
     this.operationStatus = "Downloading updates in background...";
     this.updatesError = null;
 
@@ -320,7 +334,15 @@ export class EndpointStore {
     const { single, list } = normalizeTargetIds(target);
     this.installingId = single ?? (list ? (list.length === 1 ? list[0] : "ALL") : "ALL");
     this.activeUpdateIds = list ?? this.updates?.updates.map((u) => u.id) ?? [];
-    this.updateProgress = null;
+    this.updateProgress = {
+      phase: "install",
+      percent_complete: 0,
+      current_index: 0,
+      total_count: this.activeUpdateIds.length || 1,
+      bytes_downloaded: null,
+      total_bytes: null,
+      current_update_id: single ?? (list && list.length === 1 ? list[0] : null),
+    };
     this.operationStatus = "Installing updates in background...";
     this.updatesError = null;
 
