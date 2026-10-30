@@ -142,23 +142,59 @@ fn execute_update_operation(script: &str) -> Result<UpdateOperationResult, Strin
     Ok(raw.into())
 }
 
-pub fn download_updates(target_id: Option<String>) -> Result<UpdateOperationResult, String> {
+pub(crate) fn resolve_target_ids(
+    target_ids: Option<Vec<String>>,
+    target_id: Option<String>,
+) -> Result<Vec<String>, String> {
+    let mut result = target_ids.unwrap_or_default();
+    if let Some(single) = target_id {
+        let trimmed = single.trim().to_string();
+        if !trimmed.is_empty() && !result.contains(&trimmed) {
+            result.push(trimmed);
+        }
+    }
+
+    for id in &result {
+        if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '{' || c == '}') {
+            return Err(format!("Invalid update ID format: {id}"));
+        }
+    }
+
+    Ok(result)
+}
+
+pub(crate) fn format_powershell_id_array(ids: &[String]) -> String {
+    if ids.is_empty() {
+        "@()".to_string()
+    } else {
+        let quoted: Vec<String> = ids.iter().map(|id| format!("'{id}'")).collect();
+        format!("@({})", quoted.join(", "))
+    }
+}
+
+pub fn download_updates(
+    target_ids: Option<Vec<String>>,
+    target_id: Option<String>,
+) -> Result<UpdateOperationResult, String> {
     if !cfg!(target_os = "windows") {
         return Err("System updates are only supported on Windows.".to_string());
     }
 
-    let id_arg = target_id.unwrap_or_default();
+    let resolved_ids = resolve_target_ids(target_ids, target_id)?;
+    let ids_array = format_powershell_id_array(&resolved_ids);
+
     let script = format!(
         r#"
 $ProgressPreference = 'SilentlyContinue'
-$targetId = '{id_arg}'
+$targetIds = {ids_array}
 $Session = New-Object -ComObject Microsoft.Update.Session
 $Searcher = $Session.CreateUpdateSearcher()
 $SearchResult = $Searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0")
 $Downloader = $Session.CreateUpdateDownloader()
 $UpdatesToDownload = New-Object -ComObject Microsoft.Update.UpdateColl
+$filterById = ($targetIds.Count -gt 0)
 foreach ($u in $SearchResult.Updates) {{
-    if (-not $targetId -or $u.Identity.UpdateID -eq $targetId) {{
+    if (-not $filterById -or ($targetIds -contains $u.Identity.UpdateID)) {{
         if (-not $u.EulaAccepted) {{
             $u.AcceptEula()
         }}
@@ -199,22 +235,40 @@ $msg = switch ($downloadResult.ResultCode) {{
     execute_update_operation(&script)
 }
 
-pub fn install_updates(target_id: Option<String>) -> Result<UpdateOperationResult, String> {
+pub fn install_updates(
+    target_ids: Option<Vec<String>>,
+    target_id: Option<String>,
+) -> Result<UpdateOperationResult, String> {
     if !cfg!(target_os = "windows") {
         return Err("System updates are only supported on Windows.".to_string());
     }
 
-    let id_arg = target_id.unwrap_or_default();
+    let resolved_ids = resolve_target_ids(target_ids, target_id)?;
+    let ids_array = format_powershell_id_array(&resolved_ids);
+
     let script = format!(
         r#"
 $ProgressPreference = 'SilentlyContinue'
-$targetId = '{id_arg}'
+$rebootPending = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
+if ($rebootPending) {{
+    [PSCustomObject]@{{
+        Success = $false
+        Message = "A system restart is required before installing further updates. Please restart your system and try again."
+        SucceededCount = 0
+        FailedCount = 0
+        RebootRequired = $true
+    }} | ConvertTo-Json -Compress
+    exit 0
+}}
+
+$targetIds = {ids_array}
 $Session = New-Object -ComObject Microsoft.Update.Session
 $Searcher = $Session.CreateUpdateSearcher()
 $SearchResult = $Searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0")
 $UpdatesToInstall = New-Object -ComObject Microsoft.Update.UpdateColl
+$filterById = ($targetIds.Count -gt 0)
 foreach ($u in $SearchResult.Updates) {{
-    if ((-not $targetId -or $u.Identity.UpdateID -eq $targetId) -and $u.IsDownloaded) {{
+    if ((-not $filterById -or ($targetIds -contains $u.Identity.UpdateID)) -and $u.IsDownloaded) {{
         if (-not $u.EulaAccepted) {{
             $u.AcceptEula()
         }}
@@ -255,4 +309,55 @@ $msg = switch ($installResult.ResultCode) {{
     );
 
     execute_update_operation(&script)
+}
+
+pub fn restart_system() -> Result<(), String> {
+    if !cfg!(target_os = "windows") {
+        return Err("System restart is only supported on Windows.".to_string());
+    }
+
+    let output = std::process::Command::new("shutdown.exe")
+        .args(["/r", "/t", "0", "/d", "p:2:18"])
+        .output()
+        .map_err(|e| format!("Failed to execute restart command: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("System restart failed: {}", stderr.trim()));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_target_ids_merges_and_sanitizes() {
+        let list = Some(vec!["update-1".to_string(), "update-2".to_string()]);
+        let single = Some("update-3".to_string());
+        let resolved = resolve_target_ids(list, single).unwrap();
+        expect_eq(resolved, vec!["update-1", "update-2", "update-3"]);
+    }
+
+    #[test]
+    fn test_resolve_target_ids_rejects_special_characters() {
+        let malformed = Some(vec!["update; Remove-Item C:\\".to_string()]);
+        assert!(resolve_target_ids(malformed, None).is_err());
+    }
+
+    #[test]
+    fn test_format_powershell_id_array_empty_and_populated() {
+        assert_eq!(format_powershell_id_array(&[]), "@()");
+        assert_eq!(
+            format_powershell_id_array(&["id1".to_string(), "id2".to_string()]),
+            "@('id1', 'id2')"
+        );
+    }
+
+    fn expect_eq(actual: Vec<String>, expected: Vec<&str>) {
+        let expected_strings: Vec<String> = expected.into_iter().map(String::from).collect();
+        assert_eq!(actual, expected_strings);
+    }
 }

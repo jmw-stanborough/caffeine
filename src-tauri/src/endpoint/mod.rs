@@ -35,20 +35,29 @@ pub async fn endpoint_check_updates() -> Result<UpdateCheckResult, String> {
 
 #[tauri::command]
 pub async fn endpoint_download_updates(
+    target_ids: Option<Vec<String>>,
     target_id: Option<String>,
 ) -> Result<UpdateOperationResult, String> {
-    tokio::task::spawn_blocking(move || updates::download_updates(target_id))
+    tokio::task::spawn_blocking(move || updates::download_updates(target_ids, target_id))
         .await
         .map_err(|e| format!("Download update task panicked: {e}"))?
 }
 
 #[tauri::command]
 pub async fn endpoint_install_updates(
+    target_ids: Option<Vec<String>>,
     target_id: Option<String>,
 ) -> Result<UpdateOperationResult, String> {
-    tokio::task::spawn_blocking(move || updates::install_updates(target_id))
+    tokio::task::spawn_blocking(move || updates::install_updates(target_ids, target_id))
         .await
         .map_err(|e| format!("Install update task panicked: {e}"))?
+}
+
+#[tauri::command]
+pub async fn endpoint_restart_system() -> Result<(), String> {
+    tokio::task::spawn_blocking(updates::restart_system)
+        .await
+        .map_err(|e| format!("System restart task panicked: {e}"))?
 }
 
 #[tauri::command]
