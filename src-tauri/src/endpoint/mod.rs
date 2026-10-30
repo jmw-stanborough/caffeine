@@ -6,7 +6,7 @@ pub mod terminal;
 pub mod types;
 pub mod updates;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use types::{
     EndpointMachineInfo, OsSupportInfo, ShellDetectionResult, UpdateCheckResult,
     UpdateOperationResult,
@@ -35,22 +35,32 @@ pub async fn endpoint_check_updates() -> Result<UpdateCheckResult, String> {
 
 #[tauri::command]
 pub async fn endpoint_download_updates(
+    app: AppHandle,
     target_ids: Option<Vec<String>>,
     target_id: Option<String>,
 ) -> Result<UpdateOperationResult, String> {
-    tokio::task::spawn_blocking(move || updates::download_updates(target_ids, target_id))
-        .await
-        .map_err(|e| format!("Download update task panicked: {e}"))?
+    tokio::task::spawn_blocking(move || {
+        updates::download_updates(target_ids, target_id, |p| {
+            let _ = app.emit("endpoint:update-progress", &p);
+        })
+    })
+    .await
+    .map_err(|e| format!("Download update task panicked: {e}"))?
 }
 
 #[tauri::command]
 pub async fn endpoint_install_updates(
+    app: AppHandle,
     target_ids: Option<Vec<String>>,
     target_id: Option<String>,
 ) -> Result<UpdateOperationResult, String> {
-    tokio::task::spawn_blocking(move || updates::install_updates(target_ids, target_id))
-        .await
-        .map_err(|e| format!("Install update task panicked: {e}"))?
+    tokio::task::spawn_blocking(move || {
+        updates::install_updates(target_ids, target_id, |p| {
+            let _ = app.emit("endpoint:update-progress", &p);
+        })
+    })
+    .await
+    .map_err(|e| format!("Install update task panicked: {e}"))?
 }
 
 #[tauri::command]

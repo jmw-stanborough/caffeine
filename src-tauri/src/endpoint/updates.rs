@@ -1,5 +1,7 @@
-use super::powershell::query_powershell_json;
-use super::types::{SystemUpdateItem, UpdateCheckResult, UpdateOperationResult};
+use super::powershell::{extract_json_slice, query_powershell_json, run_powershell_streaming};
+use super::types::{
+    SystemUpdateItem, UpdateCheckResult, UpdateOperationResult, UpdateProgressEvent,
+};
 
 #[derive(serde::Deserialize)]
 struct RawUpdate {
@@ -137,9 +139,63 @@ fn map_raw_update(raw: RawUpdate) -> SystemUpdateItem {
     }
 }
 
-fn execute_update_operation(script: &str) -> Result<UpdateOperationResult, String> {
-    let raw: RawUpdateOperation = query_powershell_json(script)?;
-    Ok(raw.into())
+#[derive(serde::Deserialize)]
+struct RawProgress {
+    #[serde(rename = "Type")]
+    msg_type: Option<String>,
+    #[serde(rename = "Phase")]
+    phase: Option<String>,
+    #[serde(rename = "Percent")]
+    percent: Option<u32>,
+    #[serde(rename = "CurrentIndex")]
+    current_index: Option<usize>,
+    #[serde(rename = "TotalCount")]
+    total_count: Option<usize>,
+    #[serde(rename = "BytesDownloaded")]
+    bytes_downloaded: Option<u64>,
+    #[serde(rename = "TotalBytes")]
+    total_bytes: Option<u64>,
+    #[serde(rename = "CurrentUpdateId")]
+    current_update_id: Option<String>,
+}
+
+fn execute_streaming_update_operation<F>(
+    script: &str,
+    mut on_progress: F,
+) -> Result<UpdateOperationResult, String>
+where
+    F: FnMut(UpdateProgressEvent),
+{
+    let mut final_result: Option<UpdateOperationResult> = None;
+
+    run_powershell_streaming(script, |line| {
+        if let Ok(slice) = extract_json_slice(line) {
+            if let Ok(progress) = serde_json::from_str::<RawProgress>(slice) {
+                if progress.msg_type.as_deref() == Some("progress") {
+                    on_progress(UpdateProgressEvent {
+                        phase: progress.phase.unwrap_or_else(|| "download".to_string()),
+                        percent_complete: progress.percent.unwrap_or(0),
+                        current_index: progress.current_index.unwrap_or(0),
+                        total_count: progress.total_count.unwrap_or(0),
+                        bytes_downloaded: progress.bytes_downloaded,
+                        total_bytes: progress.total_bytes,
+                        current_update_id: progress.current_update_id,
+                    });
+                    return;
+                }
+            }
+
+            if let Ok(raw_op) = serde_json::from_str::<RawUpdateOperation>(slice) {
+                if raw_op.success.is_some() {
+                    final_result = Some(raw_op.into());
+                }
+            }
+        }
+    })?;
+
+    final_result.ok_or_else(|| {
+        "PowerShell update process completed without producing an operation result.".to_string()
+    })
 }
 
 pub(crate) fn resolve_target_ids(
@@ -172,10 +228,14 @@ pub(crate) fn format_powershell_id_array(ids: &[String]) -> String {
     }
 }
 
-pub fn download_updates(
+pub fn download_updates<F>(
     target_ids: Option<Vec<String>>,
     target_id: Option<String>,
-) -> Result<UpdateOperationResult, String> {
+    on_progress: F,
+) -> Result<UpdateOperationResult, String>
+where
+    F: FnMut(UpdateProgressEvent),
+{
     if !cfg!(target_os = "windows") {
         return Err("System updates are only supported on Windows.".to_string());
     }
@@ -212,7 +272,37 @@ if ($UpdatesToDownload.Count -eq 0) {{
     exit 0
 }}
 $Downloader.Updates = $UpdatesToDownload
-$downloadResult = $Downloader.Download()
+
+try {{
+    $downloadJob = $Downloader.BeginDownload($null, $null, $null)
+    while (-not $downloadJob.IsCompleted) {{
+        $prog = $downloadJob.GetProgress()
+        $idx = [int]$prog.CurrentUpdateIndex
+        $currentId = if ($idx -ge 0 -and $idx -lt $UpdatesToDownload.Count) {{ $UpdatesToDownload.Item($idx).Identity.UpdateID }} else {{ $null }}
+        [PSCustomObject]@{{
+            Type = "progress"
+            Phase = "download"
+            Percent = [int]$prog.PercentComplete
+            CurrentIndex = $idx
+            TotalCount = [int]$UpdatesToDownload.Count
+            BytesDownloaded = [int64]$prog.TotalBytesDownloaded
+            TotalBytes = [int64]$prog.TotalBytesToDownload
+            CurrentUpdateId = $currentId
+        }} | ConvertTo-Json -Compress
+        Start-Sleep -Milliseconds 400
+    }}
+    $downloadResult = $Downloader.EndDownload($downloadJob)
+}} catch {{
+    [PSCustomObject]@{{
+        Success = $false
+        Message = "Download failed: " + $_.Exception.Message
+        SucceededCount = 0
+        FailedCount = $UpdatesToDownload.Count
+        RebootRequired = $false
+    }} | ConvertTo-Json -Compress
+    exit 0
+}}
+
 $succeeded = ($downloadResult.ResultCode -eq 2)
 $reboot = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
 $msg = switch ($downloadResult.ResultCode) {{
@@ -232,13 +322,17 @@ $msg = switch ($downloadResult.ResultCode) {{
 "#
     );
 
-    execute_update_operation(&script)
+    execute_streaming_update_operation(&script, on_progress)
 }
 
-pub fn install_updates(
+pub fn install_updates<F>(
     target_ids: Option<Vec<String>>,
     target_id: Option<String>,
-) -> Result<UpdateOperationResult, String> {
+    on_progress: F,
+) -> Result<UpdateOperationResult, String>
+where
+    F: FnMut(UpdateProgressEvent),
+{
     if !cfg!(target_os = "windows") {
         return Err("System updates are only supported on Windows.".to_string());
     }
@@ -288,7 +382,37 @@ if ($UpdatesToInstall.Count -eq 0) {{
 $Installer = $Session.CreateUpdateInstaller()
 $Installer.Updates = $UpdatesToInstall
 $Installer.ForceQuiet = $true
-$installResult = $Installer.Install()
+
+try {{
+    $installationJob = $Installer.BeginInstall($null, $null, $null)
+    while (-not $installationJob.IsCompleted) {{
+        $prog = $installationJob.GetProgress()
+        $idx = [int]$prog.CurrentUpdateIndex
+        $currentId = if ($idx -ge 0 -and $idx -lt $UpdatesToInstall.Count) {{ $UpdatesToInstall.Item($idx).Identity.UpdateID }} else {{ $null }}
+        [PSCustomObject]@{{
+            Type = "progress"
+            Phase = "install"
+            Percent = [int]$prog.PercentComplete
+            CurrentIndex = $idx
+            TotalCount = [int]$UpdatesToInstall.Count
+            BytesDownloaded = $null
+            TotalBytes = $null
+            CurrentUpdateId = $currentId
+        }} | ConvertTo-Json -Compress
+        Start-Sleep -Milliseconds 400
+    }}
+    $installResult = $Installer.EndInstall($installationJob)
+}} catch {{
+    [PSCustomObject]@{{
+        Success = $false
+        Message = "Installation failed: " + $_.Exception.Message
+        SucceededCount = 0
+        FailedCount = $UpdatesToInstall.Count
+        RebootRequired = $false
+    }} | ConvertTo-Json -Compress
+    exit 0
+}}
+
 $reboot = [bool]$installResult.RebootRequired -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending')
 $succeeded = ($installResult.ResultCode -eq 2)
 $msg = switch ($installResult.ResultCode) {{
@@ -308,7 +432,7 @@ $msg = switch ($installResult.ResultCode) {{
 "#
     );
 
-    execute_update_operation(&script)
+    execute_streaming_update_operation(&script, on_progress)
 }
 
 pub fn restart_system() -> Result<(), String> {
@@ -354,6 +478,32 @@ mod tests {
             format_powershell_id_array(&["id1".to_string(), "id2".to_string()]),
             "@('id1', 'id2')"
         );
+    }
+
+    #[test]
+    fn test_raw_progress_deserialization() {
+        let json = r#"{"Type":"progress","Phase":"download","Percent":65,"CurrentIndex":1,"TotalCount":3,"BytesDownloaded":1048576,"TotalBytes":2097152,"CurrentUpdateId":"uuid-123"}"#;
+        let raw: RawProgress = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.msg_type.as_deref(), Some("progress"));
+        assert_eq!(raw.phase.as_deref(), Some("download"));
+        assert_eq!(raw.percent, Some(65));
+        assert_eq!(raw.current_index, Some(1));
+        assert_eq!(raw.total_count, Some(3));
+        assert_eq!(raw.bytes_downloaded, Some(1048576));
+        assert_eq!(raw.total_bytes, Some(2097152));
+        assert_eq!(raw.current_update_id.as_deref(), Some("uuid-123"));
+    }
+
+    #[test]
+    fn test_raw_update_operation_deserialization() {
+        let json = r#"{"Success":true,"Message":"Installed","SucceededCount":2,"FailedCount":0,"RebootRequired":true}"#;
+        let raw: RawUpdateOperation = serde_json::from_str(json).unwrap();
+        let res: UpdateOperationResult = raw.into();
+        assert!(res.success);
+        assert!(res.reboot_required);
+        assert_eq!(res.succeeded_count, 2);
+        assert_eq!(res.failed_count, 0);
+        assert_eq!(res.message, "Installed");
     }
 
     fn expect_eq(actual: Vec<String>, expected: Vec<&str>) {

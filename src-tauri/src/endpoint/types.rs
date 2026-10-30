@@ -145,6 +145,17 @@ pub struct UpdateOperationResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateProgressEvent {
+    pub phase: String,
+    pub percent_complete: u32,
+    pub current_index: usize,
+    pub total_count: usize,
+    pub bytes_downloaded: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub current_update_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellDetectionResult {
     pub shell_name: String,
     pub executable_path: String,
