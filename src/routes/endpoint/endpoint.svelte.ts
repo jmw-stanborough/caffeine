@@ -10,22 +10,7 @@ import type {
   UpdateOperationType,
   UpdateProgressEvent,
 } from "./types";
-
-function normalizeTargetIds(target?: string | string[]): {
-  single: string | null;
-  list: string[] | null;
-} {
-  if (!target) {
-    return { single: null, list: null };
-  }
-  if (Array.isArray(target)) {
-    return {
-      single: target.length === 1 ? target[0] : null,
-      list: target,
-    };
-  }
-  return { single: target, list: [target] };
-}
+import { normalizeTargetIds } from "./updates/queue";
 
 export class EndpointStore {
   osSupport = $state<OsSupportInfo | null>(null);
@@ -97,16 +82,12 @@ export class EndpointStore {
 
   async setupEventListeners(): Promise<void> {
     if (this.unlistenProgress) return;
-    try {
-      this.unlistenProgress = await listen<UpdateProgressEvent>(
-        "endpoint:update-progress",
-        (event) => {
-          this.updateProgress = event.payload;
-        },
-      );
-    } catch (err: unknown) {
-      console.warn("Failed to register update progress listener:", err);
-    }
+    this.unlistenProgress = await listen<UpdateProgressEvent>(
+      "endpoint:update-progress",
+      (event) => {
+        this.updateProgress = event.payload;
+      },
+    );
   }
 
   async init(): Promise<void> {
