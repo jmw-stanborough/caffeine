@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { openUrl } from "@tauri-apps/plugin-opener";
   import { formatBytes } from "./metrics";
   import type {
     SystemUpdateItem,
     UpdateOperationType,
     UpdateProgressEvent,
   } from "./types";
+  import UpdateCardActions from "./updates/update-card-actions.svelte";
+  import UpdateCardDetails from "./updates/update-card-details.svelte";
 
   interface Props {
     update: SystemUpdateItem;
@@ -32,7 +33,6 @@
     progress,
     isQueued,
     queuedType,
-    isBusy,
     rebootRequired,
     onToggleSelect,
     onDownload,
@@ -42,7 +42,6 @@
   }: Props = $props();
 
   let isExpanded = $state(false);
-  let copiedId = $state(false);
 
   function getSeverityClass(severity?: string): string {
     if (!severity) return "sev-none";
@@ -52,26 +51,6 @@
     if (s.includes("moderate")) return "sev-moderate";
     if (s.includes("low")) return "sev-low";
     return "sev-other";
-  }
-
-  async function handleOpenSupport(url: string) {
-    try {
-      await openUrl(url);
-    } catch {
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-  }
-
-  async function copyUpdateId(id: string) {
-    try {
-      await navigator.clipboard.writeText(id);
-      copiedId = true;
-      setTimeout(() => {
-        copiedId = false;
-      }, 2000);
-    } catch (err) {
-      console.warn("Failed to copy update ID:", err);
-    }
   }
 </script>
 
@@ -147,47 +126,7 @@
     {/if}
 
     {#if isExpanded}
-      <div class="expanded-details">
-        {#if update.description}
-          <div class="full-desc">{update.description}</div>
-        {/if}
-
-        {#if update.categories.length > 0}
-          <div class="categories-row">
-            <span class="detail-label">Categories:</span>
-            <div class="category-tags">
-              {#each update.categories as cat}
-                <span class="cat-pill">{cat}</span>
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-        <div class="meta-row">
-          <span class="detail-label">Update ID:</span>
-          <code class="update-id-code">{update.id}</code>
-          <button
-            class="btn-copy-id"
-            onclick={() => copyUpdateId(update.id)}
-            title="Copy Update GUID"
-          >
-            {copiedId ? "Copied!" : "Copy"}
-          </button>
-        </div>
-
-        {#if update.support_url}
-          <div class="meta-row">
-            <span class="detail-label">Support Documentation:</span>
-            <button
-              class="support-link-btn"
-              onclick={() => handleOpenSupport(update.support_url!)}
-              title={update.support_url}
-            >
-              Open Microsoft Support Article &rarr;
-            </button>
-          </div>
-        {/if}
-      </div>
+      <UpdateCardDetails {update} />
     {/if}
 
     <div class="card-footer-row">
@@ -200,89 +139,19 @@
     </div>
   </div>
 
-  <div class="update-card-actions">
-    {#if isDownloading || isInstalling}
-      <div class="card-progress-indicator">
-        <div class="card-progress-header">
-          <div class="card-progress-label-group">
-            <span class="mini-spinner"></span>
-            <span class="card-progress-label">
-              {isDownloading ? "Downloading..." : "Installing..."}
-            </span>
-          </div>
-          <span class="card-progress-percent">
-            {progress ? `${progress.percent_complete}%` : ""}
-          </span>
-        </div>
-        <div
-          class="card-progress-track"
-          role="progressbar"
-          aria-valuenow={progress?.percent_complete ?? 0}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        >
-          <div
-            class="card-progress-fill"
-            class:indeterminate={!progress || progress.percent_complete === 0}
-            style:width="{progress ? Math.max(progress.percent_complete, 5) : 100}%"
-          ></div>
-        </div>
-        {#if progress && isDownloading && progress.bytes_downloaded != null && progress.total_bytes}
-          <div class="card-progress-bytes">
-            {formatBytes(progress.bytes_downloaded)} / {formatBytes(progress.total_bytes)}
-          </div>
-        {/if}
-      </div>
-    {:else if isQueued}
-      <button
-        class="btn-card-action cancel-queue"
-        onclick={() => onCancelQueue(update.id)}
-        title="Remove this update from the queue"
-      >
-        Cancel Queued
-      </button>
-    {:else if !update.is_downloaded}
-      <div class="action-btn-group">
-        <button
-          class="btn-card-action hero"
-          onclick={() => onDownloadAndInstall(update.id)}
-          disabled={rebootRequired}
-          title={rebootRequired
-            ? "A system restart is required before updates can be installed."
-            : "Download and immediately install this update"}
-        >
-          Download & Install
-        </button>
-        <button
-          class="btn-card-action secondary"
-          onclick={() => onDownload(update.id)}
-          title="Download update package"
-        >
-          Download
-        </button>
-      </div>
-    {:else if rebootRequired}
-      <div class="action-btn-group">
-        <button
-          class="btn-card-action disabled-reboot"
-          disabled
-          title="A system restart is required before this update can be installed."
-        >
-          Restart Required
-        </button>
-      </div>
-    {:else}
-      <div class="action-btn-group">
-        <button
-          class="btn-card-action accent"
-          onclick={() => onInstall(update.id)}
-          title="Install this downloaded update"
-        >
-          Install Now
-        </button>
-      </div>
-    {/if}
-  </div>
+  <UpdateCardActions
+    updateId={update.id}
+    isDownloaded={update.is_downloaded}
+    {isDownloading}
+    {isInstalling}
+    {progress}
+    {isQueued}
+    {rebootRequired}
+    {onDownload}
+    {onInstall}
+    {onDownloadAndInstall}
+    {onCancelQueue}
+  />
 </div>
 
 <style>
@@ -467,7 +336,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .update-title {
@@ -491,92 +362,6 @@
     overflow: hidden;
   }
 
-  .expanded-details {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.6rem 0.75rem;
-    margin-top: 0.35rem;
-    background-color: var(--color-base);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.35rem;
-  }
-
-  .full-desc {
-    font-size: 0.8rem;
-    color: var(--color-text);
-    line-height: 1.45;
-  }
-
-  .categories-row,
-  .meta-row {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    flex-wrap: wrap;
-    font-size: 0.76rem;
-  }
-
-  .detail-label {
-    font-weight: 600;
-    color: var(--color-text-muted);
-  }
-
-  .category-tags {
-    display: flex;
-    gap: 0.3rem;
-    flex-wrap: wrap;
-  }
-
-  .cat-pill {
-    font-size: 0.68rem;
-    padding: 0.08rem 0.35rem;
-    border-radius: 0.2rem;
-    background-color: var(--color-surface);
-    color: var(--color-text-muted);
-    border: solid var(--width-border) var(--color-border);
-  }
-
-  .update-id-code {
-    font-size: 0.72rem;
-    font-family: monospace;
-    background-color: var(--color-surface);
-    padding: 0.1rem 0.4rem;
-    border-radius: 0.2rem;
-    border: solid var(--width-border) var(--color-border);
-    color: var(--color-text);
-  }
-
-  .btn-copy-id {
-    background: transparent;
-    border: solid 1px var(--color-border);
-    border-radius: 0.2rem;
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
-    cursor: pointer;
-    color: var(--color-text);
-  }
-
-  .btn-copy-id:hover {
-    border-color: var(--color-primary);
-    background-color: var(--color-surface);
-  }
-
-  .support-link-btn {
-    background: transparent;
-    border: none;
-    color: var(--color-link);
-    cursor: pointer;
-    font-size: 0.76rem;
-    font-weight: 600;
-    padding: 0;
-    text-decoration: underline;
-  }
-
-  .support-link-btn:hover {
-    color: var(--color-link-hover);
-  }
-
   .card-footer-row {
     display: flex;
     align-items: center;
@@ -594,169 +379,5 @@
 
   .btn-details-toggle:hover {
     text-decoration: underline;
-  }
-
-  .update-card-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.4rem;
-    flex-shrink: 0;
-  }
-
-  .action-btn-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    min-width: 140px;
-  }
-
-  .btn-card-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    padding: 0.38rem 0.8rem;
-    border-radius: 0.3rem;
-    font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.15s ease;
-  }
-
-  .btn-card-action.hero {
-    background-color: var(--color-primary);
-    border: solid 1px var(--color-primary);
-    color: var(--color-base);
-  }
-
-  .btn-card-action.hero:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  .btn-card-action.secondary {
-    background-color: var(--color-base);
-    border: solid var(--width-border) var(--color-border);
-    color: var(--color-text);
-  }
-
-  .btn-card-action.secondary:hover:not(:disabled) {
-    border-color: var(--color-primary);
-    background-color: var(--color-surface-hover);
-  }
-
-  .btn-card-action.accent {
-    background-color: var(--color-secondary);
-    border: solid 1px var(--color-secondary);
-    color: var(--color-base);
-  }
-
-  .btn-card-action.accent:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  .btn-card-action.cancel-queue {
-    background-color: transparent;
-    border: solid 1px var(--color-warning);
-    color: var(--color-warning);
-    font-size: 0.74rem;
-  }
-
-  .btn-card-action.cancel-queue:hover {
-    background-color: var(--color-warning);
-    color: var(--color-base);
-  }
-
-  .btn-card-action.disabled-reboot {
-    background-color: var(--color-base);
-    border: solid var(--width-border) var(--color-warning);
-    color: var(--color-warning);
-    opacity: 0.8;
-    cursor: not-allowed;
-  }
-
-  .btn-card-action:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .card-progress-indicator {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    min-width: 155px;
-    padding: 0.38rem 0.65rem;
-    border-radius: 0.35rem;
-    background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-    border: solid 1px color-mix(in srgb, var(--color-primary) 40%, transparent);
-  }
-
-  .card-progress-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.4rem;
-  }
-
-  .card-progress-label-group {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .card-progress-label {
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: var(--color-primary);
-  }
-
-  .card-progress-percent {
-    font-size: 0.74rem;
-    font-weight: 700;
-    color: var(--color-primary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .card-progress-track {
-    width: 100%;
-    height: 5px;
-    background-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .card-progress-fill {
-    height: 100%;
-    background-color: var(--color-primary);
-    border-radius: 3px;
-    transition: width 0.25s ease-out;
-  }
-
-  .card-progress-fill.indeterminate {
-    background: linear-gradient(
-      90deg,
-      var(--color-primary) 0%,
-      color-mix(in srgb, var(--color-primary) 40%, white) 50%,
-      var(--color-primary) 100%
-    );
-    background-size: 200% 100%;
-    animation: shimmer-progress 1.5s infinite linear;
-  }
-
-  @keyframes shimmer-progress {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
-
-  .card-progress-bytes {
-    font-size: 0.68rem;
-    color: var(--color-muted);
-    text-align: right;
-    font-variant-numeric: tabular-nums;
   }
 </style>
