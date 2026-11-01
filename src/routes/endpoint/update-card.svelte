@@ -5,6 +5,7 @@
     UpdateOperationType,
     UpdateProgressEvent,
   } from "./types";
+  import { getSeverityClass } from "./updates/severity";
   import UpdateCardActions from "./updates/update-card-actions.svelte";
   import UpdateCardDetails from "./updates/update-card-details.svelte";
 
@@ -43,15 +44,7 @@
 
   let isExpanded = $state(false);
 
-  function getSeverityClass(severity?: string): string {
-    if (!severity) return "sev-none";
-    const s = severity.toLowerCase();
-    if (s.includes("critical")) return "sev-critical";
-    if (s.includes("important")) return "sev-important";
-    if (s.includes("moderate")) return "sev-moderate";
-    if (s.includes("low")) return "sev-low";
-    return "sev-other";
-  }
+
 </script>
 
 <div
