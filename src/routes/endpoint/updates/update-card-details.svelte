@@ -14,7 +14,7 @@
     try {
       await openUrl(url);
     } catch (err: unknown) {
-      console.error(`Failed to open support URL '${url}':`, err);
+      throw new Error(`Failed to open support URL '${url}': ${String(err)}`);
     }
   }
 
@@ -26,7 +26,7 @@
         copiedId = false;
       }, 2000);
     } catch (err: unknown) {
-      console.error("Failed to copy update ID to clipboard:", err);
+      throw new Error(`Failed to copy update ID to clipboard: ${String(err)}`);
     }
   }
 </script>
