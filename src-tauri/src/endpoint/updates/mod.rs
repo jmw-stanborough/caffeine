@@ -105,23 +105,44 @@ where
     F: FnMut(UpdateProgressEvent),
 {
     let mut final_result: Option<UpdateOperationResult> = None;
+    let mut stream_err: Option<String> = None;
 
     run_powershell_streaming(script, |line| {
+        if stream_err.is_some() {
+            return;
+        }
+
         if let Ok(slice) = extract_json_slice(line) {
             if let Ok(raw_progress) = serde_json::from_str::<RawProgress>(slice) {
-                if let Ok(Some(event)) = parse_progress_event(raw_progress) {
-                    on_progress(event);
-                    return;
+                match parse_progress_event(raw_progress) {
+                    Ok(Some(event)) => {
+                        on_progress(event);
+                        return;
+                    }
+                    Err(err) => {
+                        stream_err = Some(err);
+                        return;
+                    }
+                    Ok(None) => {}
                 }
             }
 
             if let Ok(raw_op) = serde_json::from_str::<RawUpdateOperation>(slice) {
-                if let Ok(op) = raw_op.try_into_operation_result() {
-                    final_result = Some(op);
+                match UpdateOperationResult::try_from(raw_op) {
+                    Ok(op) => {
+                        final_result = Some(op);
+                    }
+                    Err(err) => {
+                        stream_err = Some(err);
+                    }
                 }
             }
         }
     })?;
+
+    if let Some(err) = stream_err {
+        return Err(err);
+    }
 
     final_result.ok_or_else(|| {
         "PowerShell update process completed without producing an operation result.".to_string()
@@ -173,12 +194,19 @@ mod tests {
     fn test_raw_update_operation_deserialization() {
         let json = r#"{"Success":true,"Message":"Installed","SucceededCount":2,"FailedCount":0,"RebootRequired":true}"#;
         let raw: RawUpdateOperation = serde_json::from_str(json).unwrap();
-        let res: UpdateOperationResult = raw.into();
+        let res = UpdateOperationResult::try_from(raw).unwrap();
         assert!(res.success);
         assert!(res.reboot_required);
         assert_eq!(res.succeeded_count, 2);
         assert_eq!(res.failed_count, 0);
         assert_eq!(res.message, "Installed");
+    }
+
+    #[test]
+    fn test_raw_update_operation_missing_success_fails() {
+        let json = r#"{"Message":"Installed","SucceededCount":1}"#;
+        let raw: RawUpdateOperation = serde_json::from_str(json).unwrap();
+        assert!(UpdateOperationResult::try_from(raw).is_err());
     }
 
     fn expect_eq(actual: Vec<String>, expected: Vec<&str>) {

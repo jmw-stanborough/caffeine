@@ -48,31 +48,21 @@ pub(crate) struct RawUpdateOperation {
     pub reboot_required: Option<bool>,
 }
 
-impl RawUpdateOperation {
-    pub fn try_into_operation_result(self) -> Result<UpdateOperationResult, String> {
-        let success = self
+impl TryFrom<RawUpdateOperation> for UpdateOperationResult {
+    type Error = String;
+
+    fn try_from(raw: RawUpdateOperation) -> Result<Self, Self::Error> {
+        let success = raw
             .success
             .ok_or_else(|| "Missing 'Success' field in update operation payload".to_string())?;
 
         Ok(UpdateOperationResult {
             success,
-            reboot_required: self.reboot_required.unwrap_or(false),
-            message: self.message.unwrap_or_default(),
-            succeeded_count: self.succeeded_count.unwrap_or(0),
-            failed_count: self.failed_count.unwrap_or(0),
-        })
-    }
-}
-
-impl From<RawUpdateOperation> for UpdateOperationResult {
-    fn from(raw: RawUpdateOperation) -> Self {
-        Self {
-            success: raw.success.unwrap_or(false),
             reboot_required: raw.reboot_required.unwrap_or(false),
             message: raw.message.unwrap_or_default(),
             succeeded_count: raw.succeeded_count.unwrap_or(0),
             failed_count: raw.failed_count.unwrap_or(0),
-        }
+        })
     }
 }
 
