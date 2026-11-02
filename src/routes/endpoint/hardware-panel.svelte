@@ -22,10 +22,10 @@
   let { machine, isLoading, errorMessage, onRefresh }: Props = $props();
 </script>
 
-<div class="hardware-panel">
-  <div class="panel-header">
+<div class="hardware-module">
+  <div class="page-header">
     <div class="header-left">
-      <h2 class="panel-title">System & Hardware</h2>
+      <h2 class="page-title">System & Hardware</h2>
       {#if machine}
         <span class="uptime-badge" title="System Uptime">
           Up: {formatUptime(machine.system.uptime_seconds)}
@@ -84,7 +84,7 @@
       <div class="skeleton-card"></div>
     </div>
   {:else if machine}
-    <div class="panel-scroll-content">
+    <div class="hardware-content">
       <SystemCard system={machine.system} />
       <CpuCard cpu={machine.cpu} />
       <MemoryCard memory={machine.memory} />
@@ -109,25 +109,22 @@
 </div>
 
 <style>
-  .hardware-panel {
+  .hardware-module {
     display: flex;
     flex-direction: column;
+    width: 100%;
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    background-color: var(--color-surface);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.5rem;
   }
 
-  .panel-header {
+  .page-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.65rem 1rem;
-    background-color: var(--color-surface);
-    border-bottom: solid var(--width-border) var(--color-border);
+    margin-bottom: 0.75rem;
     flex-shrink: 0;
+    gap: 0.75rem;
   }
 
   .header-left {
@@ -137,10 +134,10 @@
     flex-wrap: wrap;
   }
 
-  .panel-title {
+  .page-title {
     margin: 0;
-    font-size: 1.15rem;
-    font-weight: 700;
+    font-size: 1.125rem;
+    font-weight: 600;
     color: var(--color-text);
   }
 
@@ -149,7 +146,7 @@
     font-weight: 600;
     padding: 0.15rem 0.5rem;
     border-radius: 999px;
-    background-color: var(--color-base);
+    background-color: var(--color-surface);
     color: var(--color-text-muted);
     border: solid var(--width-border) var(--color-border);
   }
@@ -171,7 +168,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    background-color: var(--color-base);
+    background-color: var(--color-surface);
     border: solid var(--width-border) var(--color-border);
     color: var(--color-text);
     padding: 0.35rem 0.75rem;
@@ -205,12 +202,15 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.65rem 1rem;
+    padding: 0.625rem 0.875rem;
     background-color: color-mix(in srgb, var(--color-failure) 15%, var(--color-surface));
-    border-bottom: solid var(--width-border) var(--color-failure);
+    border: solid var(--width-border) var(--color-failure);
+    border-radius: 0.375rem;
     color: var(--color-failure);
     font-size: 0.85rem;
     font-weight: 600;
+    margin-bottom: 0.75rem;
+    flex-shrink: 0;
   }
 
   .btn-retry {
@@ -229,24 +229,23 @@
     color: var(--color-base);
   }
 
-  .panel-scroll-content {
+  .hardware-content {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
-    padding: 0.85rem;
     overflow-y: auto;
     flex: 1;
-    background-color: var(--color-base);
+    min-height: 0;
+    padding-bottom: 0.5rem;
   }
 
   .skeleton-container {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
-    padding: 0.85rem;
-    flex: 1;
     overflow-y: auto;
-    background-color: var(--color-base);
+    flex: 1;
+    min-height: 0;
   }
 
   .skeleton-card {

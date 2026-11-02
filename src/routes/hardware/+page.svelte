@@ -7,22 +7,10 @@
 </script>
 
 <EndpointModuleShell title="Hardware" enableTelemetry={true}>
-  <div class="module-fill">
-    <HardwarePanel
-      machine={store.machine}
-      isLoading={store.machineLoading}
-      errorMessage={store.machineError}
-      onRefresh={() => store.fetchMachineInfo(true)}
-    />
-  </div>
+  <HardwarePanel
+    machine={store.machine}
+    isLoading={store.machineLoading}
+    errorMessage={store.machineError}
+    onRefresh={() => store.fetchMachineInfo(true)}
+  />
 </EndpointModuleShell>
-
-<style>
-  .module-fill {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
-</style>

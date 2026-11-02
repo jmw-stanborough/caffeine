@@ -45,7 +45,7 @@
   {:else if !store.osSupport?.is_windows}
     <UnsupportedOs osSupport={store.osSupport} />
   {:else}
-    <div class="endpoint-workspace">
+    <div class="endpoint-page-content">
       {@render children()}
     </div>
   {/if}
@@ -85,14 +85,14 @@
     to { transform: rotate(360deg); }
   }
 
-  .endpoint-workspace {
+  .endpoint-page-content {
     display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    padding: 0.85rem;
-    gap: 0.85rem;
+    padding: 1rem 1.25rem;
     box-sizing: border-box;
-    background-color: var(--color-base);
+    position: relative;
   }
 </style>
