@@ -9,13 +9,11 @@
   let { state, lastChecked, onCheck, onClearFilters }: Props = $props();
 </script>
 
-{#if state === "loading"}
-  <div class="state-container">
+<div class="state-container">
+  {#if state === "loading"}
     <div class="spinner"></div>
     <span>Searching Windows Update catalog...</span>
-  </div>
-{:else if state === "clean"}
-  <div class="state-container">
+  {:else if state === "clean"}
     <div class="clean-icon-wrap">
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -40,18 +38,14 @@
     <button class="btn-check-again" onclick={onCheck}>
       Check Again
     </button>
-  </div>
-{:else if state === "no-match"}
-  <div class="state-container">
+  {:else if state === "no-match"}
     <span>No updates match the selected filter or search criteria.</span>
     {#if onClearFilters}
       <button class="btn-clear-search-link" onclick={onClearFilters}>
         Clear filters
       </button>
     {/if}
-  </div>
-{:else}
-  <div class="state-container">
+  {:else}
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width="36"
@@ -70,8 +64,8 @@
     <button class="btn-action-primary" onclick={onCheck}>
       Check for Updates Now
     </button>
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .state-container {
