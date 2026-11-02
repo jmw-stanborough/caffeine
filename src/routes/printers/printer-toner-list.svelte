@@ -78,7 +78,7 @@
 
   {#if toners.length > 0}
     <div class="toners-list">
-      {#each toners as toner (toner.name + toner.color)}
+      {#each toners as toner, i (`${toner.name}-${toner.color}-${i}`)}
         {@const barColor = getTonerBarColor(toner)}
         {@const empty = isEmptyToner(toner)}
         {@const low = isLowToner(toner)}

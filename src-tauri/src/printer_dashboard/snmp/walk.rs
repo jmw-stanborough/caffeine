@@ -214,6 +214,34 @@ pub async fn poll_colorants(
     colorants
 }
 
+// Brother printers report both standard and high-yield slots under identical descriptions;
+// an uninstalled slot reports 0 level while the installed cartridge reports available (-3) or a percentage.
+fn should_replace_supply(candidate: &TonerSupply, current: &TonerSupply) -> bool {
+    let candidate_has_toner = candidate.percent.is_some_and(|p| p > 0)
+        || candidate.level == SUPPLY_LEVEL_SOME_REMAINING
+        || candidate.level > 0;
+    let current_has_toner = current.percent.is_some_and(|p| p > 0)
+        || current.level == SUPPLY_LEVEL_SOME_REMAINING
+        || current.level > 0;
+
+    if candidate_has_toner && !current_has_toner {
+        return true;
+    }
+    if !candidate_has_toner && current_has_toner {
+        return false;
+    }
+
+    if let (Some(cand_pct), Some(cur_pct)) = (candidate.percent, current.percent) {
+        return cand_pct > cur_pct;
+    }
+
+    if candidate.percent.is_some() && current.percent.is_none() {
+        return true;
+    }
+
+    false
+}
+
 pub async fn poll_supplies(
     session: &SnmpSession<'_>,
     req_id: &mut i32,
@@ -293,15 +321,28 @@ pub async fn poll_supplies(
             max_capacity = DEFAULT_MAX_CAPACITY;
         }
 
-        details.toners.push(TonerSupply {
+        let supply = TonerSupply {
             name: desc,
             color,
             level,
             max_capacity,
             percent,
             supply_type,
-        });
+        };
+
+        if let Some(existing) = details
+            .toners
+            .iter_mut()
+            .find(|t| t.color == supply.color && t.name == supply.name)
+        {
+            if should_replace_supply(&supply, existing) {
+                *existing = supply;
+            }
+        } else {
+            details.toners.push(supply);
+        }
     }
+
 
     if details.toners.is_empty() && !brother_toner_pcts.is_empty() {
         for (color, label) in [
@@ -493,4 +534,50 @@ mod tests {
             Some("Ready; Secure".to_string())
         );
     }
+
+    #[test]
+    fn test_should_replace_supply_prefers_active_cartridge() {
+        let empty_slot = TonerSupply {
+            name: "Black Toner Cartridge".to_string(),
+            color: "black".to_string(),
+            level: 0,
+            max_capacity: -2,
+            percent: Some(0),
+            supply_type: "toner".to_string(),
+        };
+
+        let available_slot = TonerSupply {
+            name: "Black Toner Cartridge".to_string(),
+            color: "black".to_string(),
+            level: SUPPLY_LEVEL_SOME_REMAINING,
+            max_capacity: -2,
+            percent: None,
+            supply_type: "toner".to_string(),
+        };
+
+        assert!(should_replace_supply(&available_slot, &empty_slot));
+        assert!(!should_replace_supply(&empty_slot, &available_slot));
+
+        let higher_pct = TonerSupply {
+            name: "Black Toner Cartridge".to_string(),
+            color: "black".to_string(),
+            level: 80,
+            max_capacity: 100,
+            percent: Some(80),
+            supply_type: "toner".to_string(),
+        };
+
+        let lower_pct = TonerSupply {
+            name: "Black Toner Cartridge".to_string(),
+            color: "black".to_string(),
+            level: 20,
+            max_capacity: 100,
+            percent: Some(20),
+            supply_type: "toner".to_string(),
+        };
+
+        assert!(should_replace_supply(&higher_pct, &lower_pct));
+        assert!(!should_replace_supply(&lower_pct, &higher_pct));
+    }
 }
+
