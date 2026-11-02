@@ -101,26 +101,10 @@
   });
 </script>
 
-<div class="terminal-window">
-  <div class="terminal-header">
+<div class="terminal-module">
+  <div class="page-header">
     <div class="header-left">
-      <div class="header-icon-wrap">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <polyline points="4 17 10 11 4 5" />
-          <line x1="12" x2="20" y1="19" y2="19" />
-        </svg>
-      </div>
-      <h3 class="window-title">Terminal</h3>
+      <h2 class="page-title">Terminal</h2>
       {#if effectiveShell}
         <span
           class="shell-badge"
@@ -159,25 +143,21 @@
 </div>
 
 <style>
-  .terminal-window {
+  .terminal-module {
     display: flex;
     flex-direction: column;
+    width: 100%;
     height: 100%;
     min-height: 0;
-    background-color: var(--color-base);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.5rem;
     overflow: hidden;
   }
 
-  .terminal-header {
+  .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
-    padding: 0.55rem 0.85rem;
-    background-color: var(--color-surface);
-    border-bottom: solid var(--width-border) var(--color-border);
+    margin-bottom: 0.75rem;
     flex-shrink: 0;
   }
 
@@ -189,17 +169,10 @@
     min-width: 0;
   }
 
-  .header-icon-wrap {
-    color: var(--color-primary);
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .window-title {
+  .page-title {
     margin: 0;
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: 1.125rem;
+    font-weight: 600;
     color: var(--color-text);
     white-space: nowrap;
   }
@@ -267,8 +240,12 @@
   .terminal-body {
     flex: 1;
     min-height: 0;
+    width: 100%;
     padding: 0.4rem 0.5rem;
     background-color: var(--color-base);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.375rem;
     overflow: hidden;
+    box-sizing: border-box;
   }
 </style>

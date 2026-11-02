@@ -5,40 +5,19 @@
   let { active = false }: { active?: boolean } = $props();
 </script>
 
-<div class="endpoint-page-shell">
-  <div class="endpoint-workspace">
-    <div class="module-fill">
-      <TerminalWindow shell={endpointStore.shell} {active} />
-    </div>
-  </div>
+<div class="terminal-page">
+  <TerminalWindow shell={endpointStore.shell} {active} />
 </div>
 
 <style>
-  .endpoint-page-shell {
+  .terminal-page {
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    background-color: var(--color-base);
-  }
-
-  .endpoint-workspace {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    padding: 0.85rem;
-    gap: 0.85rem;
+    padding: 1rem 1.25rem;
     box-sizing: border-box;
-    background-color: var(--color-base);
-  }
-
-  .module-fill {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
     overflow: hidden;
+    background-color: var(--color-base);
   }
 </style>
