@@ -362,7 +362,6 @@
         {selectedIds}
         {allFilteredSelected}
         {store}
-        {isBusy}
         {isRebootRequired}
         onToggleSelectAll={toggleSelectAll}
         onToggleSelectOne={toggleSelectOne}

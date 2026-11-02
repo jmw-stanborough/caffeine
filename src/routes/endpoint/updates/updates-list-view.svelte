@@ -8,7 +8,6 @@
     selectedIds: Set<string>;
     allFilteredSelected: boolean;
     store: EndpointStore;
-    isBusy: boolean;
     isRebootRequired: boolean;
     onToggleSelectAll: () => void;
     onToggleSelectOne: (id: string) => void;
@@ -23,7 +22,6 @@
     selectedIds,
     allFilteredSelected,
     store,
-    isBusy,
     isRebootRequired,
     onToggleSelectAll,
     onToggleSelectOne,
@@ -56,7 +54,6 @@
       progress={store.getUpdateProgress(update.id)}
       isQueued={store.isUpdateQueued(update.id)}
       queuedType={store.getQueuedOperation(update.id)?.type}
-      {isBusy}
       rebootRequired={isRebootRequired}
       onToggleSelect={onToggleSelectOne}
       {onDownload}

@@ -17,7 +17,6 @@
     progress?: UpdateProgressEvent | null;
     isQueued: boolean;
     queuedType?: UpdateOperationType;
-    isBusy: boolean;
     rebootRequired: boolean;
     onToggleSelect: (id: string) => void;
     onDownload: (id: string) => void;
