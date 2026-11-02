@@ -43,14 +43,14 @@
 </svelte:head>
 
 <div class="filesystem-page">
-  <div class="page-header">
-    <h2 class="page-title">File System Analysis & Pruning</h2>
+  <header class="page-header">
+    <h1 class="page-title">File System Analysis & Pruning</h1>
     {#if store.selectedVolume}
       <span class="active-volume-tag">
         Drive: {store.selectedVolume.mount_point}
       </span>
     {/if}
-  </div>
+  </header>
 
   <VolumeOverview
     volumes={store.volumes}
@@ -187,12 +187,6 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.75rem;
-  }
-
-  .page-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0;
   }
 
   .active-volume-tag {
