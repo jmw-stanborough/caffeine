@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { AlertTriangle } from "$lib/components/icons";
   import { endpointStore, type EndpointStore } from "./endpoint.svelte";
   import type {
     UpdateCheckResult,
     UpdateFilterCategory,
+    UpdateOperationType,
     UpdateSortOption,
   } from "./types";
   import { filterAndSortUpdates } from "./updates/filter";
+  import UpdatesAdminBanner from "./updates/updates-admin-banner.svelte";
   import UpdatesBatchBar from "./updates/updates-batch-bar.svelte";
   import UpdatesEmptyState from "./updates/updates-empty-state.svelte";
+  import UpdatesErrorBanner from "./updates/updates-error-banner.svelte";
   import UpdatesFilterBar from "./updates/updates-filter-bar.svelte";
   import UpdatesHeader from "./updates/updates-header.svelte";
   import UpdatesListView from "./updates/updates-list-view.svelte";
@@ -165,62 +167,43 @@
     }
   }
 
-  function handleDownload(target?: string | string[]) {
+  function dispatchOrQueue(
+    type: UpdateOperationType,
+    target: string | string[] | undefined,
+    propAction?: (target?: string | string[]) => void,
+    storeAction?: (target?: string | string[]) => Promise<unknown> | void,
+  ) {
     if (isBusy && typeof target === "string") {
       const updateItem = effectiveUpdates?.updates.find((u) => u.id === target);
       store.queueOperation({
         id: target,
         title: updateItem?.title ?? target,
-        type: "download",
+        type,
       });
       return;
     }
 
-    if (propOnDownload) {
-      propOnDownload(target);
-    } else {
-      void store.downloadUpdates(target);
+    if (propAction) {
+      propAction(target);
+    } else if (storeAction) {
+      void storeAction(target);
     }
+  }
+
+  function handleDownload(target?: string | string[]) {
+    dispatchOrQueue("download", target, propOnDownload, (t) => store.downloadUpdates(t));
   }
 
   function handleInstall(target?: string | string[]) {
     if (isRebootRequired) return;
-
-    if (isBusy && typeof target === "string") {
-      const updateItem = effectiveUpdates?.updates.find((u) => u.id === target);
-      store.queueOperation({
-        id: target,
-        title: updateItem?.title ?? target,
-        type: "install",
-      });
-      return;
-    }
-
-    if (propOnInstall) {
-      propOnInstall(target);
-    } else {
-      void store.installUpdates(target);
-    }
+    dispatchOrQueue("install", target, propOnInstall, (t) => store.installUpdates(t));
   }
 
   function handleDownloadAndInstall(target?: string | string[]) {
     if (isRebootRequired) return;
-
-    if (isBusy && typeof target === "string") {
-      const updateItem = effectiveUpdates?.updates.find((u) => u.id === target);
-      store.queueOperation({
-        id: target,
-        title: updateItem?.title ?? target,
-        type: "download_and_install",
-      });
-      return;
-    }
-
-    if (propOnDownloadAndInstall) {
-      propOnDownloadAndInstall(target);
-    } else {
-      void store.downloadAndInstallUpdates(target);
-    }
+    dispatchOrQueue("download_and_install", target, propOnDownloadAndInstall, (t) =>
+      store.downloadAndInstallUpdates(t),
+    );
   }
 
   function confirmRestart() {
@@ -273,14 +256,7 @@
   {/if}
 
   {#if !effectiveIsAdmin}
-    <div class="admin-warning-banner" role="status">
-      <span class="admin-warning-icon">
-        <AlertTriangle size={16} />
-      </span>
-      <span>
-        Running without administrator privileges. Elevated permissions may be required to download or install updates.
-      </span>
-    </div>
+    <UpdatesAdminBanner />
   {/if}
 
   {#if effectiveOperationStatus}
@@ -293,10 +269,7 @@
   {/if}
 
   {#if effectiveErrorMessage}
-    <div class="error-banner">
-      <span>{effectiveErrorMessage}</span>
-      <button class="btn-retry" onclick={handleCheck}>Retry</button>
-    </div>
+    <UpdatesErrorBanner message={effectiveErrorMessage} onRetry={handleCheck} />
   {/if}
 
   {#if effectiveUpdates && effectiveUpdates.updates.length > 0}
@@ -392,51 +365,6 @@
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.5rem;
     overflow: hidden;
-  }
-
-  .admin-warning-banner {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background-color: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
-    border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-warning) 30%, transparent);
-    color: var(--color-text);
-    font-size: 0.78rem;
-  }
-
-  .admin-warning-icon {
-    color: var(--color-warning);
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .error-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.55rem 1rem;
-    background-color: color-mix(in srgb, var(--color-failure) 14%, var(--color-surface));
-    border-bottom: solid var(--width-border) var(--color-failure);
-    color: var(--color-failure);
-    font-size: 0.8rem;
-  }
-
-  .btn-retry {
-    background: transparent;
-    border: solid 1px var(--color-failure);
-    color: var(--color-failure);
-    font-size: 0.74rem;
-    font-weight: 600;
-    padding: 0.15rem 0.5rem;
-    border-radius: 0.25rem;
-    cursor: pointer;
-  }
-
-  .btn-retry:hover {
-    background-color: var(--color-failure);
-    color: var(--color-base);
   }
 
   .window-content {
