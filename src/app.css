@@ -48,6 +48,11 @@
   --width-border: 1px;
   --width-prose: 80ch;
 
+  --page-padding-y: 1rem;
+  --page-padding-x: 1.25rem;
+  --page-padding: var(--page-padding-y) var(--page-padding-x);
+  --page-gap: 1rem;
+
   --color-base: #fbf1c7;
   --color-surface: #ebdbb2;
   --color-surface-hover: #d5c4a1;
@@ -368,8 +373,8 @@ textarea,
 .page-container {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.5rem;
+  gap: var(--page-gap);
+  padding: var(--page-padding);
 }
 
 .page-container.noc-layout {

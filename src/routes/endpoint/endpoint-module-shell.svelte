@@ -91,7 +91,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    padding: 1rem 1.25rem;
+    padding: var(--page-padding);
     box-sizing: border-box;
     position: relative;
   }

@@ -20,8 +20,8 @@
   .dashboard-container {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: 16px;
+    gap: var(--page-gap);
+    padding: var(--page-padding);
   }
 
   .dashboard-header {

@@ -176,7 +176,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 1rem 1.25rem;
+    padding: var(--page-padding);
     box-sizing: border-box;
     overflow: hidden;
     position: relative;
