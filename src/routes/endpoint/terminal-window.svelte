@@ -34,6 +34,17 @@
     cleanupListeners();
     const dims = terminalView.getDimensions();
 
+    const [dataUnlisten, exitUnlisten] = await Promise.all([
+      listen<string>("terminal://data", (event) => {
+        terminalView?.write(event.payload);
+      }),
+      listen("terminal://exit", () => {
+        terminalView?.writeln("\r\n\x1b[33m[Process completed]\x1b[0m\r\n");
+      }),
+    ]);
+    unlistenData = dataUnlisten;
+    unlistenExit = exitUnlisten;
+
     try {
       const detected = await invoke<ShellDetectionResult>("endpoint_start_terminal", {
         cols: dims.cols,
@@ -48,17 +59,6 @@
       isConnecting = false;
       return;
     }
-
-    const dataUnlisten = await listen<string>("terminal://data", (event) => {
-      terminalView?.write(event.payload);
-    });
-
-    const exitUnlisten = await listen("terminal://exit", () => {
-      terminalView?.writeln("\r\n\x1b[33m[Process completed]\x1b[0m\r\n");
-    });
-
-    unlistenData = dataUnlisten;
-    unlistenExit = exitUnlisten;
   }
 
   function handleData(data: string) {

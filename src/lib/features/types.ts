@@ -8,7 +8,18 @@ export interface FeatureDefinition {
   badgeCount?: () => number | undefined;
   widget?: Component;
   group?: string;
+  backgroundLoadable?: boolean;
+  init?: () => Promise<void> | void;
+  onSnapshotSync?: () => Promise<void> | void;
+  persistentComponent?: Component<{ active: boolean }>;
 }
+
+export interface PersistentFeatureView {
+  id: string;
+  href: string;
+  component: Component<{ active: boolean }>;
+}
+
 
 export interface SidebarItem {
   href: string;

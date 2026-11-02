@@ -3,10 +3,11 @@
   import "../app.css";
   import Sidebar from "$lib/sidebar.svelte";
   import { clientMode } from "$lib/client-mode.svelte";
-  import { serverStore } from "./servers/servers.svelte";
-  import { printerStore } from "./printers/printers.svelte";
-  import { endpointStore } from "./endpoint/endpoint.svelte";
-  import TerminalWindow from "./endpoint/terminal-window.svelte";
+  import {
+    getPersistentViews,
+    handleSnapshotSync,
+    initializeBackgroundFeatures,
+  } from "$lib/features";
   import { applyTheme } from "$lib/theme";
   import { page } from "$app/state";
   import { invoke } from "@tauri-apps/api/core";
@@ -15,14 +16,10 @@
 
   let { children } = $props();
 
-  let isTerminalRoute = $derived(page.url.pathname === "/terminal");
-  let hasVisitedTerminal = $state(page.url.pathname === "/terminal");
-
-  $effect(() => {
-    if (isTerminalRoute && !hasVisitedTerminal) {
-      hasVisitedTerminal = true;
-    }
-  });
+  const persistentViews = getPersistentViews();
+  let isCurrentRoutePersistent = $derived(
+    persistentViews.some((v) => page.url.pathname === v.href),
+  );
 
   onMount(() => {
     let unlistenSync: UnlistenFn | null = null;
@@ -38,16 +35,14 @@
         console.warn("Failed to load user theme setting:", err);
       });
 
-    serverStore.init().catch((err) => {
-      console.error("Failed to initialize server monitor on startup:", err);
-    });
-    printerStore.init().catch((err) => {
-      console.error("Failed to initialize printer monitor on startup:", err);
+    initializeBackgroundFeatures().catch((err) => {
+      console.error("Failed to initialize background features on startup:", err);
     });
 
     listen("snapshot-synced", () => {
-      serverStore.fetchServers();
-      printerStore.fetchPrinters();
+      handleSnapshotSync().catch((err) => {
+        console.error("Failed to handle snapshot sync:", err);
+      });
     }).then((unlisten) => {
       unlistenSync = unlisten;
     }).catch((err) => {
@@ -63,20 +58,15 @@
 <div class="app-shell">
   <Sidebar />
   <main class="content-area">
-    <div class="view-wrapper" class:hidden={isTerminalRoute}>
+    <div class="view-wrapper" class:hidden={isCurrentRoutePersistent}>
       {@render children()}
     </div>
-    {#if hasVisitedTerminal}
-      <div class="terminal-persistent-wrapper" class:hidden={!isTerminalRoute}>
-        <div class="endpoint-page-shell">
-          <div class="endpoint-workspace">
-            <div class="module-fill">
-              <TerminalWindow shell={endpointStore.shell} active={isTerminalRoute} />
-            </div>
-          </div>
-        </div>
+    {#each persistentViews as view (view.id)}
+      {@const isActive = page.url.pathname === view.href}
+      <div class="persistent-view-wrapper" class:hidden={!isActive}>
+        <view.component active={isActive} />
       </div>
-    {/if}
+    {/each}
   </main>
 </div>
 
@@ -98,39 +88,13 @@
   }
 
   .view-wrapper,
-  .terminal-persistent-wrapper,
-  .endpoint-page-shell {
+  .persistent-view-wrapper {
     width: 100%;
     height: 100%;
-  }
-
-  .endpoint-page-shell {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background-color: var(--color-base);
-  }
-
-  .endpoint-workspace {
-    display: flex;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    padding: 0.85rem;
-    gap: 0.85rem;
-    box-sizing: border-box;
-    background-color: var(--color-base);
-  }
-
-  .module-fill {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
   }
 
   .hidden {
     display: none !important;
   }
 </style>
+

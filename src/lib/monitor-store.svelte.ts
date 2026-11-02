@@ -16,7 +16,7 @@ export abstract class MonitorStore<
   now = $state(Date.now());
 
   private unlistenStatus: UnlistenFn | null = null;
-  private timer: number | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
   protected destroyed = false;
 
   protected abstract effectiveStatus(item: TItem): MonitorStatus;
@@ -64,7 +64,7 @@ export abstract class MonitorStore<
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.timer = window.setInterval(() => {
+    this.timer = setInterval(() => {
       this.now = Date.now();
     }, RELATIVE_TIME_TICK_MS);
 

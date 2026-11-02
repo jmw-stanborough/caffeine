@@ -1,12 +1,24 @@
 import type { Component } from "svelte";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   getDashboardWidgets,
+  getPersistentViews,
   getSidebarNavigationItems,
   getSidebarSections,
+  handleSnapshotSync,
+  initializeBackgroundFeatures,
   registerFeature,
   registerSidebarSubheader,
 } from "./registry.svelte";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
 
 describe("feature registry", () => {
   it("provides sidebar items with Dashboard first followed by alphabetically sorted features", () => {
@@ -131,4 +143,32 @@ describe("feature registry", () => {
       'Missing sidebar subheader definition for group "nonexistent-group" in feature "orphan"',
     );
   });
+
+  it("returns persistent views for background loadable features with components", () => {
+    const views = getPersistentViews();
+    expect(views.some((v) => v.id === "terminal" && v.href === "/terminal")).toBe(true);
+  });
+
+  it("initializes background features and runs snapshot sync handlers", async () => {
+    const initSpy = vi.fn().mockResolvedValue(undefined);
+    const syncSpy = vi.fn().mockResolvedValue(undefined);
+    const DummyComponent = (() => null) as unknown as Component;
+
+    registerFeature({
+      id: "test-bg-module",
+      label: "Test BG Module",
+      href: "/test-bg",
+      icon: DummyComponent,
+      backgroundLoadable: true,
+      init: initSpy,
+      onSnapshotSync: syncSpy,
+    });
+
+    await initializeBackgroundFeatures();
+    expect(initSpy).toHaveBeenCalled();
+
+    await handleSnapshotSync();
+    expect(syncSpy).toHaveBeenCalled();
+  });
 });
+

@@ -12,6 +12,7 @@ import {
 import EndpointSummaryCard from "$lib/components/endpoint-summary-card.svelte";
 import PrinterSummaryCard from "$lib/components/printer-summary-card.svelte";
 import ServerSummaryCard from "$lib/components/server-summary-card.svelte";
+import TerminalWorkspace from "../../routes/terminal/terminal-workspace.svelte";
 import { printerStore } from "../../routes/printers/printers.svelte";
 import { serverStore } from "../../routes/servers/servers.svelte";
 import {
@@ -20,7 +21,13 @@ import {
   orderSidebarItems,
   orderSidebarSections,
 } from "./order";
-import type { DashboardWidget, FeatureDefinition, SidebarItem, SidebarSection } from "./types";
+import type {
+  DashboardWidget,
+  FeatureDefinition,
+  PersistentFeatureView,
+  SidebarItem,
+  SidebarSection,
+} from "./types";
 
 export const DASHBOARD_NAV_ITEM: SidebarItem = {
   href: "/",
@@ -64,6 +71,8 @@ const registeredFeatures = $state<FeatureDefinition[]>([
     href: "/terminal",
     icon: Terminal,
     group: "endpoint",
+    backgroundLoadable: true,
+    persistentComponent: TerminalWorkspace,
   },
   {
     id: "updates",
@@ -80,6 +89,9 @@ const registeredFeatures = $state<FeatureDefinition[]>([
     badgeCount: () => printerStore.alertCount,
     widget: PrinterSummaryCard,
     group: "network",
+    backgroundLoadable: true,
+    init: () => printerStore.init(),
+    onSnapshotSync: () => printerStore.fetchPrinters(),
   },
   {
     id: "servers",
@@ -89,6 +101,9 @@ const registeredFeatures = $state<FeatureDefinition[]>([
     badgeCount: () => serverStore.alertCount,
     widget: ServerSummaryCard,
     group: "network",
+    backgroundLoadable: true,
+    init: () => serverStore.init(),
+    onSnapshotSync: () => serverStore.fetchServers(),
   },
 ]);
 
@@ -177,3 +192,36 @@ export function getDashboardWidgets(): DashboardWidget[] {
 
   return orderDashboardWidgets(widgets);
 }
+
+export function getPersistentViews(): PersistentFeatureView[] {
+  return registeredFeatures
+    .filter(
+      (
+        f,
+      ): f is FeatureDefinition & {
+        persistentComponent: NonNullable<FeatureDefinition["persistentComponent"]>;
+      } => Boolean(f.persistentComponent),
+    )
+    .map((feature) => ({
+      id: feature.id,
+      href: feature.href,
+      component: feature.persistentComponent,
+    }));
+}
+
+export async function initializeBackgroundFeatures(): Promise<void> {
+  const tasks = registeredFeatures
+    .filter((f) => f.backgroundLoadable && typeof f.init === "function")
+    .map((f) => f.init!());
+
+  await Promise.all(tasks);
+}
+
+export async function handleSnapshotSync(): Promise<void> {
+  const tasks = registeredFeatures
+    .filter((f) => typeof f.onSnapshotSync === "function")
+    .map((f) => f.onSnapshotSync!());
+
+  await Promise.all(tasks);
+}
+
