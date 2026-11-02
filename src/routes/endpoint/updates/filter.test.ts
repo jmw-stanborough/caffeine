@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { SystemUpdateItem } from "../types";
 import { filterAndSortUpdates } from "./filter";
-import { getSeverityClass, getSeverityWeight } from "./severity";
+import { getSeverityClass, getSeverityWeight, parseSeverity } from "./severity";
 
 describe("severity helpers", () => {
+  it("parses severity levels accurately", () => {
+    expect(parseSeverity("Critical")).toBe("critical");
+    expect(parseSeverity("Important")).toBe("important");
+    expect(parseSeverity("Moderate")).toBe("moderate");
+    expect(parseSeverity("Low")).toBe("low");
+    expect(parseSeverity("Unknown")).toBe("other");
+    expect(parseSeverity(undefined)).toBe("none");
+  });
+
   it("computes severity classes accurately", () => {
     expect(getSeverityClass("Critical")).toBe("sev-critical");
     expect(getSeverityClass("Important")).toBe("sev-important");
