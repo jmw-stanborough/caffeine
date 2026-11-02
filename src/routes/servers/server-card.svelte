@@ -41,7 +41,12 @@
   <div class="card-main">
     <div class="card-title-row">
       {#if !nocMode}
-        <Circle size={10} class="status-dot" aria-hidden="true" />
+        <Circle
+          size={10}
+          class="status-dot {status}"
+          fill="var(--status-color, var(--color-border))"
+          aria-hidden="true"
+        />
       {/if}
       <h2 class="card-label">{server.label}</h2>
       {#if server.agent && !nocMode}
@@ -227,9 +232,25 @@
     gap: 0.5rem;
   }
 
-  :global(.status-dot) {
+  .server-card :global(.status-dot) {
     color: var(--status-color, var(--color-border));
     flex-shrink: 0;
+  }
+
+  .server-card :global(.status-dot.online) {
+    color: var(--color-success);
+  }
+
+  .server-card :global(.status-dot.degraded) {
+    color: var(--color-warning);
+  }
+
+  .server-card :global(.status-dot.offline) {
+    color: var(--color-failure);
+  }
+
+  .server-card :global(.status-dot.checking) {
+    color: var(--color-text-muted);
   }
 
   .card-label {

@@ -265,20 +265,20 @@
     min-width: 0;
   }
 
-  :global(.status-dot) {
+  .printer-identity :global(.status-dot) {
     color: var(--color-text-muted);
     flex-shrink: 0;
   }
 
-  :global(.status-dot.online) {
+  .printer-identity :global(.status-dot.online) {
     color: var(--color-success);
   }
 
-  :global(.status-dot.degraded) {
+  .printer-identity :global(.status-dot.degraded) {
     color: var(--color-warning);
   }
 
-  :global(.status-dot.offline) {
+  .printer-identity :global(.status-dot.offline) {
     color: var(--color-failure);
   }
 

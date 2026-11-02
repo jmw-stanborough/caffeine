@@ -89,7 +89,12 @@
     <div class="title-group">
       <div class="card-title-row">
         {#if !nocMode}
-          <Circle size={10} class="status-dot" aria-hidden="true" />
+          <Circle
+            size={10}
+            class="status-dot {status}"
+            fill="var(--status-color, var(--color-border))"
+            aria-hidden="true"
+          />
         {/if}
         <h2 class="card-label" title={printer.label}>{printer.label}</h2>
       </div>
@@ -224,9 +229,25 @@
     flex: 1;
   }
 
-  :global(.status-dot) {
+  .printer-card :global(.status-dot) {
     color: var(--status-color, var(--color-border));
     flex-shrink: 0;
+  }
+
+  .printer-card :global(.status-dot.online) {
+    color: var(--color-success);
+  }
+
+  .printer-card :global(.status-dot.degraded) {
+    color: var(--color-warning);
+  }
+
+  .printer-card :global(.status-dot.offline) {
+    color: var(--color-failure);
+  }
+
+  .printer-card :global(.status-dot.checking) {
+    color: var(--color-text-muted);
   }
 
   .card-label {

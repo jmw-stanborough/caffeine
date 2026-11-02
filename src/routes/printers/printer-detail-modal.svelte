@@ -133,7 +133,12 @@
     <div class="modal-header">
       <div class="title-group">
         <div class="card-title-row">
-          <Circle size={10} class="status-dot" aria-hidden="true" />
+          <Circle
+            size={10}
+            class="status-dot {effectiveVisualStatus}"
+            fill="var(--status-color, var(--color-border))"
+            aria-hidden="true"
+          />
           <h2 class="modal-title" title={printer.label}>{printer.label}</h2>
         </div>
 
@@ -290,9 +295,25 @@
     min-width: 0;
   }
 
-  :global(.status-dot) {
+  .card-title-row :global(.status-dot) {
     color: var(--status-color, var(--color-border));
     flex-shrink: 0;
+  }
+
+  .card-title-row :global(.status-dot.online) {
+    color: var(--color-success);
+  }
+
+  .card-title-row :global(.status-dot.degraded) {
+    color: var(--color-warning);
+  }
+
+  .card-title-row :global(.status-dot.offline) {
+    color: var(--color-failure);
+  }
+
+  .card-title-row :global(.status-dot.checking) {
+    color: var(--color-text-muted);
   }
 
   .modal-title {
