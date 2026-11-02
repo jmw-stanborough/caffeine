@@ -1,4 +1,5 @@
 export { default as AlertTriangle } from "$lib/icons/AlertTriangle.svelte";
+export { default as Circle } from "./Circle.svelte";
 export { default as Coffee } from "$lib/icons/Coffee.svelte";
 export { default as Cog } from "$lib/icons/Cog.svelte";
 export { default as Cpu } from "./Cpu.svelte";
