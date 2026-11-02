@@ -7,17 +7,5 @@
 </script>
 
 <EndpointModuleShell title="Updates">
-  <div class="module-fill">
-    <UpdatesWindow {store} />
-  </div>
+  <UpdatesWindow {store} />
 </EndpointModuleShell>
-
-<style>
-  .module-fill {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
-</style>

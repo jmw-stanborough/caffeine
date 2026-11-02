@@ -34,27 +34,9 @@
   }: Props = $props();
 </script>
 
-<div class="window-header">
+<div class="page-header">
   <div class="title-cluster">
-    <div class="header-icon-wrap">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-        <path d="M3 3v5h5" />
-        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-        <path d="M16 21h5v-5" />
-      </svg>
-    </div>
-    <h3 class="window-title">System Updates</h3>
+    <h2 class="page-title">System Updates</h2>
 
     {#if updates}
       <span
@@ -181,13 +163,11 @@
 </div>
 
 <style>
-  .window-header {
+  .page-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.65rem 1rem;
-    background-color: var(--color-surface);
-    border-bottom: solid var(--width-border) var(--color-border);
+    margin-bottom: 0.75rem;
     flex-shrink: 0;
     gap: 0.75rem;
     flex-wrap: wrap;
@@ -200,16 +180,11 @@
     flex-wrap: wrap;
   }
 
-  .header-icon-wrap {
-    color: var(--color-primary);
-    display: flex;
-    align-items: center;
-  }
-
-  .window-title {
+  .page-title {
     margin: 0;
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--color-text);
   }
 
   .count-badge {

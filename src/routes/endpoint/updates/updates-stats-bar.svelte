@@ -51,9 +51,12 @@
     align-items: center;
     gap: 1.25rem;
     padding: 0.6rem 1rem;
-    background-color: var(--color-base);
-    border-bottom: solid var(--width-border) var(--color-border);
+    background-color: var(--color-surface);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.375rem;
+    margin-bottom: 0.75rem;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
   .stat-cell {

@@ -115,9 +115,12 @@
     align-items: center;
     padding: 0.5rem 1rem;
     background-color: var(--color-surface);
-    border-bottom: solid var(--width-border) var(--color-border);
+    border: solid var(--width-border) var(--color-border);
+    border-radius: 0.375rem;
+    margin-bottom: 0.75rem;
     gap: 0.75rem;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
   .filter-tabs {

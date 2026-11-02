@@ -51,9 +51,12 @@
       color-mix(in srgb, var(--color-warning) 18%, var(--color-surface)) 0%,
       color-mix(in srgb, var(--color-warning) 10%, var(--color-surface)) 100%
     );
-    border-bottom: solid var(--width-border) var(--color-warning);
+    border: solid var(--width-border) var(--color-warning);
+    border-radius: 0.375rem;
+    margin-bottom: 0.75rem;
     gap: 1rem;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
   .reboot-hero-left {

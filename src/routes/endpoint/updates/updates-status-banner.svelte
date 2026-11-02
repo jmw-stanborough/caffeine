@@ -66,9 +66,12 @@
     justify-content: space-between;
     padding: 0.65rem 1rem;
     background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-    border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-primary) 35%, transparent);
+    border: solid var(--width-border) color-mix(in srgb, var(--color-primary) 35%, transparent);
+    border-radius: 0.375rem;
+    margin-bottom: 0.75rem;
     gap: 1rem;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
   .status-content {

@@ -234,7 +234,7 @@
   }
 </script>
 
-<div class="updates-window">
+<div class="updates-module">
   <UpdatesHeader
     updates={effectiveUpdates}
     {isRebootRequired}
@@ -311,7 +311,7 @@
     {/if}
   {/if}
 
-  <div class="window-content">
+  <div class="updates-content">
     {#if effectiveIsChecking && !effectiveUpdates}
       <UpdatesEmptyState state="loading" onCheck={handleCheck} />
     {:else if effectiveUpdates && effectiveUpdates.updates.length === 0}
@@ -356,21 +356,19 @@
 />
 
 <style>
-  .updates-window {
+  .updates-module {
     display: flex;
     flex-direction: column;
+    width: 100%;
     height: 100%;
     min-height: 0;
-    background-color: var(--color-surface);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.5rem;
     overflow: hidden;
+    position: relative;
   }
 
-  .window-content {
+  .updates-content {
     flex: 1;
     overflow-y: auto;
-    padding: 0.75rem 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.65rem;

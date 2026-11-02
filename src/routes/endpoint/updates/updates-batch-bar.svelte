@@ -87,9 +87,12 @@
     align-items: center;
     padding: 0.5rem 1rem;
     background-color: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-    border-bottom: solid var(--width-border) color-mix(in srgb, var(--color-primary) 30%, transparent);
+    border: solid var(--width-border) color-mix(in srgb, var(--color-primary) 30%, transparent);
+    border-radius: 0.375rem;
+    margin-bottom: 0.75rem;
     gap: 0.75rem;
     flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
   .batch-info {

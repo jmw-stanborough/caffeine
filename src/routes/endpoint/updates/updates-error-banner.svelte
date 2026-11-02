@@ -19,9 +19,12 @@
     justify-content: space-between;
     padding: 0.55rem 1rem;
     background-color: color-mix(in srgb, var(--color-failure) 14%, var(--color-surface));
-    border-bottom: solid var(--width-border) var(--color-failure);
+    border: solid var(--width-border) var(--color-failure);
+    border-radius: 0.375rem;
+    margin-bottom: 0.75rem;
     color: var(--color-failure);
     font-size: 0.8rem;
+    flex-shrink: 0;
   }
 
   .btn-retry {
