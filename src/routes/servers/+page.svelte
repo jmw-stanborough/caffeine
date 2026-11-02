@@ -7,7 +7,7 @@
     SERVER_CARD_MIN_WIDTH_REM,
     SERVER_NOC_MIN_WIDTH_REM,
   } from "$lib/constants";
-  import { Sort } from "$lib/icons";
+  import { Circle, Sort } from "$lib/icons";
   import { createNocController } from "$lib/noc.svelte";
   import { clientMode } from "$lib/client-mode.svelte";
   import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";
@@ -147,7 +147,7 @@
           <Sort size={14} />
           <span>Sort</span>
           {#if isSorted}
-            <span class="count-badge sort-count-badge">{sortRules.length}</span>
+            <Circle size={15} text={sortRules.length} class="sort-count-badge" />
           {/if}
         </button>
       {/if}
@@ -323,16 +323,6 @@
 
   .btn-sort.active {
     background-color: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-  }
-
-  .sort-count-badge {
-    background-color: var(--color-primary);
-    color: var(--color-base);
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 0.05rem 0.3rem;
-    border-radius: 0.25rem;
-    line-height: 1.2;
   }
 
   .readonly-badge {

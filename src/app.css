@@ -501,8 +501,8 @@ textarea,
 
 .sort-count-badge,
 .filter-count-badge {
-  background-color: var(--color-primary);
-  color: var(--color-base);
+  color: var(--color-primary);
+  flex-shrink: 0;
 }
 
 

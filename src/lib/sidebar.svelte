@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { Coffee } from "$lib/components/icons";
-  import { Cog } from "$lib/icons";
+  import { Circle, Cog } from "$lib/icons";
   import SettingsModal from "$lib/components/settings-modal.svelte";
   import {
     DASHBOARD_NAV_ITEM,
@@ -50,12 +50,12 @@
           <Icon size={14} />
           <span>{label}</span>
           {#if badgeCount > 0}
-            <span
-              class="count-badge notification-badge"
+            <Circle
+              size={15}
+              text={badgeCount}
+              class="notification-badge"
               aria-label="{badgeCount} {badgeCount === 1 ? 'alert' : 'alerts'}"
-            >
-              {badgeCount}
-            </span>
+            />
           {/if}
         </a>
       {/each}
@@ -195,8 +195,8 @@
     color: var(--color-link-hover);
   }
 
-  .notification-badge {
-    background-color: var(--color-secondary);
-    color: var(--color-base);
+  :global(.notification-badge) {
+    color: var(--color-secondary);
+    flex-shrink: 0;
   }
 </style>

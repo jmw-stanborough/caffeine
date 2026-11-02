@@ -1,7 +1,7 @@
 <script lang="ts">
   import DashboardHeader from "$lib/components/dashboard-header.svelte";
   import SortModal from "$lib/components/sort-modal.svelte";
-  import { Filter, Sort } from "$lib/icons";
+  import { Circle, Filter, Sort } from "$lib/icons";
   import {
     DND_FLIP_DURATION_MS,
     PRINTER_CARD_MIN_WIDTH_REM,
@@ -195,7 +195,7 @@
             <Sort size={14} />
             <span>Sort</span>
             {#if isSorted}
-              <span class="count-badge sort-count-badge">{sortRules.length}</span>
+              <Circle size={15} text={sortRules.length} class="sort-count-badge" />
             {/if}
           </button>
 
@@ -209,7 +209,7 @@
             <Filter size={14} />
             <span>Filter</span>
             {#if isFiltered}
-              <span class="count-badge filter-count-badge">{activeFilterCount}</span>
+              <Circle size={15} text={activeFilterCount} class="filter-count-badge" />
             {/if}
           </button>
         {/if}
