@@ -300,36 +300,15 @@
     text-align: center;
   }
 
-  .btn-sort {
+  .readonly-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.6rem;
-    border-radius: 0.375rem;
-    border: solid var(--width-border) var(--color-border);
-    background-color: var(--color-surface);
-    color: var(--color-text-muted);
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.12s ease;
-  }
-
-  .btn-sort:hover,
-  .btn-sort.active {
-    border-color: var(--color-primary);
-    color: var(--color-text);
-  }
-
-  .btn-sort.active {
-    background-color: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-  }
-
-  .readonly-badge {
+    height: 1.85rem;
+    box-sizing: border-box;
     font-size: 0.75rem;
     font-weight: 600;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.25rem;
+    padding: 0 0.5rem;
+    border-radius: 0.375rem;
     background-color: color-mix(in srgb, var(--color-warning) 15%, var(--color-surface));
     color: var(--color-warning);
     border: solid var(--width-border) color-mix(in srgb, var(--color-warning) 30%, transparent);

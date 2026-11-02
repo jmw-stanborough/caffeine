@@ -55,6 +55,7 @@
     <button
       type="button"
       class="btn-noc"
+      class:active={isNocMode}
       onclick={onToggleNoc}
     >
       {isNocMode ? "Exit NOC (Esc)" : "NOC Mode"}
@@ -106,7 +107,10 @@
   }
 
   .zoom-controls {
-    display: flex;
+    display: inline-flex;
+    align-items: stretch;
+    height: 1.85rem;
+    box-sizing: border-box;
     border: solid var(--width-border) var(--color-border);
     border-radius: 0.375rem;
     overflow: hidden;
@@ -114,15 +118,20 @@
   }
 
   .btn-zoom {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: none;
     color: var(--color-text-muted);
-    padding: 0.35rem 0.65rem;
+    height: 100%;
+    padding: 0 0.65rem;
     font-size: 0.95rem;
     font-weight: 700;
     line-height: 1;
     cursor: pointer;
     white-space: nowrap;
+    box-sizing: border-box;
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 
@@ -136,13 +145,19 @@
   }
 
   .btn-noc {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.85rem;
+    box-sizing: border-box;
     background-color: transparent;
     border: solid var(--width-border) var(--color-border);
     color: var(--color-text-muted);
-    padding: 0.35rem 0.75rem;
+    padding: 0 0.75rem;
     border-radius: 0.375rem;
     font-size: 0.85rem;
     font-weight: 600;
+    line-height: 1;
     cursor: pointer;
     white-space: nowrap;
     flex-shrink: 0;
@@ -153,5 +168,11 @@
     background-color: var(--color-surface);
     color: var(--color-text);
     border-color: var(--color-text-muted);
+  }
+
+  .btn-noc.active {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+    background-color: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
   }
 </style>

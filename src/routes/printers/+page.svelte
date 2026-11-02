@@ -379,13 +379,15 @@
   .readonly-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.25rem 0.625rem;
+    height: 1.85rem;
+    box-sizing: border-box;
+    padding: 0 0.625rem;
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--color-text-muted);
     background-color: var(--color-surface);
     border: solid var(--width-border) var(--color-border);
-    border-radius: 4px;
+    border-radius: 0.375rem;
   }
 
   .printer-grid {
