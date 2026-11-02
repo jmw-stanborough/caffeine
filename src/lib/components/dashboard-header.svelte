@@ -25,7 +25,7 @@
 
 <header class="page-header">
   <div class="header-titles">
-    <h1 class="dashboard-title">{title}</h1>
+    <h1 class="page-title">{title}</h1>
     <span class="item-count">{countText}</span>
   </div>
   <div class="header-actions">
@@ -95,11 +95,7 @@
     flex-shrink: 0;
   }
 
-  .dashboard-title {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--color-text);
+  .page-title {
     white-space: nowrap;
   }
 
