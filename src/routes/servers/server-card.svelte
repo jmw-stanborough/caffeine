@@ -1,5 +1,6 @@
 <script lang="ts">
   import { activateOnEnterOrSpace, formatRelativeTime } from "$lib/format";
+  import { Circle } from "$lib/icons";
   import type { HostState, Server } from "./types";
 
   let {
@@ -40,7 +41,7 @@
   <div class="card-main">
     <div class="card-title-row">
       {#if !nocMode}
-        <span class="status-dot" aria-hidden="true"></span>
+        <Circle size={10} class="status-dot" aria-hidden="true" />
       {/if}
       <h2 class="card-label">{server.label}</h2>
       {#if server.agent && !nocMode}
@@ -226,11 +227,8 @@
     gap: 0.5rem;
   }
 
-  .status-dot {
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 50%;
-    background-color: var(--status-color, var(--color-border));
+  :global(.status-dot) {
+    color: var(--status-color, var(--color-border));
     flex-shrink: 0;
   }
 

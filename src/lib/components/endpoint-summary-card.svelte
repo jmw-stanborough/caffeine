@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, Cpu } from "$lib/components/icons";
+  import { AlertTriangle, Circle, Cpu } from "$lib/components/icons";
   import { endpointStore } from "../../routes/endpoint/endpoint.svelte";
   import {
     formatBytes,
@@ -88,7 +88,7 @@
     <dl class="stats">
       <div class="stat">
         <dt class="stat-label">
-          <span class="dot" style:background-color={cpuColor}></span>
+          <Circle size={8} class="dot" fill={cpuColor} />
           CPU
         </dt>
         <dd class="stat-value" style:color={cpuColor}>
@@ -101,7 +101,7 @@
 
       <div class="stat">
         <dt class="stat-label">
-          <span class="dot" style:background-color={memColor}></span>
+          <Circle size={8} class="dot" fill={memColor} />
           RAM
         </dt>
         <dd class="stat-value" style:color={memColor}>
@@ -115,7 +115,7 @@
       {#if primaryDisk}
         <div class="stat">
           <dt class="stat-label">
-            <span class="dot" style:background-color={diskColor}></span>
+            <Circle size={8} class="dot" fill={diskColor} />
             {primaryDisk.mount_point || "Disk"}
           </dt>
           <dd class="stat-value" style:color={diskColor}>
@@ -132,7 +132,7 @@
           {@const temp = store.machine.cpu.temperature_celsius}
           {@const tColor = getTemperatureColor(temp)}
           <dt class="stat-label">
-            <span class="dot" style:background-color={tColor}></span>
+            <Circle size={8} class="dot" fill={tColor} />
             Temp
           </dt>
           <dd class="stat-value" style:color={tColor}>
@@ -316,10 +316,7 @@
     margin-top: 2px;
   }
 
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+  :global(.dot) {
     flex-shrink: 0;
   }
 

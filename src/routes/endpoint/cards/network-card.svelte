@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Circle } from "$lib/icons";
   import { formatBytes } from "../metrics";
   import type { NetworkInterfaceInfo } from "../types";
 
@@ -38,11 +39,11 @@
       <div class="network-item">
         <div class="network-header-row">
           <span class="net-name">{net.name}</span>
-          <span
-            class="net-status-dot"
-            class:active={net.is_up}
+          <Circle
+            size={8}
+            class="net-status-dot {net.is_up ? 'active' : ''}"
             title={net.is_up ? "Active" : "Inactive"}
-          ></span>
+          />
         </div>
         {#if net.mac_address}
           <div class="net-row">
@@ -124,15 +125,13 @@
     color: var(--color-text);
   }
 
-  .net-status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: var(--color-text-muted);
+  :global(.net-status-dot) {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
   }
 
-  .net-status-dot.active {
-    background-color: var(--color-success);
+  :global(.net-status-dot.active) {
+    color: var(--color-success);
   }
 
   .net-row {

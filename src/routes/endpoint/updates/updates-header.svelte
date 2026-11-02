@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Circle } from "$lib/icons";
   import type { UpdateCheckResult } from "../types";
 
   interface Props {
@@ -50,7 +51,7 @@
 
     {#if isRebootRequired}
       <span class="reboot-status-pill">
-        <span class="pulse-dot"></span> Restart Pending
+        <Circle size={6} class="pulse-dot" /> Restart Pending
       </span>
     {/if}
   </div>
@@ -212,12 +213,10 @@
     gap: 0.35rem;
   }
 
-  .pulse-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: var(--color-warning);
+  :global(.pulse-dot) {
+    color: var(--color-warning);
     animation: pulse 1.8s infinite ease-in-out;
+    flex-shrink: 0;
   }
 
   @keyframes pulse {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
+  import { Circle } from "$lib/icons";
   import EventHistoryList, { type ConnectionLogItem } from "$lib/components/event-history-list.svelte";
   import { DEFAULT_LOG_LIMIT } from "$lib/constants";
   import { formatRelativeTime } from "$lib/format";
@@ -132,7 +133,7 @@
     <div class="modal-header">
       <div class="title-group">
         <div class="card-title-row">
-          <span class="status-dot" aria-hidden="true"></span>
+          <Circle size={10} class="status-dot" aria-hidden="true" />
           <h2 class="modal-title" title={printer.label}>{printer.label}</h2>
         </div>
 
@@ -289,11 +290,8 @@
     min-width: 0;
   }
 
-  .status-dot {
-    width: 0.65rem;
-    height: 0.65rem;
-    border-radius: 50%;
-    background-color: var(--status-color, var(--color-border));
+  :global(.status-dot) {
+    color: var(--status-color, var(--color-border));
     flex-shrink: 0;
   }
 

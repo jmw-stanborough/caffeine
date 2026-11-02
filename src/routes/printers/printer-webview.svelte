@@ -1,5 +1,6 @@
 <script lang="ts">
   import { MIN_WEBVIEW_DIMENSION_PX } from "$lib/constants";
+  import { Circle } from "$lib/icons";
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onDestroy, onMount, tick } from "svelte";
@@ -137,7 +138,7 @@
       </button>
 
       <div class="printer-identity">
-        <span class="status-dot {effectiveStatus}" aria-hidden="true"></span>
+        <Circle size={10} class="status-dot {effectiveStatus}" aria-hidden="true" />
         <strong class="toolbar-label">{printer.label}</strong>
         <span class="toolbar-url selectable">{webviewUrl}</span>
       </div>
@@ -264,24 +265,21 @@
     min-width: 0;
   }
 
-  .status-dot {
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 50%;
-    background-color: var(--color-text-muted);
+  :global(.status-dot) {
+    color: var(--color-text-muted);
     flex-shrink: 0;
   }
 
-  .status-dot.online {
-    background-color: var(--color-success);
+  :global(.status-dot.online) {
+    color: var(--color-success);
   }
 
-  .status-dot.degraded {
-    background-color: var(--color-warning);
+  :global(.status-dot.degraded) {
+    color: var(--color-warning);
   }
 
-  .status-dot.offline {
-    background-color: var(--color-failure);
+  :global(.status-dot.offline) {
+    color: var(--color-failure);
   }
 
   .toolbar-label {

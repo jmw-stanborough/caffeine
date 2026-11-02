@@ -45,4 +45,9 @@ describe("Circle icon component", () => {
     expect(labeledOutput.html).toContain('aria-label="1 alert"');
     expect(labeledOutput.html).not.toContain('aria-hidden="true"');
   });
+
+  it("renders SVG title element when title prop is supplied", () => {
+    const { html } = render(Circle, { props: { title: "Active" } });
+    expect(html).toContain("<title>Active</title>");
+  });
 });

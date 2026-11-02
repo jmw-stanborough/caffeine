@@ -4,6 +4,7 @@
 
   interface Props extends SVGAttributes<SVGSVGElement> {
     size?: number | string;
+    title?: string;
     filled?: boolean;
     fill?: string;
     stroke?: string;
@@ -16,6 +17,7 @@
 
   let {
     size = 16,
+    title = undefined,
     filled = true,
     fill = undefined,
     stroke = undefined,
@@ -61,6 +63,9 @@
   aria-hidden={isAriaHidden}
   {...restProps}
 >
+  {#if title}
+    <title>{title}</title>
+  {/if}
   <circle cx="12" cy="12" r={effectiveR} />
   {#if textStr}
     <text
