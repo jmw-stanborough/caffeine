@@ -34,9 +34,9 @@
   }: Props = $props();
 </script>
 
-<div class="page-header">
+<header class="page-header">
   <div class="title-cluster">
-    <h2 class="page-title">System Updates</h2>
+    <h1 class="page-title">System Updates</h1>
 
     {#if updates}
       <span
@@ -160,7 +160,7 @@
       <span>{isChecking ? "Checking..." : "Check"}</span>
     </button>
   </div>
-</div>
+</header>
 
 <style>
   .page-header {
@@ -178,13 +178,6 @@
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
-  }
-
-  .page-title {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--color-text);
   }
 
   .count-badge {

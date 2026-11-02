@@ -23,9 +23,9 @@
 </script>
 
 <div class="hardware-module">
-  <div class="page-header">
+  <header class="page-header">
     <div class="header-left">
-      <h2 class="page-title">System & Hardware</h2>
+      <h1 class="page-title">System & Hardware</h1>
       {#if machine}
         <span class="uptime-badge" title="System Uptime">
           Up: {formatUptime(machine.system.uptime_seconds)}
@@ -68,7 +68,7 @@
       </svg>
       <span>{isLoading ? "Reading..." : "Refresh"}</span>
     </button>
-  </div>
+  </header>
 
   {#if errorMessage}
     <div class="error-banner">
@@ -132,13 +132,6 @@
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
-  }
-
-  .page-title {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--color-text);
   }
 
   .uptime-badge {

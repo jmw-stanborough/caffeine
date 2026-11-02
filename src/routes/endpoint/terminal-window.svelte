@@ -102,9 +102,9 @@
 </script>
 
 <div class="terminal-module">
-  <div class="page-header">
+  <header class="page-header">
     <div class="header-left">
-      <h2 class="page-title">Terminal</h2>
+      <h1 class="page-title">Terminal</h1>
       {#if effectiveShell}
         <span
           class="shell-badge"
@@ -131,7 +131,7 @@
         Restart
       </button>
     </div>
-  </div>
+  </header>
 
   <div class="terminal-body">
     <TerminalView
@@ -170,10 +170,6 @@
   }
 
   .page-title {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--color-text);
     white-space: nowrap;
   }
 
