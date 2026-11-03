@@ -214,15 +214,17 @@ pub async fn poll_colorants(
     colorants
 }
 
+fn supply_has_toner(supply: &TonerSupply) -> bool {
+    supply.percent.is_some_and(|p| p > 0)
+        || supply.level == SUPPLY_LEVEL_SOME_REMAINING
+        || supply.level > 0
+}
+
 // Brother printers report both standard and high-yield slots under identical descriptions;
 // an uninstalled slot reports 0 level while the installed cartridge reports available (-3) or a percentage.
 fn should_replace_supply(candidate: &TonerSupply, current: &TonerSupply) -> bool {
-    let candidate_has_toner = candidate.percent.is_some_and(|p| p > 0)
-        || candidate.level == SUPPLY_LEVEL_SOME_REMAINING
-        || candidate.level > 0;
-    let current_has_toner = current.percent.is_some_and(|p| p > 0)
-        || current.level == SUPPLY_LEVEL_SOME_REMAINING
-        || current.level > 0;
+    let candidate_has_toner = supply_has_toner(candidate);
+    let current_has_toner = supply_has_toner(current);
 
     if candidate_has_toner && !current_has_toner {
         return true;
