@@ -265,23 +265,6 @@
     min-width: 0;
   }
 
-  .printer-identity :global(.status-dot) {
-    color: var(--color-text-muted);
-    flex-shrink: 0;
-  }
-
-  .printer-identity :global(.status-dot.online) {
-    color: var(--color-success);
-  }
-
-  .printer-identity :global(.status-dot.degraded) {
-    color: var(--color-warning);
-  }
-
-  .printer-identity :global(.status-dot.offline) {
-    color: var(--color-failure);
-  }
-
   .toolbar-label {
     font-size: 0.95rem;
     color: var(--color-text);

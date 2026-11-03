@@ -517,4 +517,25 @@ textarea,
   flex-shrink: 0;
 }
 
+.status-dot {
+  color: var(--status-color, var(--color-border));
+  flex-shrink: 0;
+}
+
+.status-dot.online {
+  color: var(--color-success);
+}
+
+.status-dot.degraded {
+  color: var(--color-warning);
+}
+
+.status-dot.offline {
+  color: var(--color-failure);
+}
+
+.status-dot.checking {
+  color: var(--color-text-muted);
+}
+
 

@@ -44,7 +44,6 @@
         <Circle
           size={10}
           class="status-dot {status}"
-          fill="var(--status-color, var(--color-border))"
           aria-hidden="true"
         />
       {/if}
@@ -230,27 +229,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-
-  .server-card :global(.status-dot) {
-    color: var(--status-color, var(--color-border));
-    flex-shrink: 0;
-  }
-
-  .server-card :global(.status-dot.online) {
-    color: var(--color-success);
-  }
-
-  .server-card :global(.status-dot.degraded) {
-    color: var(--color-warning);
-  }
-
-  .server-card :global(.status-dot.offline) {
-    color: var(--color-failure);
-  }
-
-  .server-card :global(.status-dot.checking) {
-    color: var(--color-text-muted);
   }
 
   .card-label {

@@ -92,7 +92,6 @@
           <Circle
             size={10}
             class="status-dot {status}"
-            fill="var(--status-color, var(--color-border))"
             aria-hidden="true"
           />
         {/if}
@@ -227,27 +226,6 @@
     gap: 0.5rem;
     min-width: 0;
     flex: 1;
-  }
-
-  .printer-card :global(.status-dot) {
-    color: var(--status-color, var(--color-border));
-    flex-shrink: 0;
-  }
-
-  .printer-card :global(.status-dot.online) {
-    color: var(--color-success);
-  }
-
-  .printer-card :global(.status-dot.degraded) {
-    color: var(--color-warning);
-  }
-
-  .printer-card :global(.status-dot.offline) {
-    color: var(--color-failure);
-  }
-
-  .printer-card :global(.status-dot.checking) {
-    color: var(--color-text-muted);
   }
 
   .card-label {
