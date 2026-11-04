@@ -91,7 +91,7 @@
         {#if !nocMode}
           <Circle
             size={10}
-            class="status-dot {status}"
+            class="status-dot {effectiveVisualStatus}"
             aria-hidden="true"
           />
         {/if}
