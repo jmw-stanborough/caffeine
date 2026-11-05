@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { getEffectivePrinterStatus } from "./status";
-import type { PrinterState, TonerSupply } from "./types";
+import type { TonerSupply } from "./types";
+
+function createToner(percent: number, color = "black"): TonerSupply {
+  return {
+    name: `${color} Toner`,
+    color,
+    level: percent,
+    max_capacity: 100,
+    percent,
+    supply_type: "toner",
+  };
+}
 
 describe("getEffectivePrinterStatus", () => {
   it("defaults to checking when state is undefined", () => {
@@ -30,58 +41,28 @@ describe("getEffectivePrinterStatus", () => {
   });
 
   it("marks empty primary toner as offline", () => {
-    const toners: TonerSupply[] = [
-      {
-        name: "Black Toner",
-        color: "black",
-        level: 0,
-        max_capacity: 100,
-        percent: 0,
-        supply_type: "toner",
-      },
-    ];
     expect(
       getEffectivePrinterStatus({
         status: "online",
-        toners,
+        toners: [createToner(0)],
       }),
     ).toBe("offline");
   });
 
   it("marks low toner as degraded when otherwise online", () => {
-    const toners: TonerSupply[] = [
-      {
-        name: "Cyan Toner",
-        color: "cyan",
-        level: 10,
-        max_capacity: 100,
-        percent: 10,
-        supply_type: "toner",
-      },
-    ];
     expect(
       getEffectivePrinterStatus({
         status: "online",
-        toners,
+        toners: [createToner(10, "cyan")],
       }),
     ).toBe("degraded");
   });
 
   it("returns online when all supplies and conditions are nominal", () => {
-    const toners: TonerSupply[] = [
-      {
-        name: "Black Toner",
-        color: "black",
-        level: 80,
-        max_capacity: 100,
-        percent: 80,
-        supply_type: "toner",
-      },
-    ];
     expect(
       getEffectivePrinterStatus({
         status: "online",
-        toners,
+        toners: [createToner(80)],
         paperJam: false,
         outOfPaper: false,
       }),
