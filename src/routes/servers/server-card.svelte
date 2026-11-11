@@ -1,6 +1,6 @@
 <script lang="ts">
   import { activateOnEnterOrSpace, formatRelativeTime } from "$lib/format";
-  import { Circle } from "$lib/icons";
+  import { Circle } from "$lib/components/icons";
   import type { HostState, Server } from "./types";
 
   let {

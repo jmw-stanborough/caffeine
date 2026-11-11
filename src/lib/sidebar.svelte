@@ -1,7 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Coffee } from "$lib/components/icons";
-  import { Circle, Cog } from "$lib/icons";
+  import { Circle, Coffee, Cog } from "$lib/components/icons";
   import SettingsModal from "$lib/components/settings-modal.svelte";
   import {
     DASHBOARD_NAV_ITEM,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Circle } from "$lib/icons";
+  import { Circle } from "$lib/components/icons";
   import { formatBytes } from "../metrics";
   import type { NetworkInterfaceInfo } from "../types";
 

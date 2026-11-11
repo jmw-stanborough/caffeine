@@ -1,6 +1,6 @@
 <script lang="ts">
   import { MIN_WEBVIEW_DIMENSION_PX } from "$lib/constants";
-  import { Circle } from "$lib/icons";
+  import { Circle } from "$lib/components/icons";
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onDestroy, onMount, tick } from "svelte";

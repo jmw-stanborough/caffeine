@@ -1,6 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
-  import { Circle } from "$lib/icons";
+  import { Circle } from "$lib/components/icons";
   import { applyTheme } from "$lib/theme";
   import { refreshClientMode } from "$lib/client-mode.svelte";
   import { printerStore } from "../../routes/printers/printers.svelte";

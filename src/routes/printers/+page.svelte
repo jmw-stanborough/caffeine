@@ -1,7 +1,7 @@
 <script lang="ts">
   import DashboardHeader from "$lib/components/dashboard-header.svelte";
   import SortModal from "$lib/components/sort-modal.svelte";
-  import { Circle, Filter, Sort } from "$lib/icons";
+  import { Circle, Filter, Sort } from "$lib/components/icons";
   import {
     DND_FLIP_DURATION_MS,
     PRINTER_CARD_MIN_WIDTH_REM,

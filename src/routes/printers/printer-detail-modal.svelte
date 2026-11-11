@@ -1,6 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
-  import { Circle } from "$lib/icons";
+  import { Circle } from "$lib/components/icons";
   import EventHistoryList, { type ConnectionLogItem } from "$lib/components/event-history-list.svelte";
   import { DEFAULT_LOG_LIMIT } from "$lib/constants";
   import { formatRelativeTime } from "$lib/format";

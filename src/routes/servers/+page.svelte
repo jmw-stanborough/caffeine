@@ -7,7 +7,7 @@
     SERVER_CARD_MIN_WIDTH_REM,
     SERVER_NOC_MIN_WIDTH_REM,
   } from "$lib/constants";
-  import { Circle, Sort } from "$lib/icons";
+  import { Circle, Sort } from "$lib/components/icons";
   import { createNocController } from "$lib/noc.svelte";
   import { clientMode } from "$lib/client-mode.svelte";
   import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { activateOnEnterOrSpace } from "$lib/format";
-  import { Circle, Cog } from "$lib/icons";
+  import { Circle, Cog } from "$lib/components/icons";
   import PrinterTagsRow from "./printer-tags-row.svelte";
   import { getEffectivePrinterStatus, isLowToner } from "./tags";
   import type { Printer, PrinterState, TonerSupply } from "./types";
