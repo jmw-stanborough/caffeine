@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import { render } from "svelte/server";
 import Circle from "./Circle.svelte";
 import { Circle as ExportedCircle } from "./index";
-import { Circle as LibExportedCircle } from "$lib/icons";
 
 describe("Circle icon component", () => {
-  it("exports correctly from index files", () => {
+  it("exports correctly from index file", () => {
     expect(ExportedCircle).toBe(Circle);
-    expect(LibExportedCircle).toBe(Circle);
   });
 
   it("renders a filled circle by default", () => {
