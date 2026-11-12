@@ -11,6 +11,7 @@
   import { clientMode } from "$lib/client-mode.svelte";
   import { loadSavedSortRules, saveSortRules, sortEntities } from "$lib/sort/sort";
   import type { SortRule } from "$lib/sort/types";
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
@@ -44,7 +45,9 @@
     isModalOpen = false;
     isFilterModalOpen = false;
     isSortModalOpen = false;
-    activeWebPrinter = null;
+    if (activeWebPrinter) {
+      closeWebInterface();
+    }
   });
 
   let activeFilterCount = $derived(
@@ -86,6 +89,18 @@
     activeWebPrinter = printer;
   }
 
+  async function closeWebInterface() {
+    activeWebPrinter = null;
+    try {
+      await invoke("close_printer_webview");
+    } catch (err) {
+      console.error("Failed to close printer webview:", err);
+    }
+    if (typeof window !== "undefined") {
+      window.focus();
+    }
+  }
+
   function openDetailModal(printer: Printer) {
     if (noc.isNocMode) return;
     isFilterModalOpen = false;
@@ -115,7 +130,9 @@
     isDetailModalOpen = false;
     isFilterModalOpen = false;
     isSortModalOpen = false;
-    activeWebPrinter = null;
+    if (activeWebPrinter) {
+      closeWebInterface();
+    }
     editingPrinter = printer;
     isModalOpen = true;
   }
@@ -134,7 +151,7 @@
         } else if (isSortModalOpen) {
           isSortModalOpen = false;
         } else if (activeWebPrinter) {
-          activeWebPrinter = null;
+          closeWebInterface();
         } else if (noc.isNocMode) {
           noc.setNocMode(false).catch((err) => {
             console.error("Failed to exit NOC mode:", err);
@@ -156,7 +173,7 @@
   <PrinterWebview
     printer={activeWebPrinter}
     printerState={store.statusMap[activeWebPrinter.id]}
-    onclose={() => (activeWebPrinter = null)}
+    onclose={closeWebInterface}
     onconfigure={(p) => openEditModal(p)}
   />
 {:else}

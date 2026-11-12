@@ -6,6 +6,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { getEffectivePrinterStatus } from "./tags";
   import type { Printer, PrinterState } from "./types";
+  import { resolvePrinterUrl } from "./url";
 
   let {
     printer,
@@ -23,19 +24,12 @@
   let webviewError = $state<string | null>(null);
   let webviewSlotEl = $state<HTMLElement | undefined>(undefined);
   let resizeObserver: ResizeObserver | null = null;
+  let isClosing = false;
 
   let effectiveStatus = $derived(getEffectivePrinterStatus(printerState));
 
-  function resolvePrinterUrl(target: Printer): string {
-    const raw = target.web_url?.trim() || target.host.trim();
-    if (raw.startsWith("http://") || raw.startsWith("https://")) {
-      return raw;
-    }
-    return `http://${raw}`;
-  }
-
   async function syncChildWebviewBounds() {
-    if (!webviewSlotEl) return;
+    if (!webviewSlotEl || isClosing) return;
     const rect = webviewSlotEl.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
@@ -52,12 +46,13 @@
   }
 
   async function launchWebview() {
+    if (isClosing) return;
     webviewError = null;
     webviewUrl = resolvePrinterUrl(printer);
 
     await tick();
 
-    if (!webviewSlotEl) return;
+    if (!webviewSlotEl || isClosing) return;
     const rect = webviewSlotEl.getBoundingClientRect();
 
     try {
@@ -68,6 +63,7 @@
         width: Math.max(MIN_WEBVIEW_DIMENSION_PX, Math.round(rect.width)),
         height: Math.max(MIN_WEBVIEW_DIMENSION_PX, Math.round(rect.height)),
       });
+      if (isClosing) return;
       webviewUrl = resolved;
 
       resizeObserver?.disconnect();
@@ -76,8 +72,23 @@
       });
       resizeObserver.observe(webviewSlotEl);
     } catch (err) {
-      webviewError = String(err);
+      if (!isClosing) {
+        webviewError = String(err);
+      }
     }
+  }
+
+  async function handleClose() {
+    if (isClosing) return;
+    isClosing = true;
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    try {
+      await invoke("close_printer_webview");
+    } catch (err) {
+      console.error("Failed to close printer webview:", err);
+    }
+    onclose();
   }
 
   async function reloadWebInterface() {
@@ -124,16 +135,19 @@
   onDestroy(() => {
     resizeObserver?.disconnect();
     resizeObserver = null;
-    invoke("close_printer_webview").catch((err) => {
-      console.error("Failed to close printer webview on destroy:", err);
-    });
+    if (!isClosing) {
+      isClosing = true;
+      invoke("close_printer_webview").catch((err) => {
+        console.error("Failed to close printer webview on destroy:", err);
+      });
+    }
   });
 </script>
 
 <div class="webview-shell">
   <header class="webview-toolbar">
     <div class="toolbar-left">
-      <button type="button" class="btn-back" onclick={onclose}>
+      <button type="button" class="btn-back" onclick={handleClose}>
         ← Back to Printers
       </button>
 
