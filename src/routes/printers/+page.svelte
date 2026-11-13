@@ -46,7 +46,9 @@
     isFilterModalOpen = false;
     isSortModalOpen = false;
     if (activeWebPrinter) {
-      closeWebInterface();
+      closeWebInterface().catch((err) => {
+        console.error("Failed to close web interface on NOC mode:", err);
+      });
     }
   });
 
@@ -90,14 +92,14 @@
   }
 
   async function closeWebInterface() {
-    activeWebPrinter = null;
+    if (!activeWebPrinter) return;
     try {
       await invoke("close_printer_webview");
-    } catch (err) {
-      console.error("Failed to close printer webview:", err);
-    }
-    if (typeof window !== "undefined") {
-      window.focus();
+    } finally {
+      activeWebPrinter = null;
+      if (typeof window !== "undefined") {
+        window.focus();
+      }
     }
   }
 
@@ -131,7 +133,9 @@
     isFilterModalOpen = false;
     isSortModalOpen = false;
     if (activeWebPrinter) {
-      closeWebInterface();
+      closeWebInterface().catch((err) => {
+        console.error("Failed to close web interface before editing:", err);
+      });
     }
     editingPrinter = printer;
     isModalOpen = true;
@@ -151,7 +155,9 @@
         } else if (isSortModalOpen) {
           isSortModalOpen = false;
         } else if (activeWebPrinter) {
-          closeWebInterface();
+          closeWebInterface().catch((err) => {
+            console.error("Failed to close web interface on Escape:", err);
+          });
         } else if (noc.isNocMode) {
           noc.setNocMode(false).catch((err) => {
             console.error("Failed to exit NOC mode:", err);
@@ -165,6 +171,11 @@
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       noc.cleanup();
+      if (activeWebPrinter) {
+        invoke("close_printer_webview").catch((err) => {
+          console.error("Failed to close printer webview on unmount:", err);
+        });
+      }
     };
   });
 </script>

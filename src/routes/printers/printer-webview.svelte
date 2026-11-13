@@ -16,7 +16,7 @@
   }: {
     printer: Printer;
     printerState?: PrinterState;
-    onclose: () => void;
+    onclose: () => void | Promise<void>;
     onconfigure: (printer: Printer) => void;
   } = $props();
 
@@ -41,14 +41,22 @@
         height: Math.round(rect.height),
       });
     } catch (err) {
-      console.error("Failed to resize child webview:", err);
+      if (!isClosing) {
+        webviewError = `Failed to resize child webview: ${err}`;
+      }
     }
   }
 
   async function launchWebview() {
     if (isClosing) return;
     webviewError = null;
-    webviewUrl = resolvePrinterUrl(printer);
+
+    try {
+      webviewUrl = resolvePrinterUrl(printer);
+    } catch (err) {
+      webviewError = String(err);
+      return;
+    }
 
     await tick();
 
@@ -83,12 +91,7 @@
     isClosing = true;
     resizeObserver?.disconnect();
     resizeObserver = null;
-    try {
-      await invoke("close_printer_webview");
-    } catch (err) {
-      console.error("Failed to close printer webview:", err);
-    }
-    onclose();
+    await onclose();
   }
 
   async function reloadWebInterface() {
@@ -100,13 +103,9 @@
   }
 
   async function switchScheme(scheme: "http" | "https") {
-    const cleanHost = (printer.web_url?.trim() || printer.host.trim()).replace(
-      /^https?:\/\//i,
-      "",
-    );
-    const nextUrl = `${scheme}://${cleanHost}`;
     try {
       webviewError = null;
+      const nextUrl = resolvePrinterUrl(printer, scheme);
       webviewUrl = await invoke<string>("navigate_printer_webview", {
         url: nextUrl,
       });
@@ -120,7 +119,7 @@
     try {
       await openUrl(webviewUrl);
     } catch (err) {
-      console.error("Failed to open external browser:", err);
+      webviewError = `Failed to open external browser: ${err}`;
     }
   }
 
