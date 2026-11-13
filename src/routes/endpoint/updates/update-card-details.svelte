@@ -67,7 +67,7 @@
         onclick={() => handleOpenSupport(update.support_url!)}
         title={update.support_url}
       >
-        Open Microsoft Support Article &rarr;
+        Open Update Support Article &rarr;
       </button>
     </div>
   {/if}

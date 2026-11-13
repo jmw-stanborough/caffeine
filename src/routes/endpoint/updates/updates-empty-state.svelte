@@ -12,7 +12,7 @@
 <div class="state-container">
   {#if state === "loading"}
     <div class="spinner"></div>
-    <span>Searching Windows Update catalog...</span>
+    <span>Checking for available system updates...</span>
   {:else if state === "clean"}
     <div class="clean-icon-wrap">
       <svg
