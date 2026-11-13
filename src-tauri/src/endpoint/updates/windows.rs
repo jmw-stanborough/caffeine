@@ -69,7 +69,7 @@ where
 }
 
 pub(crate) fn restart_system() -> Result<(), String> {
-    let output = std::process::Command::new("shutdown.exe")
+    let output = crate::process::new_hidden_command("shutdown.exe")
         .args(["/r", "/t", "0", "/d", "p:2:18"])
         .output()
         .map_err(|e| format!("Failed to execute restart command: {e}"))?;

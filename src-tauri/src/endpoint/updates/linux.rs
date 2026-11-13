@@ -216,22 +216,14 @@ enum PackageManager {
 }
 
 #[cfg(target_os = "linux")]
-fn find_in_path(binary: &str) -> Option<std::path::PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    std::env::split_paths(&path_var)
-        .map(|dir| dir.join(binary))
-        .find(|candidate| candidate.is_file())
-}
-
-#[cfg(target_os = "linux")]
 fn detect_package_manager() -> Result<PackageManager, String> {
-    if find_in_path("apt").is_some() {
+    if crate::process::find_executable_in_path("apt").is_some() {
         Ok(PackageManager::Apt)
-    } else if find_in_path("dnf").is_some() {
+    } else if crate::process::find_executable_in_path("dnf").is_some() {
         Ok(PackageManager::Dnf)
-    } else if find_in_path("pacman").is_some() {
+    } else if crate::process::find_executable_in_path("pacman").is_some() {
         Ok(PackageManager::Pacman)
-    } else if find_in_path("zypper").is_some() {
+    } else if crate::process::find_executable_in_path("zypper").is_some() {
         Ok(PackageManager::Zypper)
     } else {
         Err("No supported Linux package manager found in PATH (apt, dnf, pacman, zypper).".to_string())
@@ -243,7 +235,7 @@ fn is_reboot_required() -> bool {
     if std::path::Path::new("/var/run/reboot-required").exists() {
         return true;
     }
-    if find_in_path("needs-restarting").is_some() {
+    if crate::process::find_executable_in_path("needs-restarting").is_some() {
         if let Ok(status) = std::process::Command::new("needs-restarting")
             .arg("-r")
             .stdout(std::process::Stdio::null())
