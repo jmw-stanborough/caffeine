@@ -7,6 +7,7 @@ pub mod db;
 pub mod endpoint;
 pub mod net;
 pub mod printer_dashboard;
+pub mod process;
 pub mod server;
 pub mod server_monitor;
 
