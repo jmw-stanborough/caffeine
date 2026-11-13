@@ -39,6 +39,10 @@ export class EndpointStore {
   private initPromise: Promise<void> | null = null;
   private unlistenProgress: UnlistenFn | null = null;
 
+  get isOsSupported(): boolean {
+    return this.osSupport ? (this.osSupport.is_supported ?? this.osSupport.is_windows) : false;
+  }
+
   get isBusy(): boolean {
     return this.updatesChecking || this.downloadingId !== null || this.installingId !== null;
   }
@@ -117,7 +121,7 @@ export class EndpointStore {
 
       await this.setupEventListeners();
 
-      if (!this.osSupport?.is_windows) {
+      if (!this.isOsSupported) {
         return;
       }
 
@@ -139,7 +143,7 @@ export class EndpointStore {
     if (!this.osSupport) {
       await this.init();
     } else {
-      if (this.osSupport.is_windows && !this.machine) {
+      if (this.isOsSupported && !this.machine) {
         await this.fetchMachineInfo(true);
       }
       this.startAutoRefresh();
@@ -160,7 +164,7 @@ export class EndpointStore {
   startAutoRefresh(intervalMs = 3500): void {
     this.stopAutoRefresh();
     this.autoRefreshTimer = setInterval(() => {
-      if (this.subscriberCount > 0 && this.osSupport?.is_windows && !this.isRefreshing) {
+      if (this.subscriberCount > 0 && this.isOsSupported && !this.isRefreshing) {
         this.fetchMachineInfo(false).catch((err) => {
           console.warn("Endpoint telemetry refresh failed:", err);
         });

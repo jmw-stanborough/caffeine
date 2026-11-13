@@ -341,4 +341,114 @@ describe("EndpointStore", () => {
     expect(store.getUpdateProgress("update-123")).not.toBeNull();
     expect(store.getUpdateProgress("update-999")).toBeNull();
   });
+
+  it("evaluates isOsSupported across Windows, Linux, macOS, and unsupported OS", async () => {
+    expect(store.isOsSupported).toBe(false);
+
+    store.osSupport = {
+      is_windows: true,
+      os_name: "Windows 11 Pro",
+      os_version: "10.0.26100",
+      architecture: "x86_64",
+      hostname: "WIN-HOST",
+      is_admin: true,
+    };
+    expect(store.isOsSupported).toBe(true);
+
+    store.osSupport = {
+      is_windows: false,
+      is_supported: true,
+      os_family: "linux",
+      os_name: "Ubuntu",
+      os_version: "24.04",
+      architecture: "x86_64",
+      hostname: "linux-host",
+      is_admin: false,
+    };
+    expect(store.isOsSupported).toBe(true);
+
+    store.osSupport = {
+      is_windows: false,
+      is_supported: true,
+      os_family: "macos",
+      os_name: "macOS",
+      os_version: "15.1",
+      architecture: "aarch64",
+      hostname: "mac-host",
+      is_admin: false,
+    };
+    expect(store.isOsSupported).toBe(true);
+
+    store.osSupport = {
+      is_windows: false,
+      is_supported: false,
+      os_family: "freebsd",
+      os_name: "FreeBSD",
+      os_version: "14.1",
+      architecture: "x86_64",
+      hostname: "bsd-host",
+      is_admin: false,
+    };
+    expect(store.isOsSupported).toBe(false);
+  });
+
+  it("fetches machine info on Linux and macOS when is_supported is true", async () => {
+    const linuxSupport: OsSupportInfo = {
+      is_windows: false,
+      is_supported: true,
+      os_family: "linux",
+      os_name: "Ubuntu",
+      os_version: "24.04",
+      architecture: "x86_64",
+      hostname: "linux-host",
+      is_admin: false,
+    };
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "endpoint_check_os_support") return linuxSupport;
+      if (cmd === "endpoint_detect_shell") return null;
+      if (cmd === "endpoint_get_machine_info") {
+        return {
+          system: {
+            computer_name: "linux-host",
+            domain_or_workgroup: "",
+            os_name: "Ubuntu 24.04",
+            os_version: "24.04",
+            build_number: "",
+            architecture: "x86_64",
+            uptime_seconds: 120,
+            boot_timestamp: 0,
+            fast_startup_enabled: false,
+          },
+          cpu: {
+            model_name: "AMD Ryzen",
+            vendor_id: "AuthenticAMD",
+            physical_cores: 8,
+            logical_cores: 16,
+            frequency_mhz: 3600,
+            global_usage_percent: 12,
+            core_usages: [12],
+          },
+          memory: {
+            total_bytes: 16_000_000_000,
+            used_bytes: 4_000_000_000,
+            free_bytes: 12_000_000_000,
+            available_bytes: 12_000_000_000,
+            usage_percent: 25,
+          },
+          disks: [],
+          gpus: [],
+          temperatures: [],
+          networks: [],
+        };
+      }
+      return null;
+    });
+
+    await store.subscribe();
+    expect(store.isOsSupported).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith("endpoint_get_machine_info");
+    expect(store.machine?.system.computer_name).toBe("linux-host");
+    store.unsubscribe();
+  });
 });

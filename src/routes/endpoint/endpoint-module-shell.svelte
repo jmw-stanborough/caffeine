@@ -42,7 +42,7 @@
       <div class="spinner"></div>
       <span>Verifying operating system compatibility...</span>
     </div>
-  {:else if !store.osSupport?.is_windows}
+  {:else if !store.isOsSupported}
     <UnsupportedOs osSupport={store.osSupport} />
   {:else}
     <div class="endpoint-page-content">

@@ -27,8 +27,12 @@
   let primaryDisk = $derived.by(() => {
     if (!store.machine?.disks || store.machine.disks.length === 0) return null;
     return (
-      store.machine.disks.find((d) => d.mount_point.toUpperCase().startsWith("C")) ??
-      store.machine.disks[0]
+      store.machine.disks.find(
+        (d) =>
+          d.mount_point === "/" ||
+          d.mount_point.toUpperCase().startsWith("C:") ||
+          d.mount_point.toUpperCase() === "C",
+      ) ?? store.machine.disks[0]
     );
   });
 
@@ -63,7 +67,7 @@
 
   {#if store.machineError}
     <div class="error-banner">{store.machineError}</div>
-  {:else if store.osSupport && !store.osSupport.is_windows}
+  {:else if store.osSupport && !store.isOsSupported}
     <div class="unsupported-banner">
       Unsupported OS ({store.osSupport.os_name})
     </div>

@@ -33,7 +33,8 @@
 
     <p class="warning-description">
       The <strong>Endpoint</strong> module provides hardware telemetry, system updates, and
-      terminal management that currently only supports <strong>Microsoft Windows</strong>.
+      terminal management and supports <strong>Microsoft Windows</strong>, <strong>Linux</strong>,
+      and <strong>macOS</strong>.
     </p>
 
     <div class="details-box">
@@ -58,10 +59,6 @@
         </div>
       {/if}
     </div>
-
-    <p class="future-note">
-      Support for Linux and macOS endpoints is under active development.
-    </p>
 
     <a href="/" class="btn-home">Return to Dashboard</a>
   </div>
@@ -146,12 +143,6 @@
     color: var(--color-failure);
     font-family: inherit;
     font-weight: 500;
-  }
-
-  .future-note {
-    font-size: 0.85rem;
-    color: var(--color-text-muted);
-    margin: 0 0 1.5rem 0;
   }
 
   .btn-home {

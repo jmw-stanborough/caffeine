@@ -1,5 +1,7 @@
 export interface OsSupportInfo {
   is_windows: boolean;
+  is_supported?: boolean;
+  os_family?: string;
   os_name: string;
   os_version: string;
   architecture: string;
