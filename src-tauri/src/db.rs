@@ -56,61 +56,65 @@ fn migrate_legacy_roaming_db(app: &AppHandle, local_db_path: &Path) -> Result<()
 }
 
 #[cfg(target_os = "windows")]
-pub fn ensure_machine_dir_permissions(dir: &Path) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    let _ = std::process::Command::new("icacls")
+pub fn ensure_machine_dir_permissions(dir: &Path) -> Result<(), String> {
+    let status = crate::process::new_hidden_command("icacls")
         .arg(dir)
         .arg("/grant")
         .arg("*S-1-5-32-545:(OI)(CI)M")
         .arg("/t")
         .arg("/c")
         .arg("/q")
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-}
+        .status()
+        .map_err(|e| format!("Failed to invoke icacls on {dir:?}: {e}"))?;
 
-#[cfg(target_os = "windows")]
-pub fn get_machine_db_dir() -> Result<PathBuf, String> {
-    let program_data =
-        std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string());
-    let dir = PathBuf::from(program_data).join(APP_DIR_NAME);
-    if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
-        ensure_machine_dir_permissions(&dir);
+    if !status.success() {
+        return Err(format!("icacls failed on {dir:?} with status {status}"));
     }
-    Ok(dir)
+
+    Ok(())
 }
 
-#[cfg(target_os = "linux")]
-pub fn get_machine_db_dir() -> Result<PathBuf, String> {
-    let dir = PathBuf::from("/var/lib").join(APP_DIR_NAME);
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
-    Ok(dir)
+#[cfg(unix)]
+pub fn ensure_machine_dir_permissions(dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o755))
+        .map_err(|e| format!("Failed to set permissions on machine directory {dir:?}: {e}"))
 }
 
-#[cfg(target_os = "macos")]
-pub fn get_machine_db_dir() -> Result<PathBuf, String> {
-    let dir = PathBuf::from("/Library/Application Support").join(APP_DIR_NAME);
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
-    Ok(dir)
+#[cfg(not(any(target_os = "windows", unix)))]
+pub fn ensure_machine_dir_permissions(_dir: &Path) -> Result<(), String> {
+    Ok(())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 pub fn get_machine_db_dir() -> Result<PathBuf, String> {
-    let dir = PathBuf::from("/var/lib").join(APP_DIR_NAME);
+    #[cfg(target_os = "windows")]
+    {
+        let program_data =
+            std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string());
+        Ok(PathBuf::from(program_data).join(APP_DIR_NAME))
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Ok(PathBuf::from("/Library/Application Support").join(APP_DIR_NAME))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        Ok(PathBuf::from("/var/lib").join(APP_DIR_NAME))
+    }
+}
+
+pub fn ensure_machine_db_dir() -> Result<PathBuf, String> {
+    let dir = get_machine_db_dir()?;
     fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create machine database directory at {dir:?}: {e}"))?;
+    ensure_machine_dir_permissions(&dir)?;
     Ok(dir)
 }
 
 pub fn get_machine_db_path() -> Result<PathBuf, String> {
-    let dir = get_machine_db_dir()?;
-    Ok(dir.join(DB_FILE_NAME))
+    Ok(get_machine_db_dir()?.join(DB_FILE_NAME))
 }
 
 pub fn get_remote_replica_db_path(
@@ -149,7 +153,7 @@ pub fn get_local_db_path(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn resolve_active_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     let settings = crate::config::load_app_settings(app)?;
     if settings.server_mode {
-        get_machine_db_path()
+        Ok(ensure_machine_db_dir()?.join(DB_FILE_NAME))
     } else if !crate::config::is_self_serving(&settings.target_host) {
         get_remote_replica_db_path(app, &settings.target_host, settings.target_port)
     } else {
@@ -748,5 +752,40 @@ mod tests {
         assert_eq!(remaining[0].1, "toner empty");
         assert_eq!(remaining[1].1, "out of paper");
         assert_eq!(remaining[2].1, "toner empty");
+    }
+
+    #[test]
+    fn test_get_machine_db_dir_and_path_resolve_expected_suffix() {
+        let dir = get_machine_db_dir().unwrap();
+        assert_eq!(dir.file_name().and_then(|n| n.to_str()), Some(APP_DIR_NAME));
+
+        let db_path = get_machine_db_path().unwrap();
+        assert_eq!(db_path, dir.join(DB_FILE_NAME));
+    }
+
+    #[test]
+    fn test_ensure_machine_dir_permissions_succeeds_on_temp_dir() {
+        let unique = format!(
+            "caffeine_db_perm_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&dir).unwrap();
+
+        let res = ensure_machine_dir_permissions(&dir);
+        assert!(res.is_ok(), "ensure_machine_dir_permissions failed: {res:?}");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o755);
+        }
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
