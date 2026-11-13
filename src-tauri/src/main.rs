@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    #[cfg(target_os = "windows")]
     if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
         let webview_cache = std::path::Path::new(&local_app_data)
             .join("caffeine")
