@@ -28,6 +28,12 @@ pub struct UserProfileSettings {
     pub max_log_entries: u32,
     #[serde(default = "default_todo_warning_minutes")]
     pub todo_warning_minutes: u32,
+    #[serde(default)]
+    pub sound_server_up: Option<String>,
+    #[serde(default)]
+    pub sound_server_down: Option<String>,
+    #[serde(default)]
+    pub sound_notification: Option<String>,
 }
 
 impl Default for UserProfileSettings {
@@ -40,6 +46,9 @@ impl Default for UserProfileSettings {
             retention_days: default_retention_days(),
             max_log_entries: default_max_log_entries(),
             todo_warning_minutes: default_todo_warning_minutes(),
+            sound_server_up: None,
+            sound_server_down: None,
+            sound_notification: None,
         }
     }
 }
@@ -120,6 +129,12 @@ pub struct AppSettings {
     pub max_log_entries: u32,
     #[serde(default = "default_todo_warning_minutes")]
     pub todo_warning_minutes: u32,
+    #[serde(default)]
+    pub sound_server_up: Option<String>,
+    #[serde(default)]
+    pub sound_server_down: Option<String>,
+    #[serde(default)]
+    pub sound_notification: Option<String>,
 }
 
 fn default_target_host() -> String {
@@ -165,6 +180,9 @@ impl Default for AppSettings {
             retention_days: default_retention_days(),
             max_log_entries: default_max_log_entries(),
             todo_warning_minutes: default_todo_warning_minutes(),
+            sound_server_up: None,
+            sound_server_down: None,
+            sound_notification: None,
         }
     }
 }
@@ -286,11 +304,22 @@ fn app_settings_from_parts(
         retention_days: user_settings.retention_days,
         max_log_entries: user_settings.max_log_entries,
         todo_warning_minutes: user_settings.todo_warning_minutes,
+        sound_server_up: user_settings.sound_server_up,
+        sound_server_down: user_settings.sound_server_down,
+        sound_notification: user_settings.sound_notification,
     }
 }
 
-pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
-    let user_settings = UserProfileSettings {
+fn normalize_optional_path(value: &Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn user_profile_from_app_settings(settings: &AppSettings) -> UserProfileSettings {
+    UserProfileSettings {
         target_host: settings.target_host.clone(),
         target_port: settings.target_port,
         admin_token: settings.admin_token.clone(),
@@ -298,7 +327,14 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), 
         retention_days: settings.retention_days,
         max_log_entries: settings.max_log_entries,
         todo_warning_minutes: settings.todo_warning_minutes,
-    };
+        sound_server_up: normalize_optional_path(&settings.sound_server_up),
+        sound_server_down: normalize_optional_path(&settings.sound_server_down),
+        sound_notification: normalize_optional_path(&settings.sound_notification),
+    }
+}
+
+pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
+    let user_settings = user_profile_from_app_settings(settings);
 
     let user_path = get_settings_path(app)?;
     let user_serialized = serde_json::to_string_pretty(&user_settings)
@@ -620,6 +656,9 @@ mod tests {
             retention_days: 7,
             max_log_entries: 500,
             todo_warning_minutes: 90,
+            sound_server_up: Some("C:\\sounds\\up.mp3".to_string()),
+            sound_server_down: None,
+            sound_notification: Some("C:\\sounds\\notify.mp3".to_string()),
         };
         let machine = MachineSettings {
             server_mode: true,
@@ -728,5 +767,35 @@ mod tests {
         assert_eq!(loaded.server_tokens[0].token, "legacy_tok");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_sound_settings_round_trip_and_normalization() {
+        let settings = AppSettings {
+            sound_server_up: Some("  C:\\sounds\\up.mp3  ".to_string()),
+            sound_server_down: Some("   ".to_string()),
+            sound_notification: Some(String::new()),
+            ..Default::default()
+        };
+
+        let user_profile = user_profile_from_app_settings(&settings);
+        assert_eq!(
+            user_profile.sound_server_up,
+            Some("C:\\sounds\\up.mp3".to_string())
+        );
+        assert_eq!(user_profile.sound_server_down, None);
+        assert_eq!(user_profile.sound_notification, None);
+
+        let json = serde_json::to_string(&user_profile).unwrap();
+        let decoded_user: UserProfileSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded_user, user_profile);
+
+        let combined = app_settings_from_parts(decoded_user, MachineSettings::default());
+        assert_eq!(
+            combined.sound_server_up,
+            Some("C:\\sounds\\up.mp3".to_string())
+        );
+        assert_eq!(combined.sound_server_down, None);
+        assert_eq!(combined.sound_notification, None);
     }
 }

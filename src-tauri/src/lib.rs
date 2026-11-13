@@ -10,6 +10,7 @@ pub mod printer_dashboard;
 pub mod process;
 pub mod server;
 pub mod server_monitor;
+pub mod sound;
 pub mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,6 +19,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            if let Err(e) = sound::ensure_windows_aumid_registered() {
+                eprintln!("Failed to register Windows AUMID for notifications: {e}");
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 if let Some(icon) = app.default_window_icon() {
                     window.set_icon(icon.clone())?;
@@ -107,6 +112,8 @@ pub fn run() {
             config::create_server_token_cmd,
             config::regenerate_server_token_cmd,
             config::delete_server_token_cmd,
+            sound::check_sound_file_cmd,
+            sound::load_custom_sound_cmd,
             workspace::todo::workspace_load_todos,
             workspace::todo::workspace_create_todo,
             workspace::todo::workspace_update_todo,

@@ -8,6 +8,7 @@ use tauri_plugin_notification::NotificationExt;
 const REMINDER_POLL_INTERVAL: Duration = Duration::from_secs(10);
 const INITIAL_WORKER_DELAY: Duration = Duration::from_secs(2);
 const TODOS_UPDATED_EVENT: &str = "workspace:todos-updated";
+const REMINDER_TRIGGERED_EVENT: &str = "workspace:reminder-triggered";
 
 pub fn start_reminder_worker(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -55,6 +56,7 @@ pub fn start_reminder_worker(app: AppHandle) {
                         "Failed to display OS notification for todo '{}': {err}",
                         todo.id
                     );
+                    continue;
                 }
 
                 let db = app.state::<WorkspaceDbState>();
@@ -72,10 +74,13 @@ pub fn start_reminder_worker(app: AppHandle) {
                 }
             }
 
-            if any_marked
-                && let Err(err) = app.emit(TODOS_UPDATED_EVENT, ())
-            {
-                eprintln!("Failed to emit '{TODOS_UPDATED_EVENT}': {err}");
+            if any_marked {
+                if let Err(err) = app.emit(REMINDER_TRIGGERED_EVENT, ()) {
+                    eprintln!("Failed to emit '{REMINDER_TRIGGERED_EVENT}': {err}");
+                }
+                if let Err(err) = app.emit(TODOS_UPDATED_EVENT, ()) {
+                    eprintln!("Failed to emit '{TODOS_UPDATED_EVENT}': {err}");
+                }
             }
 
             tokio::time::sleep(REMINDER_POLL_INTERVAL).await;
