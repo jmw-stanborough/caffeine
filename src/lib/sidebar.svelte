@@ -1,10 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { Circle, Coffee, Cog } from "$lib/components/icons";
+  import { ChevronDown, Circle, Coffee, Cog } from "$lib/components/icons";
   import SettingsModal from "$lib/components/settings-modal.svelte";
   import {
     DASHBOARD_NAV_ITEM,
     getSidebarSections,
+    isSectionCollapsed,
+    toggleSectionCollapsed,
     type SidebarSection,
   } from "$lib/features";
 
@@ -31,33 +33,53 @@
     </a>
 
     {#each sections as section, sectionIndex}
+      {@const collapsed = isSectionCollapsed(section.id)}
       {#if sectionIndex > 0}
         <hr class="sidebar-divider" />
       {/if}
-      <div class="sidebar-subheader">
+      <button
+        type="button"
+        class="sidebar-subheader"
+        aria-expanded={!collapsed}
+        onclick={() => toggleSectionCollapsed(section.id)}
+      >
         <section.icon size={16} class="subheader-icon" />
         <span class="subheader-title">{section.label}</span>
-      </div>
-      {#each section.items as { href, label, badgeCount = 0, icon: Icon }}
-        {@const isActive = page.url.pathname.startsWith(href)}
-        <a
-          class="nav-item is-child"
-          class:active={isActive}
-          aria-current={isActive ? "page" : undefined}
-          {href}
-        >
-          <Icon size={14} />
-          <span>{label}</span>
-          {#if badgeCount > 0}
-            <Circle
-              size={15}
-              text={badgeCount}
-              class="notification-badge"
-              aria-label="{badgeCount} {badgeCount === 1 ? 'alert' : 'alerts'}"
-            />
-          {/if}
-        </a>
-      {/each}
+        {#if collapsed && section.badgeCount && section.badgeCount > 0}
+          <Circle
+            size={15}
+            text={section.badgeCount}
+            class="notification-badge"
+            aria-label="{section.badgeCount} {section.badgeCount === 1 ? 'alert' : 'alerts'}"
+          />
+        {/if}
+        <ChevronDown
+          size={14}
+          class={collapsed ? "subheader-chevron collapsed" : "subheader-chevron"}
+        />
+      </button>
+      {#if !collapsed}
+        {#each section.items as { href, label, badgeCount = 0, icon: Icon }}
+          {@const isActive = page.url.pathname.startsWith(href)}
+          <a
+            class="nav-item is-child"
+            class:active={isActive}
+            aria-current={isActive ? "page" : undefined}
+            {href}
+          >
+            <Icon size={14} />
+            <span>{label}</span>
+            {#if badgeCount > 0}
+              <Circle
+                size={15}
+                text={badgeCount}
+                class="notification-badge"
+                aria-label="{badgeCount} {badgeCount === 1 ? 'alert' : 'alerts'}"
+              />
+            {/if}
+          </a>
+        {/each}
+      {/if}
     {/each}
   </nav>
 
@@ -122,18 +144,44 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 8px 12px 4px 12px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    background: none;
     color: var(--color-secondary);
     font-family: inherit;
     font-size: 0.95rem;
     font-weight: 600;
+    text-align: left;
     user-select: none;
-    cursor: default;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+  }
+
+  .sidebar-subheader:hover {
+    background-color: var(--color-surface-hover);
+  }
+
+  .sidebar-subheader:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
   :global(.subheader-icon) {
     color: var(--color-secondary);
     flex-shrink: 0;
+  }
+
+  :global(.subheader-chevron) {
+    margin-left: auto;
+    color: var(--color-secondary);
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+
+  :global(.subheader-chevron.collapsed) {
+    transform: rotate(-90deg);
   }
 
   .sidebar-footer {

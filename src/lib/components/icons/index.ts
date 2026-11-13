@@ -1,5 +1,9 @@
 export { default as AlertTriangle } from "./AlertTriangle.svelte";
+export { default as Briefcase } from "./Briefcase.svelte";
+export { default as CheckSquare } from "./CheckSquare.svelte";
+export { default as ChevronDown } from "./ChevronDown.svelte";
 export { default as Circle } from "./Circle.svelte";
+export { default as Code } from "./Code.svelte";
 export { default as Coffee } from "./Coffee.svelte";
 export { default as Cog } from "./Cog.svelte";
 export { default as Cpu } from "./Cpu.svelte";

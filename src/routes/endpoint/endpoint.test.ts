@@ -451,4 +451,21 @@ describe("EndpointStore", () => {
     expect(store.machine?.system.computer_name).toBe("linux-host");
     store.unsubscribe();
   });
+
+  it("queues and shifts pending terminal commands in FIFO order", () => {
+    expect(store.pendingTerminalCommands).toEqual([]);
+    expect(store.shiftTerminalCommand()).toBeUndefined();
+
+    store.queueTerminalCommand("   ");
+    expect(store.pendingTerminalCommands).toEqual([]);
+
+    store.queueTerminalCommand("echo first");
+    store.queueTerminalCommand("echo second\r");
+    expect(store.pendingTerminalCommands).toEqual(["echo first", "echo second\r"]);
+
+    expect(store.shiftTerminalCommand()).toBe("echo first");
+    expect(store.shiftTerminalCommand()).toBe("echo second\r");
+    expect(store.shiftTerminalCommand()).toBeUndefined();
+    expect(store.pendingTerminalCommands).toEqual([]);
+  });
 });

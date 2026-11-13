@@ -1,6 +1,10 @@
 import {
+  Briefcase,
+  CheckSquare,
+  Code,
   Cpu,
   DesktopPc,
+  FileText,
   HardDrive,
   LayoutDashboard,
   Network,
@@ -12,9 +16,13 @@ import {
 import EndpointSummaryCard from "$lib/components/endpoint-summary-card.svelte";
 import PrinterSummaryCard from "$lib/components/printer-summary-card.svelte";
 import ServerSummaryCard from "$lib/components/server-summary-card.svelte";
-import TerminalWorkspace from "../../routes/terminal/terminal-workspace.svelte";
+import WorkspaceSummaryCard from "$lib/components/workspace-summary-card.svelte";
+import { notesStore } from "../../routes/notes/notes.svelte";
 import { printerStore } from "../../routes/printers/printers.svelte";
+import { scriptsStore } from "../../routes/scripts/scripts.svelte";
 import { serverStore } from "../../routes/servers/servers.svelte";
+import TerminalWorkspace from "../../routes/terminal/terminal-workspace.svelte";
+import { todoStore } from "../../routes/todo/todo.svelte";
 import {
   orderDashboardWidgets,
   orderFeatures,
@@ -47,7 +55,68 @@ export const SIDEBAR_SUBHEADERS: Record<
     label: "Endpoint",
     icon: DesktopPc,
   },
+  workspace: {
+    label: "Workspace",
+    icon: Briefcase,
+  },
 };
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "caffeine.sidebar.collapsed";
+
+function getCollapsedStorage(): Storage | null {
+  if (typeof window !== "undefined" && window.localStorage) {
+    return window.localStorage;
+  }
+  return null;
+}
+
+function loadCollapsedSections(): Record<string, boolean> {
+  const storage = getCollapsedStorage();
+  if (!storage) return {};
+
+  const raw = storage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+  if (!raw) return {};
+
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      `Invalid sidebar collapsed state in storage for ${SIDEBAR_COLLAPSED_STORAGE_KEY}`,
+    );
+  }
+
+  const state: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === "boolean" && value) {
+      state[key] = true;
+    }
+  }
+  return state;
+}
+
+function persistCollapsedSections(state: Record<string, boolean>): void {
+  const storage = getCollapsedStorage();
+  if (!storage) return;
+  storage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, JSON.stringify(state));
+}
+
+const collapsedSections = $state<Record<string, boolean>>(loadCollapsedSections());
+
+export function isSectionCollapsed(sectionId: string): boolean {
+  return Boolean(collapsedSections[sectionId]);
+}
+
+export function setSectionCollapsed(sectionId: string, collapsed: boolean): void {
+  if (collapsed) {
+    collapsedSections[sectionId] = true;
+  } else {
+    delete collapsedSections[sectionId];
+  }
+  persistCollapsedSections(collapsedSections);
+}
+
+export function toggleSectionCollapsed(sectionId: string): void {
+  setSectionCollapsed(sectionId, !isSectionCollapsed(sectionId));
+}
 
 const registeredFeatures = $state<FeatureDefinition[]>([
   {
@@ -105,6 +174,39 @@ const registeredFeatures = $state<FeatureDefinition[]>([
     init: () => serverStore.init(),
     onSnapshotSync: () => serverStore.fetchServers(),
   },
+  {
+    id: "todo",
+    label: "Todo",
+    href: "/todo",
+    icon: CheckSquare,
+    badgeCount: () => todoStore.attentionCount,
+    widget: WorkspaceSummaryCard,
+    widgetLabel: "Workspace",
+    group: "workspace",
+    backgroundLoadable: true,
+    init: () => todoStore.init(),
+    onSnapshotSync: () => todoStore.fetchTodos(),
+  },
+  {
+    id: "notes",
+    label: "Notes",
+    href: "/notes",
+    icon: FileText,
+    group: "workspace",
+    backgroundLoadable: true,
+    init: () => notesStore.init(),
+    onSnapshotSync: () => notesStore.fetchNotes(),
+  },
+  {
+    id: "scripts",
+    label: "Scripts",
+    href: "/scripts",
+    icon: Code,
+    group: "workspace",
+    backgroundLoadable: true,
+    init: () => scriptsStore.init(),
+    onSnapshotSync: () => scriptsStore.fetchScripts(),
+  },
 ]);
 
 export function registerFeature(feature: FeatureDefinition): void {
@@ -152,11 +254,18 @@ export function getSidebarSections(): SidebarSection[] {
               : undefined,
         }));
 
+      const badgeCount = items.reduce(
+        (sum, item) =>
+          sum + (item.badgeCount && item.badgeCount > 0 ? item.badgeCount : 0),
+        0,
+      );
+
       return {
         id: groupId,
         label: meta.label,
         icon: meta.icon,
         items,
+        badgeCount,
       };
     },
   );
@@ -183,10 +292,16 @@ export function getSidebarNavigationItems(): SidebarItem[] {
 
 export function getDashboardWidgets(): DashboardWidget[] {
   const widgets: DashboardWidget[] = registeredFeatures
-    .filter((f): f is FeatureDefinition & { widget: NonNullable<FeatureDefinition["widget"]> } => Boolean(f.widget))
+    .filter(
+      (
+        f,
+      ): f is FeatureDefinition & {
+        widget: NonNullable<FeatureDefinition["widget"]>;
+      } => Boolean(f.widget),
+    )
     .map((feature) => ({
       id: feature.id,
-      label: feature.label,
+      label: feature.widgetLabel ?? feature.label,
       component: feature.widget,
     }));
 
@@ -199,7 +314,9 @@ export function getPersistentViews(): PersistentFeatureView[] {
       (
         f,
       ): f is FeatureDefinition & {
-        persistentComponent: NonNullable<FeatureDefinition["persistentComponent"]>;
+        persistentComponent: NonNullable<
+          FeatureDefinition["persistentComponent"]
+        >;
       } => Boolean(f.persistentComponent),
     )
     .map((feature) => ({
@@ -224,4 +341,3 @@ export async function handleSnapshotSync(): Promise<void> {
 
   await Promise.all(tasks);
 }
-
