@@ -44,4 +44,28 @@ describe("resolvePrinterUrl", () => {
     };
     expect(resolvePrinterUrl(printer)).toBe("http://192.168.1.99");
   });
+
+  it("switches to requested scheme when explicit scheme is provided", () => {
+    const printer: Printer = {
+      id: "p5",
+      host: "192.168.1.50",
+      label: "Office Printer",
+      snmp_community: "public",
+      web_url: "http://192.168.1.50:8080/mgmt",
+    };
+    expect(resolvePrinterUrl(printer, "https")).toBe("https://192.168.1.50:8080/mgmt");
+  });
+
+  it("throws when host and web_url are empty or whitespace", () => {
+    const printer: Printer = {
+      id: "p6",
+      host: "   ",
+      label: "Invalid Printer",
+      snmp_community: "public",
+      web_url: "",
+    };
+    expect(() => resolvePrinterUrl(printer)).toThrow(
+      "Printer 'Invalid Printer' has no valid host or web URL",
+    );
+  });
 });
