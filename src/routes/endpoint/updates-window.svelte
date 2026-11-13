@@ -243,12 +243,10 @@
     {isBusy}
     downloadingId={effectiveDownloadingId}
     installingId={effectiveInstallingId}
-    isChecking={effectiveIsChecking}
     onRestart={() => (showRestartModal = true)}
     onDownloadAndInstall={() => handleDownloadAndInstall()}
     onDownload={() => handleDownload()}
     onInstall={() => handleInstall()}
-    onCheck={handleCheck}
   />
 
   {#if isRebootRequired}
@@ -312,7 +310,7 @@
   {/if}
 
   <div class="updates-content">
-    {#if effectiveIsChecking && !effectiveUpdates}
+    {#if effectiveIsChecking}
       <UpdatesEmptyState state="loading" onCheck={handleCheck} />
     {:else if effectiveUpdates && effectiveUpdates.updates.length === 0}
       <UpdatesEmptyState

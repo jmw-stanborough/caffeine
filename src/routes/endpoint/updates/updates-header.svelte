@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Circle } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import type { UpdateCheckResult } from "../types";
 
   interface Props {
@@ -10,12 +10,10 @@
     isBusy: boolean;
     downloadingId?: string | null;
     installingId?: string | null;
-    isChecking: boolean;
     onRestart: () => void;
     onDownloadAndInstall: () => void;
     onDownload: () => void;
     onInstall: () => void;
-    onCheck: () => void;
   }
 
   let {
@@ -26,12 +24,10 @@
     isBusy,
     downloadingId,
     installingId,
-    isChecking,
     onRestart,
     onDownloadAndInstall,
     onDownload,
     onInstall,
-    onCheck,
   }: Props = $props();
 </script>
 
@@ -51,7 +47,7 @@
 
     {#if isRebootRequired}
       <span class="reboot-status-pill">
-        <Circle size={6} class="pulse-dot" /> Restart Pending
+        <StatusDot status="warning" size={6} /> Restart Pending
       </span>
     {/if}
   </div>
@@ -136,30 +132,6 @@
         </button>
       {/if}
     {/if}
-
-    <button
-      class="btn-window-action"
-      onclick={onCheck}
-      disabled={isBusy}
-      title="Check for Windows updates"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class:spin={isChecking}
-      >
-        <circle cx="11" cy="11" r="8" />
-        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-      </svg>
-      <span>{isChecking ? "Checking..." : "Check"}</span>
-    </button>
   </div>
 </header>
 
@@ -181,10 +153,15 @@
     flex-wrap: wrap;
   }
 
-  .count-badge {
+  .count-badge,
+  .reboot-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     font-size: 0.72rem;
-    font-weight: 700;
-    padding: 0.15rem 0.5rem;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0.18rem 0.55rem;
     border-radius: 999px;
   }
 
@@ -201,27 +178,9 @@
   }
 
   .reboot-status-pill {
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 0.15rem 0.55rem;
-    border-radius: 999px;
     background-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-surface));
     color: var(--color-warning);
     border: solid 1px var(--color-warning);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  :global(.pulse-dot) {
-    color: var(--color-warning);
-    animation: pulse 1.8s infinite ease-in-out;
-    flex-shrink: 0;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(0.8); }
   }
 
   .header-actions {
@@ -234,8 +193,7 @@
   .btn-action-primary,
   .btn-action-secondary,
   .btn-action-accent,
-  .btn-action-restart,
-  .btn-window-action {
+  .btn-action-restart {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -287,26 +245,8 @@
     filter: brightness(1.1);
   }
 
-  .btn-window-action {
-    background-color: var(--color-base);
-    border: solid var(--width-border) var(--color-border);
-    color: var(--color-text);
-  }
-
-  .btn-window-action:hover:not(:disabled) {
-    border-color: var(--color-primary);
-  }
-
   button:disabled {
     opacity: 0.55;
     cursor: not-allowed;
-  }
-
-  .spin {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 </style>
