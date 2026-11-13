@@ -182,11 +182,15 @@ pub fn get_machine_settings_path() -> Result<PathBuf, String> {
 
 pub fn load_machine_settings() -> Result<MachineSettings, String> {
     let path = get_machine_settings_path()?;
+    load_machine_settings_from_path(&path)
+}
+
+fn load_machine_settings_from_path(path: &std::path::Path) -> Result<MachineSettings, String> {
     if !path.exists() {
         return Ok(MachineSettings::default());
     }
 
-    let contents = fs::read_to_string(&path)
+    let contents = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read machine settings at {:?}: {e}", path))?;
 
     let mut settings = serde_json::from_str::<MachineSettings>(&contents)
@@ -209,15 +213,8 @@ pub fn load_machine_settings() -> Result<MachineSettings, String> {
 }
 
 pub fn save_machine_settings(settings: &MachineSettings) -> Result<(), String> {
-    let path = get_machine_settings_path()?;
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create machine settings directory: {e}"))?;
-            #[cfg(target_os = "windows")]
-            crate::db::ensure_machine_dir_permissions(parent);
-        }
-    }
+    let machine_dir = crate::db::ensure_machine_db_dir()?;
+    let path = machine_dir.join(MACHINE_SETTINGS_FILE_NAME);
     let serialized = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize machine settings: {e}"))?;
 
@@ -227,11 +224,6 @@ pub fn save_machine_settings(settings: &MachineSettings) -> Result<(), String> {
             path
         )
     })?;
-
-    #[cfg(target_os = "windows")]
-    if let Some(parent) = path.parent() {
-        crate::db::ensure_machine_dir_permissions(parent);
-    }
 
     Ok(())
 }
@@ -662,5 +654,38 @@ mod tests {
     fn test_format_epoch_secs_as_iso() {
         assert_eq!(format_epoch_secs_as_iso(0), "1970-01-01T00:00:00Z");
         assert_eq!(format_epoch_secs_as_iso(1730000000), "2024-10-27T03:33:20Z");
+    }
+
+    fn unique_test_dir(prefix: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}_{}_{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn test_load_machine_settings_missing_returns_default_without_creating_dir() {
+        let non_existent_dir = unique_test_dir("caffeine_config_missing");
+        let settings_path = non_existent_dir.join(MACHINE_SETTINGS_FILE_NAME);
+
+        let loaded = load_machine_settings_from_path(&settings_path).unwrap();
+        assert_eq!(loaded, MachineSettings::default());
+        assert!(!non_existent_dir.exists());
+    }
+
+    #[test]
+    fn test_load_machine_settings_migrates_legacy_admin_token() {
+        let dir = unique_test_dir("caffeine_config_migrate");
+        fs::create_dir_all(&dir).unwrap();
+        let settings_path = dir.join(MACHINE_SETTINGS_FILE_NAME);
+        fs::write(&settings_path, r#"{"server_mode":true,"admin_token":"legacy_tok"}"#).unwrap();
+
+        let loaded = load_machine_settings_from_path(&settings_path).unwrap();
+        assert!(loaded.server_mode);
+        assert_eq!(loaded.server_tokens.len(), 1);
+        assert_eq!(loaded.server_tokens[0].token, "legacy_tok");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
