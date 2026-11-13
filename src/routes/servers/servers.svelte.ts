@@ -1,27 +1,14 @@
 import { MonitorStore } from "$lib/monitor-store.svelte";
+import { soundManager } from "$lib/sound.svelte";
 import type { HostState, Server, ServerStatusTick, StatusKind } from "./types";
 
-const SOUND_DOWN_PATH = "/sound-files/servers/down.mp3";
-const SOUND_UP_PATH = "/sound-files/servers/up.mp3";
 const SERVER_STATUS_EVENT = "server-status-tick";
-
-function playAlertSound(audio: HTMLAudioElement | null) {
-  if (!audio) return;
-  audio.currentTime = 0;
-  audio.play().catch((err: unknown) => {
-    console.warn("Audio playback failed:", err);
-  });
-}
 
 export class ServerStore extends MonitorStore<
   Server,
   HostState,
   ServerStatusTick
 > {
-  private soundDown =
-    typeof Audio !== "undefined" ? new Audio(SOUND_DOWN_PATH) : null;
-  private soundUp =
-    typeof Audio !== "undefined" ? new Audio(SOUND_UP_PATH) : null;
   private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
@@ -39,9 +26,13 @@ export class ServerStore extends MonitorStore<
 
         if (previousState && previousState.status !== "checking") {
           if (previousState.status === "online" && status === "offline") {
-            playAlertSound(this.soundDown);
+            soundManager.play("server_down").catch((err: unknown) => {
+              console.warn("Audio playback failed:", err);
+            });
           } else if (previousState.status === "offline" && status === "online") {
-            playAlertSound(this.soundUp);
+            soundManager.play("server_up").catch((err: unknown) => {
+              console.warn("Audio playback failed:", err);
+            });
           }
         }
 
