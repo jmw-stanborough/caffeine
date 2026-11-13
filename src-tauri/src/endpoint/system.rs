@@ -24,20 +24,26 @@ struct StaticHardwareInfo {
 
 pub fn check_os_support() -> Result<OsSupportInfo, String> {
     let is_windows = cfg!(target_os = "windows");
-    let os_name = System::name().unwrap_or_else(|| std::env::consts::OS.to_string());
+    let is_supported = cfg!(any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "macos"
+    ));
+    let os_family = std::env::consts::OS.to_string();
+    let os_name = System::name().unwrap_or_else(|| os_family.clone());
     let os_version = System::os_version().unwrap_or_default();
     let architecture = System::cpu_arch();
     let hostname = System::host_name().unwrap_or_else(|| "Unknown".to_string());
 
-    let error_message = if !is_windows {
+    let error_message = if !is_supported {
         Some(format!(
-            "Unsupported Operating System: {os_name} ({architecture}). Caffeine Endpoint is only supported on Microsoft Windows."
+            "Unsupported Operating System: {os_name} ({architecture}). Caffeine Endpoint is supported on Windows, Linux, and macOS."
         ))
     } else {
         None
     };
 
-    let is_admin = if is_windows {
+    let is_admin = if is_supported {
         native::query_is_admin()?
     } else {
         false
@@ -45,6 +51,8 @@ pub fn check_os_support() -> Result<OsSupportInfo, String> {
 
     Ok(OsSupportInfo {
         is_windows,
+        is_supported,
+        os_family,
         os_name,
         os_version,
         architecture,
@@ -55,8 +63,12 @@ pub fn check_os_support() -> Result<OsSupportInfo, String> {
 }
 
 pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
-    if !cfg!(target_os = "windows") {
-        return Err("The Endpoint module is currently only supported on Windows.".to_string());
+    if !cfg!(any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "macos"
+    )) {
+        return Err("The Endpoint module is only supported on Windows, Linux, and macOS.".to_string());
     }
 
     let (
@@ -208,7 +220,7 @@ pub fn gather_machine_info() -> Result<EndpointMachineInfo, String> {
     let system_meta = SystemMetaInfo {
         computer_name: System::host_name().unwrap_or_else(|| "Unknown".to_string()),
         domain_or_workgroup: static_info.domain,
-        os_name: System::name().unwrap_or_else(|| "Windows".to_string()),
+        os_name: System::name().unwrap_or_else(|| std::env::consts::OS.to_string()),
         os_version: System::os_version().unwrap_or_default(),
         build_number: static_info.build_number,
         architecture: System::cpu_arch(),
@@ -252,12 +264,12 @@ fn get_or_load_static_hardware() -> Result<StaticHardwareInfo, String> {
         return Ok(info.clone());
     }
 
-    let loaded = query_static_windows_hardware()?;
+    let loaded = query_static_hardware()?;
     *cache = Some(loaded.clone());
     Ok(loaded)
 }
 
-fn query_static_windows_hardware() -> Result<StaticHardwareInfo, String> {
+fn query_static_hardware() -> Result<StaticHardwareInfo, String> {
     let domain = native::query_domain_or_workgroup()?;
     let gpus = native::query_gpus()?;
     let motherboard = native::query_motherboard()?;
@@ -279,7 +291,11 @@ mod tests {
 
     #[test]
     fn test_gather_machine_info() {
-        if !cfg!(target_os = "windows") {
+        if !cfg!(any(
+            target_os = "windows",
+            target_os = "linux",
+            target_os = "macos"
+        )) {
             return;
         }
 
@@ -287,15 +303,22 @@ mod tests {
         assert!(!info.system.computer_name.is_empty());
         assert!(!info.cpu.model_name.is_empty());
         assert!(info.memory.total_bytes > 0);
-        assert_eq!(info.system.fast_startup_enabled, true);
     }
 
     #[test]
     fn test_check_os_support_includes_admin_status() {
         let support = check_os_support().expect("check_os_support should succeed");
-        if cfg!(target_os = "windows") {
-            assert!(support.is_windows);
-        } else {
+        assert_eq!(
+            support.is_supported,
+            cfg!(any(
+                target_os = "windows",
+                target_os = "linux",
+                target_os = "macos"
+            ))
+        );
+        assert_eq!(support.is_windows, cfg!(target_os = "windows"));
+        assert_eq!(support.os_family, std::env::consts::OS);
+        if !support.is_supported {
             assert!(!support.is_admin);
         }
     }

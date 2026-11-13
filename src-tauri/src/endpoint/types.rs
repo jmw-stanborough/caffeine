@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsSupportInfo {
     pub is_windows: bool,
+    pub is_supported: bool,
+    pub os_family: String,
     pub os_name: String,
     pub os_version: String,
     pub architecture: String,
