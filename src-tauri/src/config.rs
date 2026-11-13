@@ -10,6 +10,7 @@ pub const DEFAULT_TARGET_HOST: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 6310;
 pub const DEFAULT_RETENTION_DAYS: u32 = 14;
 pub const DEFAULT_MAX_LOG_ENTRIES: u32 = 1000;
+pub const DEFAULT_TODO_WARNING_MINUTES: u32 = 120;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserProfileSettings {
@@ -25,6 +26,8 @@ pub struct UserProfileSettings {
     pub retention_days: u32,
     #[serde(default = "default_max_log_entries")]
     pub max_log_entries: u32,
+    #[serde(default = "default_todo_warning_minutes")]
+    pub todo_warning_minutes: u32,
 }
 
 impl Default for UserProfileSettings {
@@ -36,6 +39,7 @@ impl Default for UserProfileSettings {
             theme: default_theme(),
             retention_days: default_retention_days(),
             max_log_entries: default_max_log_entries(),
+            todo_warning_minutes: default_todo_warning_minutes(),
         }
     }
 }
@@ -114,6 +118,8 @@ pub struct AppSettings {
     pub retention_days: u32,
     #[serde(default = "default_max_log_entries")]
     pub max_log_entries: u32,
+    #[serde(default = "default_todo_warning_minutes")]
+    pub todo_warning_minutes: u32,
 }
 
 fn default_target_host() -> String {
@@ -140,6 +146,10 @@ fn default_max_log_entries() -> u32 {
     DEFAULT_MAX_LOG_ENTRIES
 }
 
+fn default_todo_warning_minutes() -> u32 {
+    DEFAULT_TODO_WARNING_MINUTES
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -154,11 +164,12 @@ impl Default for AppSettings {
             theme: default_theme(),
             retention_days: default_retention_days(),
             max_log_entries: default_max_log_entries(),
+            todo_warning_minutes: default_todo_warning_minutes(),
         }
     }
 }
 
-pub fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn get_user_roaming_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let config_dir = app
         .path()
         .app_config_dir()
@@ -172,7 +183,11 @@ pub fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&config_dir)
         .map_err(|e| format!("Failed to create config directory at {:?}: {e}", config_dir))?;
 
-    Ok(config_dir.join(SETTINGS_FILE_NAME))
+    Ok(config_dir)
+}
+
+pub fn get_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(get_user_roaming_dir(app)?.join(SETTINGS_FILE_NAME))
 }
 
 pub fn get_machine_settings_path() -> Result<PathBuf, String> {
@@ -240,6 +255,13 @@ pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
     };
 
     let machine_settings = load_machine_settings()?;
+    Ok(app_settings_from_parts(user_settings, machine_settings))
+}
+
+fn app_settings_from_parts(
+    user_settings: UserProfileSettings,
+    machine_settings: MachineSettings,
+) -> AppSettings {
     let public_tokens = machine_settings
         .server_tokens
         .iter()
@@ -251,7 +273,7 @@ pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
         })
         .collect();
 
-    Ok(AppSettings {
+    AppSettings {
         target_host: user_settings.target_host,
         target_port: user_settings.target_port,
         server_mode: machine_settings.server_mode,
@@ -263,7 +285,8 @@ pub fn load_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
         theme: user_settings.theme,
         retention_days: user_settings.retention_days,
         max_log_entries: user_settings.max_log_entries,
-    })
+        todo_warning_minutes: user_settings.todo_warning_minutes,
+    }
 }
 
 pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
@@ -274,6 +297,7 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), 
         theme: settings.theme.clone(),
         retention_days: settings.retention_days,
         max_log_entries: settings.max_log_entries,
+        todo_warning_minutes: settings.todo_warning_minutes,
     };
 
     let user_path = get_settings_path(app)?;
@@ -582,6 +606,8 @@ mod tests {
         assert_eq!(settings.server_port, 6310);
         assert_eq!(settings.retention_days, 14);
         assert_eq!(settings.max_log_entries, 1000);
+        assert_eq!(settings.todo_warning_minutes, DEFAULT_TODO_WARNING_MINUTES);
+        assert_eq!(settings.todo_warning_minutes, 120);
     }
 
     #[test]
@@ -593,6 +619,7 @@ mod tests {
             theme: "dark".to_string(),
             retention_days: 7,
             max_log_entries: 500,
+            todo_warning_minutes: 90,
         };
         let machine = MachineSettings {
             server_mode: true,
@@ -608,7 +635,21 @@ mod tests {
         assert!(!user_json.contains("server_mode"));
         assert!(!machine_json.contains("target_host"));
         assert!(!machine_json.contains("theme"));
+        assert!(!machine_json.contains("todo_warning_minutes"));
         assert!(machine_json.contains("machine_server_token"));
+
+        let combined = app_settings_from_parts(user, machine);
+        assert_eq!(combined.todo_warning_minutes, 90);
+    }
+
+    #[test]
+    fn test_user_settings_missing_todo_warning_defaults_to_two_hours() {
+        let legacy_json = r#"{"target_host":"127.0.0.1","target_port":6310,"theme":"dark"}"#;
+        let parsed = serde_json::from_str::<UserProfileSettings>(legacy_json).unwrap();
+        assert_eq!(parsed.todo_warning_minutes, DEFAULT_TODO_WARNING_MINUTES);
+
+        let parsed_app = serde_json::from_str::<AppSettings>(legacy_json).unwrap();
+        assert_eq!(parsed_app.todo_warning_minutes, DEFAULT_TODO_WARNING_MINUTES);
     }
 
     #[test]
