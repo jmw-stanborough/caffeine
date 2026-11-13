@@ -1,0 +1,25 @@
+.hl-keyword {
+  color: var(--color-secondary);
+  font-weight: 600;
+}
+
+.hl-string {
+  color: var(--color-success);
+}
+
+.hl-comment {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.hl-variable {
+  color: var(--color-link);
+}
+
+.hl-number {
+  color: var(--color-warning);
+}
+
+.hl-operator {
+  color: var(--color-primary);
+}
