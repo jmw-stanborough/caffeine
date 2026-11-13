@@ -1,5 +1,6 @@
 pub mod db;
 pub mod notes;
+pub mod script_formatter;
 pub mod scripts;
 pub mod todo;
 pub mod types;

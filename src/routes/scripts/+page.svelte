@@ -1,16 +1,11 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { formatTimestamp } from "$lib/format";
-  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { endpointStore } from "../endpoint/endpoint.svelte";
   import ScriptEditor from "./script-editor.svelte";
   import ScriptsSidebar from "./scripts-sidebar.svelte";
   import { scriptsStore } from "./scripts.svelte";
-
-  type EndpointWithTerminalQueue = typeof endpointStore & {
-    queueTerminalCommand?: (cmd: string) => void;
-  };
 
   let draftId = $state<string | null>(null);
   let draftName = $state("");
@@ -105,14 +100,8 @@
       }
 
       const command = await scriptsStore.buildRunCommand(targetId);
-      const endpoint = endpointStore as EndpointWithTerminalQueue;
-      if (typeof endpoint.queueTerminalCommand === "function") {
-        endpoint.queueTerminalCommand(command);
-        await goto("/terminal");
-      } else {
-        await goto("/terminal");
-        await invoke("endpoint_write_terminal", { data: command });
-      }
+      endpointStore.queueTerminalCommand(command);
+      await goto("/terminal");
     } finally {
       running = false;
     }

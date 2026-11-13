@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ChevronDown } from "$lib/components/icons";
   import TodoItemRow from "./todo-item-row.svelte";
   import type { TodoItem } from "./types";
 
@@ -27,21 +28,7 @@
       aria-expanded={!collapsed}
       onclick={() => (collapsed = !collapsed)}
     >
-      <svg
-        class="chevron"
-        class:collapsed
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <polyline points="6 9 12 15 18 9" />
-      </svg>
+      <ChevronDown size={16} class={collapsed ? "chevron collapsed" : "chevron"} />
       <span class="category-title">{title}</span>
       <span class="category-count">{items.length}</span>
     </button>
@@ -87,12 +74,12 @@
     color: var(--color-failure);
   }
 
-  .chevron {
+  :global(.chevron) {
     color: var(--color-text-muted);
     transition: transform 0.15s ease;
   }
 
-  .chevron.collapsed {
+  :global(.chevron.collapsed) {
     transform: rotate(-90deg);
   }
 
