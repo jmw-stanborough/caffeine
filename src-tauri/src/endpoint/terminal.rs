@@ -41,52 +41,40 @@ fn detect_shell_internal() -> Result<ShellDetectionResult, String> {
     }
 }
 
+fn run_ps_version_probe(program: &str) -> Result<std::process::Output, std::io::Error> {
+    let mut cmd = Command::new(program);
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$PSVersionTable.PSVersion.ToString()",
+    ]);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    cmd.output()
+}
+
 fn detect_windows_shell() -> Result<ShellDetectionResult, String> {
-    let mut pwsh_cmd = Command::new("pwsh");
-    pwsh_cmd.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "$PSVersionTable.PSVersion.ToString()",
-    ]);
-
-    #[cfg(windows)]
+    if let Ok(output) = run_ps_version_probe("pwsh")
+        && output.status.success()
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        pwsh_cmd.creation_flags(CREATE_NO_WINDOW);
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Ok(ShellDetectionResult {
+            shell_name: "pwsh".to_string(),
+            executable_path: "pwsh".to_string(),
+            version,
+            is_pwsh: true,
+        });
     }
 
-    if let Ok(output) = pwsh_cmd.output() {
-        if output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(ShellDetectionResult {
-                shell_name: "pwsh".to_string(),
-                executable_path: "pwsh".to_string(),
-                version,
-                is_pwsh: true,
-            });
-        }
-    }
-
-    let mut ps_cmd = Command::new("powershell");
-    ps_cmd.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "$PSVersionTable.PSVersion.ToString()",
-    ]);
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        ps_cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let ps_output = ps_cmd
-        .output()
-        .map_err(|e| format!("Failed to spawn PowerShell: {e}"))?;
+    let ps_output =
+        run_ps_version_probe("powershell").map_err(|e| format!("Failed to spawn PowerShell: {e}"))?;
 
     if !ps_output.status.success() {
         let stderr = String::from_utf8_lossy(&ps_output.stderr).trim().to_string();
