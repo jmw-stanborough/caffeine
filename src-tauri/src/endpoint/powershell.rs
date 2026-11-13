@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use std::process::Command;
 
-pub fn run_powershell(script: &str) -> Result<String, String> {
+fn new_powershell_command(script: &str) -> Command {
     let mut cmd = Command::new("powershell");
     cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
 
@@ -12,18 +12,27 @@ pub fn run_powershell(script: &str) -> Result<String, String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let output = cmd
+    cmd
+}
+
+fn format_powershell_failure(stderr: &str, code: Option<i32>) -> String {
+    let trimmed = stderr.trim();
+    if !trimmed.is_empty() {
+        trimmed.to_string()
+    } else {
+        format!("PowerShell command exited with status {code:?}")
+    }
+}
+
+pub fn run_powershell(script: &str) -> Result<String, String> {
+    let output = new_powershell_command(script)
         .output()
         .map_err(|e| format!("Failed to spawn PowerShell: {e}"))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if !stderr.is_empty() {
-            return Err(stderr);
-        }
-        return Err(format!(
-            "PowerShell command exited with status {:?}",
-            output.status.code()
+        return Err(format_powershell_failure(
+            &String::from_utf8_lossy(&output.stderr),
+            output.status.code(),
         ));
     }
 
@@ -34,17 +43,9 @@ pub fn run_powershell_streaming<F>(script: &str, mut on_line: F) -> Result<(), S
 where
     F: FnMut(&str),
 {
-    let mut cmd = Command::new("powershell");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    let mut cmd = new_powershell_command(script);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
 
     let mut child = cmd
         .spawn()
@@ -86,14 +87,7 @@ where
         .map_err(|_| "Failed to join PowerShell stderr thread".to_string())?;
 
     if !status.success() {
-        let trimmed_err = stderr_str.trim();
-        if !trimmed_err.is_empty() {
-            return Err(trimmed_err.to_string());
-        }
-        return Err(format!(
-            "PowerShell command exited with status {:?}",
-            status.code()
-        ));
+        return Err(format_powershell_failure(&stderr_str, status.code()));
     }
 
     Ok(())
