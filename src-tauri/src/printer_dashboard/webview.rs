@@ -28,25 +28,28 @@ fn normalize_printer_url(raw: &str) -> Result<url::Url, String> {
     url::Url::parse(&with_scheme).map_err(|e| format!("Invalid URL '{with_scheme}': {e}"))
 }
 
-fn restore_main_window_focus(app: &AppHandle) {
+fn restore_main_window_focus(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_window(MAIN_WINDOW_LABEL) {
-        if let Err(err) = window.set_focus() {
-            eprintln!("Failed to focus main window: {err}");
-        }
+        window
+            .set_focus()
+            .map_err(|e| format!("Failed to focus main window: {e}"))?;
     }
     if let Some(webview) = app.get_webview(MAIN_WINDOW_LABEL) {
-        if let Err(err) = webview.set_focus() {
-            eprintln!("Failed to focus main webview: {err}");
-        }
+        webview
+            .set_focus()
+            .map_err(|e| format!("Failed to focus main webview: {e}"))?;
     }
+    Ok(())
 }
 
 async fn teardown_child_webview(app: &AppHandle, restore_main_focus: bool) -> Result<(), String> {
     if let Some(existing) = app.get_webview(CHILD_WEBVIEW_LABEL) {
-        let _ = existing.set_bounds(Rect {
-            position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(0.0, 0.0).into(),
-        });
+        existing
+            .set_bounds(Rect {
+                position: LogicalPosition::new(0.0, 0.0).into(),
+                size: LogicalSize::new(0.0, 0.0).into(),
+            })
+            .map_err(|e| format!("Failed to collapse child webview bounds: {e}"))?;
         existing
             .close()
             .map_err(|e| format!("Failed to close existing webview: {e}"))?;
@@ -54,7 +57,7 @@ async fn teardown_child_webview(app: &AppHandle, restore_main_focus: bool) -> Re
     }
 
     if restore_main_focus {
-        restore_main_window_focus(app);
+        restore_main_window_focus(app)?;
     }
 
     Ok(())
@@ -78,7 +81,7 @@ pub async fn open_printer_webview(
     teardown_child_webview(&app, false).await?;
 
     if WEBVIEW_GENERATION.load(Ordering::SeqCst) != current_gen {
-        restore_main_window_focus(&app);
+        restore_main_window_focus(&app)?;
         return Ok(resolved_url_str);
     }
 
@@ -104,9 +107,9 @@ pub async fn open_printer_webview(
         return Ok(resolved_url_str);
     }
 
-    if let Err(err) = webview.set_focus() {
-        eprintln!("Failed to focus child webview: {err}");
-    }
+    webview
+        .set_focus()
+        .map_err(|e| format!("Failed to focus child webview: {e}"))?;
 
     Ok(resolved_url_str)
 }
@@ -139,23 +142,24 @@ pub async fn navigate_printer_webview(app: AppHandle, url: String) -> Result<Str
     let resolved_url_str = parsed_url.to_string();
 
     let _guard = WEBVIEW_LOCK.lock().await;
-    if let Some(webview) = app.get_webview(CHILD_WEBVIEW_LABEL) {
-        webview
-            .navigate(parsed_url)
-            .map_err(|e| format!("Failed to navigate child webview: {e}"))?;
-    }
+    let webview = app
+        .get_webview(CHILD_WEBVIEW_LABEL)
+        .ok_or_else(|| "Child webview not found".to_string())?;
+    webview
+        .navigate(parsed_url)
+        .map_err(|e| format!("Failed to navigate child webview: {e}"))?;
     Ok(resolved_url_str)
 }
 
 #[tauri::command]
 pub async fn reload_printer_webview(app: AppHandle) -> Result<(), String> {
     let _guard = WEBVIEW_LOCK.lock().await;
-    if let Some(webview) = app.get_webview(CHILD_WEBVIEW_LABEL) {
-        webview
-            .eval("window.location.reload()")
-            .map_err(|e| format!("Failed to reload child webview: {e}"))?;
-    }
-    Ok(())
+    let webview = app
+        .get_webview(CHILD_WEBVIEW_LABEL)
+        .ok_or_else(|| "Child webview not found".to_string())?;
+    webview
+        .eval("window.location.reload()")
+        .map_err(|e| format!("Failed to reload child webview: {e}"))
 }
 
 #[tauri::command]
