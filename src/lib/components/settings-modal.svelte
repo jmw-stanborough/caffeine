@@ -5,6 +5,7 @@
   import { refreshClientMode } from "$lib/client-mode.svelte";
   import { printerStore } from "../../routes/printers/printers.svelte";
   import { serverStore } from "../../routes/servers/servers.svelte";
+  import { todoStore } from "../../routes/todo/todo.svelte";
   import { invoke } from "@tauri-apps/api/core";
 
   export interface ServerTokenPublic {
@@ -33,6 +34,7 @@
     theme: string;
     retention_days: number;
     max_log_entries: number;
+    todo_warning_minutes?: number;
   }
 
   let {
@@ -57,6 +59,7 @@
   let persistedTheme = $state("system");
   let retentionDays = $state(14);
   let maxLogEntries = $state(1000);
+  let todoWarningMinutes = $state(120);
 
   let loading = $state(false);
   let saving = $state(false);
@@ -177,6 +180,7 @@
       applyTheme(persistedTheme);
       retentionDays = settings.retention_days;
       maxLogEntries = settings.max_log_entries;
+      todoWarningMinutes = settings.todo_warning_minutes ?? 120;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -199,6 +203,7 @@
         theme,
         retention_days: Number(retentionDays) || 14,
         max_log_entries: Number(maxLogEntries) || 1000,
+        todo_warning_minutes: Math.max(1, Number(todoWarningMinutes) || 120),
       };
 
       await invoke<AppSettings>("update_app_settings_cmd", {
@@ -208,6 +213,7 @@
       await Promise.allSettled([
         serverStore.fetchServers(),
         printerStore.fetchPrinters(),
+        todoStore.refreshSettings(),
         refreshClientMode(),
       ]);
 
@@ -490,6 +496,23 @@
               max="100000"
             />
           </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="section-title">Workspace</h3>
+        <div class="form-group">
+          <label for="todoWarningMinutes">Approaching Due Warning (Minutes)</label>
+          <input
+            id="todoWarningMinutes"
+            type="number"
+            bind:value={todoWarningMinutes}
+            min="5"
+            max="10080"
+          />
+          <span class="field-hint">
+            Active tasks due within this window display a warning status (default: 120 minutes / 2 hours).
+          </span>
         </div>
       </section>
 
