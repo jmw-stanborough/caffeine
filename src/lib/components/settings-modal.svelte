@@ -1,6 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
-  import { Circle } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import { applyTheme } from "$lib/theme";
   import { refreshClientMode } from "$lib/client-mode.svelte";
   import { printerStore } from "../../routes/printers/printers.svelte";
@@ -287,7 +287,7 @@
 
         {#if isRemoteClient}
           <div class="remote-badge">
-            <Circle size={8} class="status-indicator" />
+            <StatusDot status="success" size={8} />
             Remote Client Mode: Polling offloaded to {targetHost}:{targetPort}
           </div>
 
@@ -682,11 +682,6 @@
     font-size: 0.8rem;
     color: var(--color-primary);
     font-weight: 500;
-  }
-
-  :global(.status-indicator) {
-    color: var(--color-primary);
-    flex-shrink: 0;
   }
 
   .alert {

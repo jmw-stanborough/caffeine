@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Circle } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import { formatBytes } from "../metrics";
   import type { NetworkInterfaceInfo } from "../types";
 
@@ -39,9 +39,9 @@
       <div class="network-item">
         <div class="network-header-row">
           <span class="net-name">{net.name}</span>
-          <Circle
+          <StatusDot
+            status={net.is_up ? "success" : "inactive"}
             size={8}
-            class="net-status-dot {net.is_up ? 'active' : ''}"
             title={net.is_up ? "Active" : "Inactive"}
           />
         </div>
@@ -123,15 +123,6 @@
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--color-text);
-  }
-
-  :global(.net-status-dot) {
-    color: var(--color-text-muted);
-    flex-shrink: 0;
-  }
-
-  :global(.net-status-dot.active) {
-    color: var(--color-success);
   }
 
   .net-row {

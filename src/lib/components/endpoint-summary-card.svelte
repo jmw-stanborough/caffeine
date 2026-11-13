@@ -1,11 +1,14 @@
 <script lang="ts">
-  import { AlertTriangle, Circle, Cpu } from "$lib/components/icons";
+  import { AlertTriangle, Cpu } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import { endpointStore } from "../../routes/endpoint/endpoint.svelte";
   import {
     formatBytes,
     formatUptime,
     getTemperatureColor,
+    getTemperatureStatus,
     getUsageColor,
+    getUsageStatus,
   } from "../../routes/endpoint/metrics";
   import { onDestroy, onMount } from "svelte";
 
@@ -36,6 +39,10 @@
   let cpuColor = $derived(getUsageColor(cpuPercent));
   let memColor = $derived(getUsageColor(memPercent));
   let diskColor = $derived(getUsageColor(diskPercent));
+
+  let cpuStatus = $derived(getUsageStatus(cpuPercent));
+  let memStatus = $derived(getUsageStatus(memPercent));
+  let diskStatus = $derived(getUsageStatus(diskPercent));
 
   let hasHighUsage = $derived(cpuPercent >= 85 || memPercent >= 85 || diskPercent >= 85);
   let hasModerateUsage = $derived(
@@ -88,7 +95,7 @@
     <dl class="stats">
       <div class="stat">
         <dt class="stat-label">
-          <Circle size={8} class="dot" fill={cpuColor} />
+          <StatusDot status={cpuStatus} size={8} />
           CPU
         </dt>
         <dd class="stat-value" style:color={cpuColor}>
@@ -101,7 +108,7 @@
 
       <div class="stat">
         <dt class="stat-label">
-          <Circle size={8} class="dot" fill={memColor} />
+          <StatusDot status={memStatus} size={8} />
           RAM
         </dt>
         <dd class="stat-value" style:color={memColor}>
@@ -115,7 +122,7 @@
       {#if primaryDisk}
         <div class="stat">
           <dt class="stat-label">
-            <Circle size={8} class="dot" fill={diskColor} />
+            <StatusDot status={diskStatus} size={8} />
             {primaryDisk.mount_point || "Disk"}
           </dt>
           <dd class="stat-value" style:color={diskColor}>
@@ -131,8 +138,9 @@
         {#if store.machine.cpu.temperature_celsius != null}
           {@const temp = store.machine.cpu.temperature_celsius}
           {@const tColor = getTemperatureColor(temp)}
+          {@const tStatus = getTemperatureStatus(temp)}
           <dt class="stat-label">
-            <Circle size={8} class="dot" fill={tColor} />
+            <StatusDot status={tStatus} size={8} />
             Temp
           </dt>
           <dd class="stat-value" style:color={tColor}>
@@ -314,10 +322,6 @@
     color: var(--color-warning);
     line-height: 1.2;
     margin-top: 2px;
-  }
-
-  :global(.dot) {
-    flex-shrink: 0;
   }
 
   .detail-list {

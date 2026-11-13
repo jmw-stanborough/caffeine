@@ -1,6 +1,7 @@
 <script lang="ts">
   import { activateOnEnterOrSpace } from "$lib/format";
-  import { Circle, Cog } from "$lib/components/icons";
+  import { Cog } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import PrinterTagsRow from "./printer-tags-row.svelte";
   import { getEffectivePrinterStatus, isLowToner } from "./tags";
   import type { Printer, PrinterState, TonerSupply } from "./types";
@@ -89,11 +90,7 @@
     <div class="title-group">
       <div class="card-title-row">
         {#if !nocMode}
-          <Circle
-            size={10}
-            class="status-dot {effectiveVisualStatus}"
-            aria-hidden="true"
-          />
+          <StatusDot status={effectiveVisualStatus} size={10} />
         {/if}
         <h2 class="card-label" title={printer.label}>{printer.label}</h2>
       </div>

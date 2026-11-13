@@ -1,6 +1,6 @@
 <script lang="ts">
   import { activateOnEnterOrSpace, formatRelativeTime } from "$lib/format";
-  import { Circle } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import type { HostState, Server } from "./types";
 
   let {
@@ -41,11 +41,7 @@
   <div class="card-main">
     <div class="card-title-row">
       {#if !nocMode}
-        <Circle
-          size={10}
-          class="status-dot {status}"
-          aria-hidden="true"
-        />
+        <StatusDot {status} size={10} />
       {/if}
       <h2 class="card-label">{server.label}</h2>
       {#if server.agent && !nocMode}

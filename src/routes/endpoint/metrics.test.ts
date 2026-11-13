@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatUptime, getTemperatureColor, getUsageColor } from "./metrics";
+import {
+  formatBytes,
+  formatUptime,
+  getTemperatureColor,
+  getTemperatureStatus,
+  getUsageColor,
+  getUsageStatus,
+} from "./metrics";
 
 describe("endpoint metrics formatting", () => {
   it("formats uptime in human-readable days, hours, and minutes", () => {
@@ -21,6 +28,15 @@ describe("endpoint metrics formatting", () => {
     expect(formatBytes(1024 * 1024 * 1024 * 16)).toBe("16.0 GB");
   });
 
+  it("determines usage status thresholds correctly", () => {
+    expect(getUsageStatus(0)).toBe("success");
+    expect(getUsageStatus(69.9)).toBe("success");
+    expect(getUsageStatus(70)).toBe("warning");
+    expect(getUsageStatus(84.9)).toBe("warning");
+    expect(getUsageStatus(85)).toBe("error");
+    expect(getUsageStatus(100)).toBe("error");
+  });
+
   it("determines usage color thresholds correctly", () => {
     expect(getUsageColor(0)).toBe("var(--color-success)");
     expect(getUsageColor(69.9)).toBe("var(--color-success)");
@@ -28,6 +44,14 @@ describe("endpoint metrics formatting", () => {
     expect(getUsageColor(84.9)).toBe("var(--color-warning)");
     expect(getUsageColor(85)).toBe("var(--color-failure)");
     expect(getUsageColor(100)).toBe("var(--color-failure)");
+  });
+
+  it("determines temperature status thresholds correctly", () => {
+    expect(getTemperatureStatus(35)).toBe("success");
+    expect(getTemperatureStatus(59.9)).toBe("success");
+    expect(getTemperatureStatus(60)).toBe("warning");
+    expect(getTemperatureStatus(79.9)).toBe("warning");
+    expect(getTemperatureStatus(80)).toBe("error");
   });
 
   it("determines temperature color thresholds correctly", () => {

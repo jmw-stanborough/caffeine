@@ -1,6 +1,6 @@
 <script lang="ts">
   import { MIN_WEBVIEW_DIMENSION_PX } from "$lib/constants";
-  import { Circle } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onDestroy, onMount, tick } from "svelte";
@@ -151,7 +151,7 @@
       </button>
 
       <div class="printer-identity">
-        <Circle size={10} class="status-dot {effectiveStatus}" aria-hidden="true" />
+        <StatusDot status={effectiveStatus} size={10} />
         <strong class="toolbar-label">{printer.label}</strong>
         <span class="toolbar-url selectable">{webviewUrl}</span>
       </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { AlertTriangle, Circle } from "$lib/components/icons";
+  import { AlertTriangle } from "$lib/components/icons";
+  import StatusDot from "$lib/components/status-dot.svelte";
   import type { MonitorStatus } from "$lib/monitor-store.svelte";
   import type { Component } from "svelte";
 
@@ -86,7 +87,7 @@
     <dl class="stats">
       {#each STAT_ORDER as { key, label }}
         <div class="stat" class:dim={counts[key] === 0}>
-          <dt class="stat-label"><Circle size={8} class="dot dot-{key}" />{label}</dt>
+          <dt class="stat-label"><StatusDot status={key} size={8} />{label}</dt>
           <dd class="stat-value">{counts[key]}</dd>
         </div>
       {/each}
@@ -102,7 +103,7 @@
       <ul class="attention-list">
         {#each attention as item (item.id)}
           <li class="attention-item">
-            <Circle size={8} class="dot dot-{item.severity}" />
+            <StatusDot status={item.severity} size={8} />
             <span class="attention-label">{item.label}</span>
             <span class="attention-detail">{item.detail}</span>
           </li>
@@ -195,23 +196,6 @@
     margin: 0;
     font-size: 1.5rem;
     font-weight: 700;
-  }
-
-  :global(.dot) {
-    color: var(--color-text-muted);
-    flex-shrink: 0;
-  }
-
-  :global(.dot-online) {
-    color: var(--color-success);
-  }
-
-  :global(.dot-degraded) {
-    color: var(--color-warning);
-  }
-
-  :global(.dot-offline) {
-    color: var(--color-failure);
   }
 
   .attention-list {

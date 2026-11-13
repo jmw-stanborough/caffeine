@@ -1,21 +1,37 @@
-export function getUsageColor(percent: number): string {
+export type MetricStatus = "success" | "warning" | "error";
+
+const STATUS_COLOR_MAP: Record<MetricStatus, string> = {
+  success: "var(--color-success)",
+  warning: "var(--color-warning)",
+  error: "var(--color-failure)",
+};
+
+export function getUsageStatus(percent: number): MetricStatus {
   if (percent < 70) {
-    return "var(--color-success)";
+    return "success";
   }
   if (percent < 85) {
-    return "var(--color-warning)";
+    return "warning";
   }
-  return "var(--color-failure)";
+  return "error";
+}
+
+export function getUsageColor(percent: number): string {
+  return STATUS_COLOR_MAP[getUsageStatus(percent)];
+}
+
+export function getTemperatureStatus(celsius: number): MetricStatus {
+  if (celsius < 60) {
+    return "success";
+  }
+  if (celsius < 80) {
+    return "warning";
+  }
+  return "error";
 }
 
 export function getTemperatureColor(celsius: number): string {
-  if (celsius < 60) {
-    return "var(--color-success)";
-  }
-  if (celsius < 80) {
-    return "var(--color-warning)";
-  }
-  return "var(--color-failure)";
+  return STATUS_COLOR_MAP[getTemperatureStatus(celsius)];
 }
 
 export function formatBytes(bytes: number): string {
