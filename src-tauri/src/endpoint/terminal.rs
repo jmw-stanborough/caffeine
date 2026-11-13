@@ -1,6 +1,5 @@
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
-use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use tauri::{AppHandle, Emitter};
 
@@ -42,21 +41,13 @@ fn detect_shell_internal() -> Result<ShellDetectionResult, String> {
 }
 
 fn run_ps_version_probe(program: &str) -> Result<std::process::Output, std::io::Error> {
-    let mut cmd = Command::new(program);
+    let mut cmd = crate::process::new_hidden_command(program);
     cmd.args([
         "-NoProfile",
         "-NonInteractive",
         "-Command",
         "$PSVersionTable.PSVersion.ToString()",
     ]);
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
     cmd.output()
 }
 
@@ -133,7 +124,7 @@ fn detect_unix_shell() -> Result<ShellDetectionResult, String> {
             .unwrap_or("sh")
             .to_string();
 
-        let version = Command::new(&path)
+        let version = crate::process::new_hidden_command(&path)
             .arg("--version")
             .output()
             .ok()

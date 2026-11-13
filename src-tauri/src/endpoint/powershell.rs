@@ -2,16 +2,8 @@ use serde::de::DeserializeOwned;
 use std::process::Command;
 
 fn new_powershell_command(script: &str) -> Command {
-    let mut cmd = Command::new("powershell");
+    let mut cmd = crate::process::new_hidden_command("powershell");
     cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
     cmd
 }
 
