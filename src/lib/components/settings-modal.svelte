@@ -1,8 +1,10 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
   import StatusDot from "$lib/components/status-dot.svelte";
+  import { AlertTriangle } from "$lib/components/icons";
   import { applyTheme } from "$lib/theme";
   import { refreshClientMode } from "$lib/client-mode.svelte";
+  import { DEFAULT_SOUND_PATHS, soundManager } from "$lib/sound.svelte";
   import { printerStore } from "../../routes/printers/printers.svelte";
   import { serverStore } from "../../routes/servers/servers.svelte";
   import { todoStore } from "../../routes/todo/todo.svelte";
@@ -35,6 +37,9 @@
     retention_days: number;
     max_log_entries: number;
     todo_warning_minutes?: number;
+    sound_server_up?: string | null;
+    sound_server_down?: string | null;
+    sound_notification?: string | null;
   }
 
   let {
@@ -60,6 +65,12 @@
   let retentionDays = $state(14);
   let maxLogEntries = $state(1000);
   let todoWarningMinutes = $state(120);
+  let soundServerUp = $state("");
+  let soundServerDown = $state("");
+  let soundNotification = $state("");
+  let soundServerUpMissing = $state(false);
+  let soundServerDownMissing = $state(false);
+  let soundNotificationMissing = $state(false);
 
   let loading = $state(false);
   let saving = $state(false);
@@ -162,6 +173,24 @@
     }
   }
 
+  async function validateSoundPath(path: string): Promise<boolean> {
+    const trimmed = path.trim();
+    if (trimmed === "") return false;
+    return !(await invoke<boolean>("check_sound_file_cmd", { path: trimmed }));
+  }
+
+  async function refreshSoundMissing(
+    getValue: () => string,
+    setMissing: (missing: boolean) => void
+  ) {
+    const value = getValue();
+    const missing = await validateSoundPath(value);
+    // Ignore stale async checks if the user edited the input while validation was in flight.
+    if (getValue() === value) {
+      setMissing(missing);
+    }
+  }
+
   async function loadSettings() {
     loading = true;
     error = null;
@@ -181,6 +210,15 @@
       retentionDays = settings.retention_days;
       maxLogEntries = settings.max_log_entries;
       todoWarningMinutes = settings.todo_warning_minutes ?? 120;
+      soundServerUp = settings.sound_server_up ?? "";
+      soundServerDown = settings.sound_server_down ?? "";
+      soundNotification = settings.sound_notification ?? "";
+      [soundServerUpMissing, soundServerDownMissing, soundNotificationMissing] =
+        await Promise.all([
+          validateSoundPath(soundServerUp),
+          validateSoundPath(soundServerDown),
+          validateSoundPath(soundNotification),
+        ]);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -204,6 +242,9 @@
         retention_days: Number(retentionDays) || 14,
         max_log_entries: Number(maxLogEntries) || 1000,
         todo_warning_minutes: Math.max(1, Number(todoWarningMinutes) || 120),
+        sound_server_up: soundServerUp.trim() || null,
+        sound_server_down: soundServerDown.trim() || null,
+        sound_notification: soundNotification.trim() || null,
       };
 
       await invoke<AppSettings>("update_app_settings_cmd", {
@@ -214,6 +255,7 @@
         serverStore.fetchServers(),
         printerStore.fetchPrinters(),
         todoStore.refreshSettings(),
+        soundManager.refreshFromSettings(payload),
         refreshClientMode(),
       ]);
 
@@ -513,6 +555,121 @@
           <span class="field-hint">
             Active tasks due within this window display a warning status (default: 120 minutes / 2 hours).
           </span>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3 class="section-title">Sound Effects</h3>
+        <p class="section-description">
+          Leave a field blank to use the built-in default sound, or enter a path to a custom <code>.mp3</code> file (falls back to the default sound if the file cannot be located).
+        </p>
+
+        <div class="form-group">
+          <label for="soundServerUp">Server Online (Up) Sound</label>
+          <div class="sound-input-row">
+            <input
+              id="soundServerUp"
+              type="text"
+              bind:value={soundServerUp}
+              placeholder={`Default (${DEFAULT_SOUND_PATHS.server_up})`}
+              oninput={() =>
+                refreshSoundMissing(
+                  () => soundServerUp,
+                  (m) => (soundServerUpMissing = m)
+                )}
+              onchange={() =>
+                refreshSoundMissing(
+                  () => soundServerUp,
+                  (m) => (soundServerUpMissing = m)
+                )}
+            />
+            {#if soundServerUpMissing}
+              <span
+                class="sound-warning-icon"
+                title="File cannot be found at this path. The default sound will be used in its stead."
+                aria-label="Custom sound file not found"
+              >
+                <AlertTriangle size={18} />
+              </span>
+            {/if}
+          </div>
+          {#if soundServerUpMissing}
+            <span class="sound-warning-text">
+              File could not be found at this path. The default sound will be used instead.
+            </span>
+          {/if}
+        </div>
+
+        <div class="form-group">
+          <label for="soundServerDown">Server Offline (Down) Sound</label>
+          <div class="sound-input-row">
+            <input
+              id="soundServerDown"
+              type="text"
+              bind:value={soundServerDown}
+              placeholder={`Default (${DEFAULT_SOUND_PATHS.server_down})`}
+              oninput={() =>
+                refreshSoundMissing(
+                  () => soundServerDown,
+                  (m) => (soundServerDownMissing = m)
+                )}
+              onchange={() =>
+                refreshSoundMissing(
+                  () => soundServerDown,
+                  (m) => (soundServerDownMissing = m)
+                )}
+            />
+            {#if soundServerDownMissing}
+              <span
+                class="sound-warning-icon"
+                title="File cannot be found at this path. The default sound will be used in its stead."
+                aria-label="Custom sound file not found"
+              >
+                <AlertTriangle size={18} />
+              </span>
+            {/if}
+          </div>
+          {#if soundServerDownMissing}
+            <span class="sound-warning-text">
+              File could not be found at this path. The default sound will be used instead.
+            </span>
+          {/if}
+        </div>
+
+        <div class="form-group">
+          <label for="soundNotification">Task Reminder / Notification Sound</label>
+          <div class="sound-input-row">
+            <input
+              id="soundNotification"
+              type="text"
+              bind:value={soundNotification}
+              placeholder={`Default (${DEFAULT_SOUND_PATHS.notification})`}
+              oninput={() =>
+                refreshSoundMissing(
+                  () => soundNotification,
+                  (m) => (soundNotificationMissing = m)
+                )}
+              onchange={() =>
+                refreshSoundMissing(
+                  () => soundNotification,
+                  (m) => (soundNotificationMissing = m)
+                )}
+            />
+            {#if soundNotificationMissing}
+              <span
+                class="sound-warning-icon"
+                title="File cannot be found at this path. The default sound will be used in its stead."
+                aria-label="Custom sound file not found"
+              >
+                <AlertTriangle size={18} />
+              </span>
+            {/if}
+          </div>
+          {#if soundNotificationMissing}
+            <span class="sound-warning-text">
+              File could not be found at this path. The default sound will be used instead.
+            </span>
+          {/if}
         </div>
       </section>
 
@@ -925,5 +1082,28 @@
   .btn-danger:hover {
     background-color: rgba(238, 102, 102, 0.15);
     border-color: var(--color-failure);
+  }
+
+  .sound-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sound-input-row input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sound-warning-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-warning, #f59e0b);
+    flex-shrink: 0;
+  }
+
+  .sound-warning-text {
+    font-size: 0.75rem;
+    color: var(--color-warning, #f59e0b);
   }
 </style>
