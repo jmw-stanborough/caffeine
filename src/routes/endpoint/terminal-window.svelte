@@ -2,7 +2,8 @@
   import TerminalView from "$lib/terminal/terminal-view.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
+  import { endpointStore } from "./endpoint.svelte";
   import type { ShellDetectionResult } from "./types";
 
   interface Props {
@@ -25,6 +26,17 @@
       requestAnimationFrame(() => {
         terminalView?.fit();
         terminalView?.focus();
+      });
+    }
+  });
+
+  $effect(() => {
+    if (!isConnecting && endpointStore.pendingTerminalCommands.length > 0) {
+      untrack(() => {
+        let cmd: string | undefined;
+        while ((cmd = endpointStore.shiftTerminalCommand()) !== undefined) {
+          handleData(cmd.endsWith("\r") ? cmd : `${cmd}\r`);
+        }
       });
     }
   });

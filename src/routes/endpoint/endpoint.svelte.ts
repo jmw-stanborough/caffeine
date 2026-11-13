@@ -32,6 +32,7 @@ export class EndpointStore {
   updateProgress = $state<UpdateProgressEvent | null>(null);
 
   shell = $state<ShellDetectionResult | null>(null);
+  pendingTerminalCommands = $state<string[]>([]);
 
   private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private isRefreshing = false;
@@ -384,6 +385,18 @@ export class EndpointStore {
       this.operationStatus = null;
       throw err;
     }
+  }
+
+  queueTerminalCommand(cmd: string): void {
+    if (!cmd.trim()) return;
+    this.pendingTerminalCommands = [...this.pendingTerminalCommands, cmd];
+  }
+
+  shiftTerminalCommand(): string | undefined {
+    if (this.pendingTerminalCommands.length === 0) return undefined;
+    const [next, ...rest] = this.pendingTerminalCommands;
+    this.pendingTerminalCommands = rest;
+    return next;
   }
 
   async detectShell(): Promise<void> {
