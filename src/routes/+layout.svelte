@@ -9,6 +9,7 @@
     initializeBackgroundFeatures,
   } from "$lib/features";
   import { applyTheme } from "$lib/theme";
+  import { soundManager, type SoundSettings } from "$lib/sound.svelte";
   import { page } from "$app/state";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -25,14 +26,15 @@
     let unlistenSync: UnlistenFn | null = null;
     clientMode.refresh();
 
-    invoke<{ theme?: string }>("get_app_settings_cmd")
+    invoke<{ theme?: string } & SoundSettings>("get_app_settings_cmd")
       .then((settings) => {
         if (settings?.theme) {
           applyTheme(settings.theme);
         }
+        return soundManager.refreshFromSettings(settings);
       })
       .catch((err) => {
-        console.warn("Failed to load user theme setting:", err);
+        console.warn("Failed to load user theme or sound settings:", err);
       });
 
     initializeBackgroundFeatures().catch((err) => {
