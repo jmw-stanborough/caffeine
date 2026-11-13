@@ -82,7 +82,7 @@ pub fn parse_battery_sysfs(capacity_raw: &str, status_raw: &str) -> Result<Batte
 }
 
 pub fn query_domain_or_workgroup() -> Result<String, String> {
-    if let Ok(domain) = super::run_command_stdout("hostname", &["-d"])
+    if let Ok(domain) = crate::process::run_command_stdout("hostname", &["-d"])
         && !domain.is_empty()
         && domain != "(none)"
     {

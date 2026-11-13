@@ -53,28 +53,8 @@ pub use fallback::*;
 
 #[cfg(any(target_os = "linux", target_os = "macos", test))]
 #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
-pub(super) fn run_command_stdout(program: &str, args: &[&str]) -> Result<String, String> {
-    let output = std::process::Command::new(program)
-        .args(args)
-        .output()
-        .map_err(|e| format!("Failed to execute {program}: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            format!("{program} exited with status {:?}", output.status.code())
-        } else {
-            format!("{program} failed: {stderr}")
-        });
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos", test))]
-#[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
 pub(super) fn query_unix_is_admin() -> Result<bool, String> {
-    let uid = run_command_stdout("id", &["-u"])?;
+    let uid = crate::process::run_command_stdout("id", &["-u"])?;
     Ok(uid.trim() == "0")
 }
 

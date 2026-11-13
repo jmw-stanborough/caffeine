@@ -6,7 +6,7 @@ pub fn query_is_admin() -> Result<bool, String> {
 }
 
 pub fn query_battery_status() -> Result<Option<BatteryInfo>, String> {
-    let stdout = super::run_command_stdout("pmset", &["-g", "batt"])?;
+    let stdout = crate::process::run_command_stdout("pmset", &["-g", "batt"])?;
     parse_pmset_batt(&stdout)
 }
 
@@ -56,13 +56,13 @@ pub fn parse_pmset_batt(stdout: &str) -> Result<Option<BatteryInfo>, String> {
 }
 
 pub fn query_domain_or_workgroup() -> Result<String, String> {
-    if let Ok(dns_out) = super::run_command_stdout("scutil", &["--dns"])
+    if let Ok(dns_out) = crate::process::run_command_stdout("scutil", &["--dns"])
         && let Some(domain) = parse_scutil_dns_domain(&dns_out)
     {
         return Ok(domain);
     }
 
-    if let Ok(host_out) = super::run_command_stdout("hostname", &[])
+    if let Ok(host_out) = crate::process::run_command_stdout("hostname", &[])
         && let Some(domain) = parse_hostname_domain(&host_out)
     {
         return Ok(domain);
@@ -96,11 +96,11 @@ pub fn parse_hostname_domain(hostname: &str) -> Option<String> {
 }
 
 pub fn query_build_number() -> Result<String, String> {
-    super::run_command_stdout("sw_vers", &["-buildVersion"])
+    crate::process::run_command_stdout("sw_vers", &["-buildVersion"])
 }
 
 pub fn query_motherboard() -> Result<Option<MotherboardInfo>, String> {
-    let stdout = super::run_command_stdout("system_profiler", &["SPHardwareDataType", "-json"])?;
+    let stdout = crate::process::run_command_stdout("system_profiler", &["SPHardwareDataType", "-json"])?;
     parse_macos_hardware_json(&stdout)
 }
 
@@ -132,7 +132,7 @@ pub fn parse_macos_hardware_json(json_str: &str) -> Result<Option<MotherboardInf
 }
 
 pub fn query_gpus() -> Result<Vec<GpuInfo>, String> {
-    let stdout = super::run_command_stdout("system_profiler", &["SPDisplaysDataType", "-json"])?;
+    let stdout = crate::process::run_command_stdout("system_profiler", &["SPDisplaysDataType", "-json"])?;
     parse_macos_displays_json(&stdout)
 }
 
