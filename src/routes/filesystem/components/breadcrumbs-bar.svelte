@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Filter } from "$lib/components/icons";
+  import { buildBreadcrumbs } from "../path";
 
   interface Props {
     currentPath: string;
@@ -25,29 +26,7 @@
     onClearSearch,
   }: Props = $props();
 
-  let breadcrumbs = $derived.by(() => {
-    if (!currentPath) return [];
-    const isWindows = currentPath.includes(":\\");
-    const sep = isWindows ? "\\" : "/";
-    const parts = currentPath.split(/[/\\]+/).filter(Boolean);
-
-    const crumbs: { label: string; fullPath: string }[] = [];
-    let accumulator = isWindows ? "" : "/";
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (i === 0 && isWindows) {
-        accumulator = part + "\\";
-      } else {
-        accumulator = isWindows
-          ? accumulator + (accumulator.endsWith("\\") ? "" : "\\") + part
-          : accumulator + (accumulator.endsWith("/") ? "" : "/") + part;
-      }
-      crumbs.push({ label: part, fullPath: accumulator });
-    }
-
-    return crumbs;
-  });
+  let breadcrumbs = $derived(buildBreadcrumbs(currentPath));
 </script>
 
 <div class="breadcrumbs-toolbar">

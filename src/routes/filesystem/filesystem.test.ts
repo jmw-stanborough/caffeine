@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FilesystemStore } from "./filesystem.svelte";
+import { buildBreadcrumbs, getParentPath } from "./path";
 import type { FileEntry, StorageVolume } from "./types";
 
 describe("FilesystemStore", () => {
@@ -83,5 +84,89 @@ describe("FilesystemStore", () => {
     expect(store.searchResults).toBeNull();
     expect(store.selectedPaths.size).toBe(0);
     expect(store.currentPath).toBe("/");
+  });
+
+  it("navigates up through Windows and POSIX paths and stops at roots", async () => {
+    const store = new FilesystemStore();
+    const visited: string[] = [];
+    store.navigateTo = vi.fn(async (p: string) => {
+      visited.push(p);
+      store.currentPath = p;
+    });
+
+    store.currentPath = "C:\\Users\\Admin";
+    await store.navigateUp();
+    expect(store.currentPath).toBe("C:\\Users");
+
+    await store.navigateUp();
+    expect(store.currentPath).toBe("C:\\");
+
+    await store.navigateUp();
+    expect(store.currentPath).toBe("C:\\");
+
+    store.currentPath = "/var/log";
+    await store.navigateUp();
+    expect(store.currentPath).toBe("/var");
+
+    await store.navigateUp();
+    expect(store.currentPath).toBe("/");
+
+    await store.navigateUp();
+    expect(store.currentPath).toBe("/");
+
+    expect(visited).toEqual(["C:\\Users", "C:\\", "/var", "/"]);
+  });
+});
+
+describe("buildBreadcrumbs", () => {
+  it("returns empty array for empty path", () => {
+    expect(buildBreadcrumbs("")).toEqual([]);
+  });
+
+  it("builds Windows drive root and nested breadcrumbs", () => {
+    expect(buildBreadcrumbs("C:\\")).toEqual([{ label: "C:", fullPath: "C:\\" }]);
+    expect(buildBreadcrumbs("C:\\Users")).toEqual([
+      { label: "C:", fullPath: "C:\\" },
+      { label: "Users", fullPath: "C:\\Users" },
+    ]);
+    expect(buildBreadcrumbs("C:\\Users\\Admin")).toEqual([
+      { label: "C:", fullPath: "C:\\" },
+      { label: "Users", fullPath: "C:\\Users" },
+      { label: "Admin", fullPath: "C:\\Users\\Admin" },
+    ]);
+  });
+
+  it("builds POSIX root and nested breadcrumbs", () => {
+    expect(buildBreadcrumbs("/")).toEqual([{ label: "/", fullPath: "/" }]);
+    expect(buildBreadcrumbs("/var")).toEqual([
+      { label: "/", fullPath: "/" },
+      { label: "var", fullPath: "/var" },
+    ]);
+    expect(buildBreadcrumbs("/var/log")).toEqual([
+      { label: "/", fullPath: "/" },
+      { label: "var", fullPath: "/var" },
+      { label: "log", fullPath: "/var/log" },
+    ]);
+  });
+});
+
+describe("getParentPath", () => {
+  it("returns null for empty path", () => {
+    expect(getParentPath("")).toBeNull();
+  });
+
+  it("handles Windows roots and nested paths", () => {
+    expect(getParentPath("C:\\")).toBeNull();
+    expect(getParentPath("C:")).toBeNull();
+    expect(getParentPath("C:\\Users")).toBe("C:\\");
+    expect(getParentPath("C:\\Users\\Admin")).toBe("C:\\Users");
+    expect(getParentPath("C:\\Users\\Admin\\")).toBe("C:\\Users");
+  });
+
+  it("handles POSIX roots and nested paths", () => {
+    expect(getParentPath("/")).toBeNull();
+    expect(getParentPath("/var")).toBe("/");
+    expect(getParentPath("/var/log")).toBe("/var");
+    expect(getParentPath("/var/log/")).toBe("/var");
   });
 });

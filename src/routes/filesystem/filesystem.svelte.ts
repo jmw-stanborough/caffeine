@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getParentPath } from "./path";
 import type {
   BatchDeleteSummary,
   DirectoryListing,
@@ -182,15 +183,8 @@ export class FilesystemStore {
   }
 
   async navigateUp(): Promise<void> {
-    if (!this.currentPath) return;
-    const normalized = this.currentPath.replace(/[/\\]+$/, "");
-    const lastSlash = Math.max(
-      normalized.lastIndexOf("/"),
-      normalized.lastIndexOf("\\"),
-    );
-
-    if (lastSlash >= 0) {
-      const parent = normalized.slice(0, lastSlash) || "/";
+    const parent = getParentPath(this.currentPath);
+    if (parent) {
       await this.navigateTo(parent);
     }
   }
