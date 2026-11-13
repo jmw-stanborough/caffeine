@@ -1,9 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render } from "svelte/server";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { soundManager } from "$lib/sound.svelte";
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from "./format";
 import TodoCategorySection from "./todo-category-section.svelte";
 import TodoItemRow from "./todo-item-row.svelte";
+import { TodoStore } from "./todo.svelte";
 import type { TodoItem } from "./types";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(),
+}));
+
+vi.mock("$lib/sound.svelte", () => ({
+  soundManager: {
+    play: vi.fn().mockResolvedValue(undefined),
+  },
+}));
 
 const NOW = Date.now();
 
@@ -100,5 +118,37 @@ describe("TodoItemRow", () => {
     expect(html).toMatch(/class="[^"]*\btodo-row\b[^"]*\bcompleted\b/);
     expect(html).toContain('class="status-dot success"');
     expect(html).toContain("checked");
+  });
+});
+
+describe("TodoStore reminder sound", () => {
+  it("plays notification sound when workspace:reminder-triggered fires and cleans up listener on destroy", async () => {
+    const handlers = new Map<string, () => void>();
+    const unlistenReminder = vi.fn<() => void>();
+
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "get_app_settings_cmd") return {};
+      if (cmd === "workspace_load_todos") return [];
+      return null;
+    });
+
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      handlers.set(event, handler as () => void);
+      return event === "workspace:reminder-triggered"
+        ? unlistenReminder
+        : () => {};
+    });
+
+    const store = new TodoStore();
+    await store.init();
+
+    const reminderHandler = handlers.get("workspace:reminder-triggered");
+    expect(reminderHandler).toBeDefined();
+    reminderHandler?.();
+
+    expect(soundManager.play).toHaveBeenCalledWith("notification");
+
+    store.destroy();
+    expect(unlistenReminder).toHaveBeenCalledTimes(1);
   });
 });

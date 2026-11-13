@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { soundManager } from "$lib/sound.svelte";
 import { formatAttentionDetail } from "./format";
 import {
   DEFAULT_WARNING_MINUTES,
@@ -17,6 +18,7 @@ import type {
 
 const TODO_CLOCK_TICK_MS = 30_000;
 const TODOS_UPDATED_EVENT = "workspace:todos-updated";
+const REMINDER_TRIGGERED_EVENT = "workspace:reminder-triggered";
 
 export class TodoStore {
   items = $state<TodoItem[]>([]);
@@ -28,6 +30,7 @@ export class TodoStore {
   private initPromise: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private unlistenUpdated: UnlistenFn | null = null;
+  private unlistenReminder: UnlistenFn | null = null;
   private destroyed = false;
 
   private categoriesDerived = $derived.by<TodoCategories>(() =>
@@ -134,18 +137,31 @@ export class TodoStore {
       this.unlistenUpdated();
       this.unlistenUpdated = null;
     }
+    if (this.unlistenReminder !== null) {
+      this.unlistenReminder();
+      this.unlistenReminder = null;
+    }
 
-    const unlisten = await listen(TODOS_UPDATED_EVENT, () => {
-      this.nowMs = Date.now();
-      this.fetchTodos().catch((err) => {
-        console.error("Failed to refresh todos after reminder update:", err);
-      });
-    });
+    const [unlistenUpdated, unlistenReminder] = await Promise.all([
+      listen(TODOS_UPDATED_EVENT, () => {
+        this.nowMs = Date.now();
+        this.fetchTodos().catch((err) => {
+          console.error("Failed to refresh todos after reminder update:", err);
+        });
+      }),
+      listen(REMINDER_TRIGGERED_EVENT, () => {
+        soundManager.play("notification").catch((err) => {
+          console.error("Failed to play reminder notification sound:", err);
+        });
+      }),
+    ]);
 
     if (this.destroyed) {
-      unlisten();
+      unlistenUpdated();
+      unlistenReminder();
     } else {
-      this.unlistenUpdated = unlisten;
+      this.unlistenUpdated = unlistenUpdated;
+      this.unlistenReminder = unlistenReminder;
     }
   }
 
@@ -156,6 +172,8 @@ export class TodoStore {
     }
     this.unlistenUpdated?.();
     this.unlistenUpdated = null;
+    this.unlistenReminder?.();
+    this.unlistenReminder = null;
   }
 
   refreshSettings = async (): Promise<void> => {
