@@ -141,9 +141,11 @@ pub fn resolve_target_ids(
     }
 
     for id in &result {
-        if !id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '{' || c == '}')
+        if id.is_empty()
+            || !id.chars().all(|c| {
+                c.is_ascii_alphanumeric()
+                    || matches!(c, '-' | '_' | '{' | '}' | '.' | '+' | ':' | '~' | '@')
+            })
         {
             return Err(format!("Invalid update ID format: {id}"));
         }
@@ -158,5 +160,142 @@ pub fn format_powershell_id_array(ids: &[String]) -> String {
     } else {
         let quoted: Vec<String> = ids.iter().map(|id| format!("'{id}'")).collect();
         format!("@({})", quoted.join(", "))
+    }
+}
+
+#[cfg(any(unix, test))]
+pub(crate) fn current_utc_timestamp() -> Result<String, String> {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("System clock is before Unix epoch: {e}"))?
+        .as_secs();
+
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let hour = rem / 3_600;
+    let min = (rem % 3_600) / 60;
+    let sec = rem % 60;
+
+    // Howard Hinnant's civil-from-days algorithm avoids external date crates.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if m <= 2 { y + 1 } else { y };
+
+    Ok(format!(
+        "{year:04}-{m:02}-{d:02} {hour:02}:{min:02}:{sec:02} UTC"
+    ))
+}
+
+#[cfg(unix)]
+pub(crate) fn format_command_failure(context: &str, output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return format!("{context}: {stderr}");
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return format!("{context}: {stdout}");
+    }
+    format!("{context} exited with status {:?}", output.status.code())
+}
+
+#[cfg(any(unix, test))]
+pub(crate) fn run_package_batch<F, Op, R>(
+    phase: &str,
+    targets: Vec<String>,
+    empty_message: &str,
+    mut on_progress: F,
+    mut op: Op,
+    check_reboot: R,
+) -> UpdateOperationResult
+where
+    F: FnMut(UpdateProgressEvent),
+    Op: FnMut(&str) -> Result<(), String>,
+    R: FnOnce() -> bool,
+{
+    let total_count = targets.len();
+    if total_count == 0 {
+        return UpdateOperationResult {
+            success: true,
+            reboot_required: check_reboot(),
+            message: empty_message.to_string(),
+            succeeded_count: 0,
+            failed_count: 0,
+        };
+    }
+
+    let mut succeeded_count = 0usize;
+    let mut failed_count = 0usize;
+    let mut last_error: Option<String> = None;
+
+    for (index, target) in targets.iter().enumerate() {
+        let pct_before = ((index as u64 * 100) / total_count as u64) as u32;
+        on_progress(UpdateProgressEvent {
+            phase: phase.to_string(),
+            percent_complete: pct_before,
+            current_index: index,
+            total_count,
+            bytes_downloaded: None,
+            total_bytes: None,
+            current_update_id: Some(target.clone()),
+        });
+
+        match op(target) {
+            Ok(()) => succeeded_count += 1,
+            Err(err) => {
+                failed_count += 1;
+                last_error = Some(err);
+            }
+        }
+
+        let pct_after = (((index + 1) as u64 * 100) / total_count as u64) as u32;
+        on_progress(UpdateProgressEvent {
+            phase: phase.to_string(),
+            percent_complete: pct_after,
+            current_index: index,
+            total_count,
+            bytes_downloaded: None,
+            total_bytes: None,
+            current_update_id: Some(target.clone()),
+        });
+    }
+
+    let action_label = if phase == "download" {
+        "Download"
+    } else {
+        "Installation"
+    };
+    let success = failed_count == 0 && succeeded_count > 0;
+    let message = if success {
+        format!("{action_label} completed successfully.")
+    } else if succeeded_count > 0 {
+        match last_error {
+            Some(err) => format!(
+                "{action_label} completed with errors ({succeeded_count} succeeded, {failed_count} failed): {err}"
+            ),
+            None => format!(
+                "{action_label} completed with errors ({succeeded_count} succeeded, {failed_count} failed)."
+            ),
+        }
+    } else {
+        match last_error {
+            Some(err) => format!("{action_label} failed: {err}"),
+            None => format!("{action_label} failed."),
+        }
+    };
+
+    UpdateOperationResult {
+        success,
+        reboot_required: check_reboot(),
+        message,
+        succeeded_count,
+        failed_count,
     }
 }
