@@ -73,16 +73,18 @@ fn launch_linux_rdp(host: &str, port: u16, username: Option<&str>) -> Result<(),
             .map_err(|e| format!("Failed to spawn remmina: {e}"));
     }
 
-    if command_exists("xfreerdp") {
-        let mut cmd = Command::new("xfreerdp");
-        cmd.arg(format!("/v:{target}"));
-        if let Some(user) = username {
-            cmd.arg(format!("/u:{user}"));
+    for client in ["xfreerdp3", "sdl-freerdp", "xfreerdp"] {
+        if command_exists(client) {
+            let mut cmd = Command::new(client);
+            cmd.arg(format!("/v:{target}"));
+            if let Some(user) = username {
+                cmd.arg(format!("/u:{user}"));
+            }
+            return cmd
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("Failed to spawn {client}: {e}"));
         }
-        return cmd
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("Failed to spawn xfreerdp: {e}"));
     }
 
     let uri = format!("rdp://{target}");
@@ -91,15 +93,13 @@ fn launch_linux_rdp(host: &str, port: u16, username: Option<&str>) -> Result<(),
         .spawn()
         .map(|_| ())
         .map_err(|e| {
-            format!("No native RDP client (remmina/xfreerdp) found, and xdg-open failed: {e}")
+            format!(
+                "No native RDP client (remmina/xfreerdp3/sdl-freerdp/xfreerdp) found, and xdg-open failed: {e}"
+            )
         })
 }
 
 #[cfg(target_os = "linux")]
 fn command_exists(name: &str) -> bool {
-    Command::new("which")
-        .arg(name)
-        .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+    crate::process::find_executable_in_path(name).is_some()
 }
