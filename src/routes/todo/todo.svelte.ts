@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { toErrorMessage } from "$lib/errors";
 import { soundManager } from "$lib/sound.svelte";
 import { formatAttentionDetail } from "./format";
 import {
@@ -184,7 +185,7 @@ export class TodoStore {
       this.warningMinutes =
         settings.todo_warning_minutes ?? DEFAULT_WARNING_MINUTES;
     } catch (err) {
-      this.errorMessage = String(err);
+      this.errorMessage = toErrorMessage(err);
       throw err;
     }
   };
@@ -195,7 +196,7 @@ export class TodoStore {
     try {
       this.items = await invoke<TodoItem[]>("workspace_load_todos");
     } catch (err) {
-      this.errorMessage = String(err);
+      this.errorMessage = toErrorMessage(err);
       throw err;
     } finally {
       this.loading = false;
@@ -211,7 +212,7 @@ export class TodoStore {
       this.items = [...this.items, created];
       return created;
     } catch (err) {
-      this.errorMessage = String(err);
+      this.errorMessage = toErrorMessage(err);
       throw err;
     }
   }
@@ -227,7 +228,7 @@ export class TodoStore {
       );
       return updated;
     } catch (err) {
-      this.errorMessage = String(err);
+      this.errorMessage = toErrorMessage(err);
       throw err;
     }
   }
@@ -241,7 +242,7 @@ export class TodoStore {
       this.items = updated;
       return updated;
     } catch (err) {
-      this.errorMessage = String(err);
+      this.errorMessage = toErrorMessage(err);
       throw err;
     }
   }
@@ -252,7 +253,7 @@ export class TodoStore {
       await invoke("workspace_delete_todo", { id });
       this.items = this.items.filter((item) => item.id !== id);
     } catch (err) {
-      this.errorMessage = String(err);
+      this.errorMessage = toErrorMessage(err);
       throw err;
     }
   }

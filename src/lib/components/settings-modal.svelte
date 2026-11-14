@@ -5,6 +5,7 @@
   import { applyTheme } from "$lib/theme";
   import { refreshClientMode } from "$lib/client-mode.svelte";
   import { DEFAULT_SOUND_PATHS, soundManager } from "$lib/sound.svelte";
+  import { toErrorMessage } from "$lib/errors";
   import { printerStore } from "../../routes/printers/printers.svelte";
   import { serverStore } from "../../routes/servers/servers.svelte";
   import { todoStore } from "../../routes/todo/todo.svelte";
@@ -100,7 +101,7 @@
     try {
       serverTokens = await invoke<ServerTokenPublic[]>("get_server_tokens_cmd");
     } catch (err) {
-      tokenActionError = err instanceof Error ? err.message : String(err);
+      tokenActionError = toErrorMessage(err);
     }
   }
 
@@ -116,7 +117,7 @@
       newLabel = "";
       await loadServerTokens();
     } catch (err) {
-      tokenActionError = err instanceof Error ? err.message : String(err);
+      tokenActionError = toErrorMessage(err);
     } finally {
       generatingToken = false;
     }
@@ -139,7 +140,7 @@
       revealedSecret = regenerated;
       await loadServerTokens();
     } catch (err) {
-      tokenActionError = err instanceof Error ? err.message : String(err);
+      tokenActionError = toErrorMessage(err);
     }
   }
 
@@ -156,7 +157,7 @@
       await invoke("delete_server_token_cmd", { id: token.id });
       await loadServerTokens();
     } catch (err) {
-      tokenActionError = err instanceof Error ? err.message : String(err);
+      tokenActionError = toErrorMessage(err);
     }
   }
 
@@ -220,7 +221,7 @@
           validateSoundPath(soundNotification),
         ]);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = toErrorMessage(err);
     } finally {
       loading = false;
     }
@@ -266,7 +267,7 @@
         open = false;
       }, 600);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      error = toErrorMessage(err);
     } finally {
       saving = false;
     }

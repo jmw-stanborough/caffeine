@@ -1,9 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { toErrorMessage } from "$lib/errors";
 import type { DetectedScriptLanguage, ScriptDocument, ScriptSummary } from "./types";
-
-function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
 
 export class ScriptsStore {
   scripts = $state<ScriptSummary[]>([]);
