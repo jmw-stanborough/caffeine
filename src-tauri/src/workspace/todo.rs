@@ -518,7 +518,6 @@ mod tests {
 
     #[test]
     fn test_monthly_recurrence_calendar_month_clamping() {
-        // 2026-01-31T10:00:00Z
         let jan_31 = days_from_civil(2026, 1, 31) * DAY_MS + 10 * 3_600_000;
         let feb_28 = add_calendar_month_ms(jan_31);
         assert_eq!(
@@ -526,7 +525,6 @@ mod tests {
             days_from_civil(2026, 2, 28) * DAY_MS + 10 * 3_600_000
         );
 
-        // 2024-01-31T10:00:00Z (leap year -> Feb 29)
         let leap_jan_31 = days_from_civil(2024, 1, 31) * DAY_MS + 10 * 3_600_000;
         let leap_feb_29 = add_calendar_month_ms(leap_jan_31);
         assert_eq!(
@@ -534,7 +532,6 @@ mod tests {
             days_from_civil(2024, 2, 29) * DAY_MS + 10 * 3_600_000
         );
 
-        // 2026-12-15 -> 2027-01-15
         let dec_15 = days_from_civil(2026, 12, 15) * DAY_MS;
         let jan_15 = add_calendar_month_ms(dec_15);
         assert_eq!(jan_15, days_from_civil(2027, 1, 15) * DAY_MS);

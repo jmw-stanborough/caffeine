@@ -463,14 +463,7 @@ pub fn workspace_build_script_run_command(app: AppHandle, id: String) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_roaming_dir(prefix: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("{prefix}_{}_{nanos}", std::process::id()))
-    }
+    use crate::workspace::temp_roaming_dir;
 
     #[test]
     fn test_detect_script_languages_returns_native_defaults() {

@@ -62,3 +62,12 @@ pub(crate) fn slugify(input: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+pub(crate) fn temp_roaming_dir(prefix: &str) -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}_{}_{nanos}", std::process::id()))
+}

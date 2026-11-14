@@ -59,15 +59,7 @@ pub fn init_workspace_db(app: &AppHandle) -> Result<WorkspaceDbState, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn temp_roaming_dir(prefix: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("{prefix}_{}_{nanos}", std::process::id()))
-    }
+    use crate::workspace::temp_roaming_dir;
 
     #[test]
     fn test_init_workspace_db_at_creates_roaming_db_and_schema() {

@@ -291,14 +291,7 @@ pub fn workspace_delete_note(app: AppHandle, slug: String) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_roaming_dir(prefix: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("{prefix}_{}_{nanos}", std::process::id()))
-    }
+    use crate::workspace::temp_roaming_dir;
 
     #[test]
     fn test_notes_crud_heading_extraction_and_rename() {
