@@ -1,7 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/modal.svelte";
   import StatusDot from "$lib/components/status-dot.svelte";
-  import { AlertTriangle } from "$lib/components/icons";
+  import SoundSettingInput from "$lib/components/sound-setting-input.svelte";
   import { applyTheme } from "$lib/theme";
   import { refreshClientMode } from "$lib/client-mode.svelte";
   import { DEFAULT_SOUND_PATHS, soundManager } from "$lib/sound.svelte";
@@ -69,9 +69,6 @@
   let soundServerUp = $state("");
   let soundServerDown = $state("");
   let soundNotification = $state("");
-  let soundServerUpMissing = $state(false);
-  let soundServerDownMissing = $state(false);
-  let soundNotificationMissing = $state(false);
 
   let loading = $state(false);
   let saving = $state(false);
@@ -174,24 +171,6 @@
     }
   }
 
-  async function validateSoundPath(path: string): Promise<boolean> {
-    const trimmed = path.trim();
-    if (trimmed === "") return false;
-    return !(await invoke<boolean>("check_sound_file_cmd", { path: trimmed }));
-  }
-
-  async function refreshSoundMissing(
-    getValue: () => string,
-    setMissing: (missing: boolean) => void
-  ) {
-    const value = getValue();
-    const missing = await validateSoundPath(value);
-    // Ignore stale async checks if the user edited the input while validation was in flight.
-    if (getValue() === value) {
-      setMissing(missing);
-    }
-  }
-
   async function loadSettings() {
     loading = true;
     error = null;
@@ -214,12 +193,6 @@
       soundServerUp = settings.sound_server_up ?? "";
       soundServerDown = settings.sound_server_down ?? "";
       soundNotification = settings.sound_notification ?? "";
-      [soundServerUpMissing, soundServerDownMissing, soundNotificationMissing] =
-        await Promise.all([
-          validateSoundPath(soundServerUp),
-          validateSoundPath(soundServerDown),
-          validateSoundPath(soundNotification),
-        ]);
     } catch (err) {
       error = toErrorMessage(err);
     } finally {
@@ -565,113 +538,26 @@
           Leave a field blank to use the built-in default sound, or enter a path to a custom <code>.mp3</code> file (falls back to the default sound if the file cannot be located).
         </p>
 
-        <div class="form-group">
-          <label for="soundServerUp">Server Online (Up) Sound</label>
-          <div class="sound-input-row">
-            <input
-              id="soundServerUp"
-              type="text"
-              bind:value={soundServerUp}
-              placeholder={`Default (${DEFAULT_SOUND_PATHS.server_up})`}
-              oninput={() =>
-                refreshSoundMissing(
-                  () => soundServerUp,
-                  (m) => (soundServerUpMissing = m)
-                )}
-              onchange={() =>
-                refreshSoundMissing(
-                  () => soundServerUp,
-                  (m) => (soundServerUpMissing = m)
-                )}
-            />
-            {#if soundServerUpMissing}
-              <span
-                class="sound-warning-icon"
-                title="File cannot be found at this path. The default sound will be used in its stead."
-                aria-label="Custom sound file not found"
-              >
-                <AlertTriangle size={18} />
-              </span>
-            {/if}
-          </div>
-          {#if soundServerUpMissing}
-            <span class="sound-warning-text">
-              File could not be found at this path. The default sound will be used instead.
-            </span>
-          {/if}
-        </div>
+        <SoundSettingInput
+          id="soundServerUp"
+          label="Server Online (Up) Sound"
+          placeholder={`Default (${DEFAULT_SOUND_PATHS.server_up})`}
+          bind:value={soundServerUp}
+        />
 
-        <div class="form-group">
-          <label for="soundServerDown">Server Offline (Down) Sound</label>
-          <div class="sound-input-row">
-            <input
-              id="soundServerDown"
-              type="text"
-              bind:value={soundServerDown}
-              placeholder={`Default (${DEFAULT_SOUND_PATHS.server_down})`}
-              oninput={() =>
-                refreshSoundMissing(
-                  () => soundServerDown,
-                  (m) => (soundServerDownMissing = m)
-                )}
-              onchange={() =>
-                refreshSoundMissing(
-                  () => soundServerDown,
-                  (m) => (soundServerDownMissing = m)
-                )}
-            />
-            {#if soundServerDownMissing}
-              <span
-                class="sound-warning-icon"
-                title="File cannot be found at this path. The default sound will be used in its stead."
-                aria-label="Custom sound file not found"
-              >
-                <AlertTriangle size={18} />
-              </span>
-            {/if}
-          </div>
-          {#if soundServerDownMissing}
-            <span class="sound-warning-text">
-              File could not be found at this path. The default sound will be used instead.
-            </span>
-          {/if}
-        </div>
+        <SoundSettingInput
+          id="soundServerDown"
+          label="Server Offline (Down) Sound"
+          placeholder={`Default (${DEFAULT_SOUND_PATHS.server_down})`}
+          bind:value={soundServerDown}
+        />
 
-        <div class="form-group">
-          <label for="soundNotification">Task Reminder / Notification Sound</label>
-          <div class="sound-input-row">
-            <input
-              id="soundNotification"
-              type="text"
-              bind:value={soundNotification}
-              placeholder={`Default (${DEFAULT_SOUND_PATHS.notification})`}
-              oninput={() =>
-                refreshSoundMissing(
-                  () => soundNotification,
-                  (m) => (soundNotificationMissing = m)
-                )}
-              onchange={() =>
-                refreshSoundMissing(
-                  () => soundNotification,
-                  (m) => (soundNotificationMissing = m)
-                )}
-            />
-            {#if soundNotificationMissing}
-              <span
-                class="sound-warning-icon"
-                title="File cannot be found at this path. The default sound will be used in its stead."
-                aria-label="Custom sound file not found"
-              >
-                <AlertTriangle size={18} />
-              </span>
-            {/if}
-          </div>
-          {#if soundNotificationMissing}
-            <span class="sound-warning-text">
-              File could not be found at this path. The default sound will be used instead.
-            </span>
-          {/if}
-        </div>
+        <SoundSettingInput
+          id="soundNotification"
+          label="Task Reminder / Notification Sound"
+          placeholder={`Default (${DEFAULT_SOUND_PATHS.notification})`}
+          bind:value={soundNotification}
+        />
       </section>
 
       <section class="settings-section">
@@ -1083,28 +969,5 @@
   .btn-danger:hover {
     background-color: rgba(238, 102, 102, 0.15);
     border-color: var(--color-failure);
-  }
-
-  .sound-input-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .sound-input-row input {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .sound-warning-icon {
-    display: inline-flex;
-    align-items: center;
-    color: var(--color-warning, #f59e0b);
-    flex-shrink: 0;
-  }
-
-  .sound-warning-text {
-    font-size: 0.75rem;
-    color: var(--color-warning, #f59e0b);
   }
 </style>
