@@ -464,41 +464,7 @@ pub fn current_utc_iso() -> String {
 }
 
 pub fn format_epoch_secs_as_iso(secs: u64) -> String {
-    let days = secs / 86400;
-    let rem_secs = secs % 86400;
-    let hours = rem_secs / 3600;
-    let minutes = (rem_secs % 3600) / 60;
-    let seconds = rem_secs % 60;
-
-    let mut year = 1970;
-    let mut d = days;
-
-    loop {
-        let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-        let days_in_year = if leap { 366 } else { 365 };
-        if d < days_in_year {
-            break;
-        }
-        d -= days_in_year;
-        year += 1;
-    }
-
-    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    let days_in_months = [
-        31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
-    ];
-
-    let mut month = 1;
-    for &dim in &days_in_months {
-        if d < dim {
-            break;
-        }
-        d -= dim;
-        month += 1;
-    }
-    let day = d + 1;
-
-    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
+    crate::datetime::format_epoch_secs_as_iso(secs)
 }
 
 pub fn add_server_token(label: &str) -> Result<GeneratedTokenResponse, String> {
