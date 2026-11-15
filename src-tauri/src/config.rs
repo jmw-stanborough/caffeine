@@ -463,9 +463,7 @@ pub fn current_utc_iso() -> String {
     format_epoch_secs_as_iso(secs)
 }
 
-pub fn format_epoch_secs_as_iso(secs: u64) -> String {
-    crate::datetime::format_epoch_secs_as_iso(secs)
-}
+pub use crate::datetime::format_epoch_secs_as_iso;
 
 pub fn add_server_token(label: &str) -> Result<GeneratedTokenResponse, String> {
     let trimmed_label = label.trim();
@@ -694,12 +692,6 @@ mod tests {
         assert!(t2.starts_with("caff_sec_"));
         assert_ne!(t1, t2);
         assert_eq!(t1.len(), "caff_sec_".len() + 64);
-    }
-
-    #[test]
-    fn test_format_epoch_secs_as_iso() {
-        assert_eq!(format_epoch_secs_as_iso(0), "1970-01-01T00:00:00Z");
-        assert_eq!(format_epoch_secs_as_iso(1730000000), "2024-10-27T03:33:20Z");
     }
 
     fn unique_test_dir(prefix: &str) -> PathBuf {

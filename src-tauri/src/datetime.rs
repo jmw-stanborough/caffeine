@@ -24,13 +24,18 @@ pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     era * 146_097 + (doe as i64) - 719_468
 }
 
-pub fn format_epoch_secs_as_iso(secs: u64) -> String {
+pub fn split_epoch_secs(secs: u64) -> (i64, u32, u32, u64, u64, u64) {
     let days = (secs / 86_400) as i64;
     let rem_secs = secs % 86_400;
     let hours = rem_secs / 3_600;
     let minutes = (rem_secs % 3_600) / 60;
     let seconds = rem_secs % 60;
     let (year, month, day) = civil_from_days(days);
+    (year, month, day, hours, minutes, seconds)
+}
+
+pub fn format_epoch_secs_as_iso(secs: u64) -> String {
+    let (year, month, day, hours, minutes, seconds) = split_epoch_secs(secs);
     format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
 
@@ -40,13 +45,7 @@ pub fn current_utc_timestamp() -> Result<String, String> {
         .map_err(|e| format!("System clock is before Unix epoch: {e}"))?
         .as_secs();
 
-    let days = (secs / 86_400) as i64;
-    let rem = secs % 86_400;
-    let hour = rem / 3_600;
-    let min = (rem % 3_600) / 60;
-    let sec = rem % 60;
-
-    let (year, m, d) = civil_from_days(days);
+    let (year, m, d, hour, min, sec) = split_epoch_secs(secs);
     Ok(format!("{year:04}-{m:02}-{d:02} {hour:02}:{min:02}:{sec:02} UTC"))
 }
 
@@ -64,6 +63,12 @@ mod tests {
 
         let days_future = days_from_civil(2026, 11, 14);
         assert_eq!(civil_from_days(days_future), (2026, 11, 14));
+    }
+
+    #[test]
+    fn test_split_epoch_secs() {
+        assert_eq!(split_epoch_secs(0), (1970, 1, 1, 0, 0, 0));
+        assert_eq!(split_epoch_secs(1730000000), (2024, 10, 27, 3, 33, 20));
     }
 
     #[test]

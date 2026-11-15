@@ -164,9 +164,7 @@ pub fn format_powershell_id_array(ids: &[String]) -> String {
 }
 
 #[cfg(any(unix, test))]
-pub(crate) fn current_utc_timestamp() -> Result<String, String> {
-    crate::datetime::current_utc_timestamp()
-}
+pub(crate) use crate::datetime::current_utc_timestamp;
 
 #[cfg(unix)]
 pub(crate) fn format_command_failure(context: &str, output: &std::process::Output) -> String {
