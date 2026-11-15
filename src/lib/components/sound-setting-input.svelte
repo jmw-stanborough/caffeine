@@ -41,8 +41,6 @@
       type="text"
       bind:value
       {placeholder}
-      oninput={checkValidity}
-      onchange={checkValidity}
     />
     {#if isMissing}
       <span
