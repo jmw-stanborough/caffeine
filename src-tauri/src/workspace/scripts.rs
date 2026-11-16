@@ -7,7 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
-const SCRIPTS_DIR_NAME: &str = "scripts";
+const SCRIPTS_DIR_NAME: &str = "Scripts";
+const LEGACY_SCRIPTS_DIR_NAME: &str = "scripts";
 const SCRIPTS_META_FILE: &str = ".scripts-meta.json";
 
 const LANGUAGE_SPECS: &[(&str, &str)] = &[
@@ -419,16 +420,20 @@ pub fn workspace_detect_script_languages() -> Result<Vec<DetectedScriptLanguage>
     detect_script_languages()
 }
 
+fn resolve_scripts_root(app: &AppHandle) -> Result<PathBuf, String> {
+    super::resolve_user_workspace_root(app, LEGACY_SCRIPTS_DIR_NAME, SCRIPTS_DIR_NAME)
+}
+
 #[tauri::command]
 pub fn workspace_list_scripts(app: AppHandle) -> Result<Vec<ScriptSummary>, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    list_scripts_in_dir(&roaming_dir)
+    let root = resolve_scripts_root(&app)?;
+    list_scripts_in_dir(&root)
 }
 
 #[tauri::command]
 pub fn workspace_read_script(app: AppHandle, id: String) -> Result<ScriptDocument, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    read_script_in_dir(&roaming_dir, &id)
+    let root = resolve_scripts_root(&app)?;
+    read_script_in_dir(&root, &id)
 }
 
 #[tauri::command]
@@ -439,14 +444,14 @@ pub fn workspace_save_script(
     language_id: String,
     content: String,
 ) -> Result<ScriptDocument, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    save_script_in_dir(&roaming_dir, id, name, language_id, content)
+    let root = resolve_scripts_root(&app)?;
+    save_script_in_dir(&root, id, name, language_id, content)
 }
 
 #[tauri::command]
 pub fn workspace_delete_script(app: AppHandle, id: String) -> Result<(), String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    delete_script_in_dir(&roaming_dir, &id)
+    let root = resolve_scripts_root(&app)?;
+    delete_script_in_dir(&root, &id)
 }
 
 #[tauri::command]
@@ -456,8 +461,8 @@ pub fn workspace_format_script(language_id: String, content: String) -> Result<S
 
 #[tauri::command]
 pub fn workspace_build_script_run_command(app: AppHandle, id: String) -> Result<String, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    build_script_run_command_in_dir(&roaming_dir, &id)
+    let root = resolve_scripts_root(&app)?;
+    build_script_run_command_in_dir(&root, &id)
 }
 
 #[cfg(test)]

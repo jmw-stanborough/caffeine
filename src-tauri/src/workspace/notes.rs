@@ -4,7 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
-const NOTES_DIR_NAME: &str = "notes";
+const NOTES_DIR_NAME: &str = "Notes";
+const LEGACY_NOTES_DIR_NAME: &str = "notes";
 
 fn ensure_notes_dir(roaming_dir: &Path) -> Result<PathBuf, String> {
     let dir = roaming_dir.join(NOTES_DIR_NAME);
@@ -249,16 +250,20 @@ pub fn delete_note_in_dir(roaming_dir: &Path, slug: &str) -> Result<(), String> 
         .map_err(|e| format!("Failed to delete note '{slug}' at {:?}: {e}", path))
 }
 
+fn resolve_notes_root(app: &AppHandle) -> Result<PathBuf, String> {
+    super::resolve_user_workspace_root(app, LEGACY_NOTES_DIR_NAME, NOTES_DIR_NAME)
+}
+
 #[tauri::command]
 pub fn workspace_list_notes(app: AppHandle) -> Result<Vec<NoteSummary>, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    list_notes_in_dir(&roaming_dir)
+    let root = resolve_notes_root(&app)?;
+    list_notes_in_dir(&root)
 }
 
 #[tauri::command]
 pub fn workspace_read_note(app: AppHandle, slug: String) -> Result<NoteDocument, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    read_note_in_dir(&roaming_dir, &slug)
+    let root = resolve_notes_root(&app)?;
+    read_note_in_dir(&root, &slug)
 }
 
 #[tauri::command]
@@ -268,8 +273,8 @@ pub fn workspace_save_note(
     title: String,
     content: String,
 ) -> Result<NoteDocument, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    save_note_in_dir(&roaming_dir, slug, title, content)
+    let root = resolve_notes_root(&app)?;
+    save_note_in_dir(&root, slug, title, content)
 }
 
 #[tauri::command]
@@ -278,14 +283,14 @@ pub fn workspace_rename_note(
     slug: String,
     new_title: String,
 ) -> Result<NoteDocument, String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    rename_note_in_dir(&roaming_dir, &slug, new_title)
+    let root = resolve_notes_root(&app)?;
+    rename_note_in_dir(&root, &slug, new_title)
 }
 
 #[tauri::command]
 pub fn workspace_delete_note(app: AppHandle, slug: String) -> Result<(), String> {
-    let roaming_dir = crate::config::get_user_roaming_dir(&app)?;
-    delete_note_in_dir(&roaming_dir, &slug)
+    let root = resolve_notes_root(&app)?;
+    delete_note_in_dir(&root, &slug)
 }
 
 #[cfg(test)]
