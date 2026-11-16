@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { version } from "$app/environment";
   import { page } from "$app/state";
   import { ChevronDown, Circle, Coffee, Cog } from "$lib/components/icons";
   import SettingsModal from "$lib/components/settings-modal.svelte";
@@ -17,8 +18,11 @@
 
 <aside class="sidebar">
   <div class="brand">
-    <Coffee size={20} class="brand-icon" />
-    <span class="brand-title">Caffeine</span>
+    <div class="brand-row">
+      <Coffee size={20} class="brand-icon" />
+      <span class="brand-title">Caffeine</span>
+    </div>
+    <span class="brand-version">v{version}</span>
   </div>
 
   <nav class="nav-list">
@@ -112,12 +116,26 @@
 
   .brand {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    height: 48px;
+    gap: 2px;
+    height: 54px;
     padding: 0;
     border-bottom: solid var(--width-border) var(--color-border);
+  }
+
+  .brand-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .brand-version {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    letter-spacing: 0.03em;
+    line-height: 1;
   }
 
   :global(.brand-icon) {
