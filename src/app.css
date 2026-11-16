@@ -46,7 +46,6 @@
 :root {
   color-scheme: light;
   --width-border: 1px;
-  --width-prose: 80ch;
 
   --page-padding-y: 1rem;
   --page-padding-x: 1.25rem;
@@ -69,7 +68,6 @@
   --color-warning: #b57614;
   --color-failure: #cc241d;
 
-  --color-tag-text-success: #1d2021;
   --color-tag-text-warning: #1d2021;
   --color-tag-text-failure: #fbf1c7;
 
@@ -98,7 +96,6 @@
     --color-warning: #fabd2f;
     --color-failure: #fb4934;
 
-    --color-tag-text-success: #1d2021;
     --color-tag-text-warning: #1d2021;
     --color-tag-text-failure: #1d2021;
 
@@ -125,7 +122,6 @@
   --color-warning: #fabd2f;
   --color-failure: #fb4934;
 
-  --color-tag-text-success: #1d2021;
   --color-tag-text-warning: #1d2021;
   --color-tag-text-failure: #1d2021;
 
@@ -151,7 +147,6 @@
   --color-warning: #b57614;
   --color-failure: #cc241d;
 
-  --color-tag-text-success: #1d2021;
   --color-tag-text-warning: #1d2021;
   --color-tag-text-failure: #fbf1c7;
 

@@ -1,5 +1,4 @@
-use super::auth::authenticate_and_create_session;
-use super::types::{HistorySyncResponse, LoginRequest, LoginResponse, ServerBroadcastEvent, SnapshotResponse};
+use super::types::{HistorySyncResponse, ServerBroadcastEvent, SnapshotResponse};
 use crate::printer_dashboard::db::{
     delete_printer_entry, get_printer_filter_tags, get_printers, insert_printer,
     update_printer_entry,
@@ -222,22 +221,6 @@ async fn get_history(
     }))
 }
 
-async fn login(
-    State(state): State<Arc<ServerAppState>>,
-    Json(payload): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, (StatusCode, String)> {
-    let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    match authenticate_and_create_session(&conn, &payload.username, &payload.password) {
-        Ok(Some((token, role))) => Ok(Json(LoginResponse {
-            token,
-            username: payload.username,
-            role,
-        })),
-        Ok(None) => Err((StatusCode::UNAUTHORIZED, "Invalid username or password".to_string())),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
-    }
-}
-
 async fn handle_post_server(
     method: Method,
     uri: Uri,
@@ -421,7 +404,6 @@ pub fn create_router(state: Arc<ServerAppState>) -> Router {
     Router::new()
         .route("/api/v1/sync/snapshot", get(get_snapshot))
         .route("/api/v1/sync/history", get(get_history))
-        .route("/api/v1/auth/login", post(login))
         .route("/api/v1/servers", post(handle_post_server))
         .route("/api/v1/servers/reorder", post(handle_reorder_servers))
         .route("/api/v1/servers/{id}", put(handle_put_server).delete(handle_delete_server))

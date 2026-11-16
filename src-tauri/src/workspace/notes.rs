@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 const NOTES_DIR_NAME: &str = "Notes";
-const LEGACY_NOTES_DIR_NAME: &str = "notes";
 
 fn ensure_notes_dir(roaming_dir: &Path) -> Result<PathBuf, String> {
     let dir = roaming_dir.join(NOTES_DIR_NAME);
@@ -245,39 +244,6 @@ pub fn save_note_in_dir(
     read_note_in_dir(roaming_dir, &target_slug)
 }
 
-pub fn rename_note_in_dir(
-    roaming_dir: &Path,
-    slug: &str,
-    new_title: String,
-) -> Result<NoteDocument, String> {
-    let dir = ensure_notes_dir(roaming_dir)?;
-    let old_path = note_file_path(&dir, slug)?;
-    if !old_path.is_file() {
-        return Err(format!("Note '{slug}' not found"));
-    }
-
-    let trimmed_title = new_title.trim();
-    if trimmed_title.is_empty() {
-        return Err("New note title cannot be empty".to_string());
-    }
-
-    let existing_content = fs::read_to_string(&old_path)
-        .map_err(|e| format!("Failed to read note '{slug}' for rename: {e}"))?;
-    let updated_content = replace_or_prepend_heading(&existing_content, trimmed_title);
-    let new_slug = unique_note_slug(&dir, trimmed_title, Some(slug));
-    let new_path = note_file_path(&dir, &new_slug)?;
-
-    fs::write(&new_path, &updated_content)
-        .map_err(|e| format!("Failed to write renamed note '{new_slug}': {e}"))?;
-
-    if new_slug != slug {
-        fs::remove_file(&old_path)
-            .map_err(|e| format!("Failed to remove old note file '{slug}': {e}"))?;
-    }
-
-    read_note_in_dir(roaming_dir, &new_slug)
-}
-
 pub fn delete_note_in_dir(roaming_dir: &Path, slug: &str) -> Result<(), String> {
     let dir = ensure_notes_dir(roaming_dir)?;
     let path = note_file_path(&dir, slug)?;
@@ -288,19 +254,15 @@ pub fn delete_note_in_dir(roaming_dir: &Path, slug: &str) -> Result<(), String> 
         .map_err(|e| format!("Failed to delete note '{slug}' at {:?}: {e}", path))
 }
 
-fn resolve_notes_root(app: &AppHandle) -> Result<PathBuf, String> {
-    super::resolve_user_workspace_root(app, LEGACY_NOTES_DIR_NAME, NOTES_DIR_NAME)
-}
-
 #[tauri::command]
 pub fn workspace_list_notes(app: AppHandle) -> Result<Vec<NoteSummary>, String> {
-    let root = resolve_notes_root(&app)?;
+    let root = super::get_user_workspace_dir(&app)?;
     list_notes_in_dir(&root)
 }
 
 #[tauri::command]
 pub fn workspace_read_note(app: AppHandle, slug: String) -> Result<NoteDocument, String> {
-    let root = resolve_notes_root(&app)?;
+    let root = super::get_user_workspace_dir(&app)?;
     read_note_in_dir(&root, &slug)
 }
 
@@ -311,23 +273,13 @@ pub fn workspace_save_note(
     title: String,
     content: String,
 ) -> Result<NoteDocument, String> {
-    let root = resolve_notes_root(&app)?;
+    let root = super::get_user_workspace_dir(&app)?;
     save_note_in_dir(&root, slug, title, content)
 }
 
 #[tauri::command]
-pub fn workspace_rename_note(
-    app: AppHandle,
-    slug: String,
-    new_title: String,
-) -> Result<NoteDocument, String> {
-    let root = resolve_notes_root(&app)?;
-    rename_note_in_dir(&root, &slug, new_title)
-}
-
-#[tauri::command]
 pub fn workspace_delete_note(app: AppHandle, slug: String) -> Result<(), String> {
-    let root = resolve_notes_root(&app)?;
+    let root = super::get_user_workspace_dir(&app)?;
     delete_note_in_dir(&root, &slug)
 }
 
@@ -365,26 +317,17 @@ mod tests {
         let list = list_notes_in_dir(&dir).unwrap();
         assert_eq!(list.len(), 2);
 
-        let renamed =
-            rename_note_in_dir(&dir, &created.slug, "Core Switch Runbook".to_string()).unwrap();
-        assert_eq!(renamed.slug, "core-switch-runbook");
-        assert_eq!(renamed.title, "Core Switch Runbook");
-        assert!(!dir.join("notes/network-runbook.md").exists());
-
-        let read_back = read_note_in_dir(&dir, "core-switch-runbook").unwrap();
-        assert_eq!(read_back.title, "Core Switch Runbook");
-
         let renamed_on_title = save_note_in_dir(
             &dir,
-            Some("core-switch-runbook".to_string()),
+            Some(created.slug),
             "Edge Switch Runbook".to_string(),
-            "# Core Switch Runbook\nUpdated body".to_string(),
+            "# Network Runbook\nUpdated body".to_string(),
         )
         .unwrap();
         assert_eq!(renamed_on_title.slug, "edge-switch-runbook");
         assert_eq!(renamed_on_title.filename, "edge-switch-runbook.md");
         assert_eq!(renamed_on_title.title, "Edge Switch Runbook");
-        assert!(!dir.join("Notes/core-switch-runbook.md").exists());
+        assert!(!dir.join("Notes/network-runbook.md").exists());
 
         let renamed_on_heading = save_note_in_dir(
             &dir,
@@ -416,10 +359,6 @@ mod tests {
             assert!(
                 save_note_in_dir(&dir, Some(bad_slug.to_string()), "x".into(), "y".into()).is_err(),
                 "expected save_note_in_dir to reject '{bad_slug}'"
-            );
-            assert!(
-                rename_note_in_dir(&dir, bad_slug, "Valid".into()).is_err(),
-                "expected rename_note_in_dir to reject '{bad_slug}'"
             );
             assert!(
                 delete_note_in_dir(&dir, bad_slug).is_err(),

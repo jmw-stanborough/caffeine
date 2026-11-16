@@ -132,7 +132,6 @@ pub fn run() {
             workspace::notes::workspace_list_notes,
             workspace::notes::workspace_read_note,
             workspace::notes::workspace_save_note,
-            workspace::notes::workspace_rename_note,
             workspace::notes::workspace_delete_note,
             workspace::scripts::workspace_detect_script_languages,
             workspace::scripts::workspace_list_scripts,

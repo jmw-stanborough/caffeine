@@ -68,27 +68,6 @@ export class NotesStore {
     }
   }
 
-  async renameNote(slug: string, newTitle: string): Promise<NoteDocument> {
-    this.saving = true;
-    this.errorMessage = null;
-    try {
-      const renamed = await invoke<NoteDocument>("workspace_rename_note", {
-        slug,
-        newTitle,
-      });
-      if (this.activeNote?.slug === slug || this.activeNote?.slug === renamed.slug) {
-        this.activeNote = renamed;
-      }
-      await this.fetchNotes();
-      return renamed;
-    } catch (err: unknown) {
-      this.errorMessage = `Failed to rename note: ${toErrorMessage(err)}`;
-      throw err;
-    } finally {
-      this.saving = false;
-    }
-  }
-
   async deleteNote(slug: string): Promise<void> {
     this.saving = true;
     this.errorMessage = null;

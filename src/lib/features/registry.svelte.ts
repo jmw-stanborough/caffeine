@@ -24,9 +24,7 @@ import { serverStore } from "../../routes/servers/servers.svelte";
 import TerminalWorkspace from "../../routes/terminal/terminal-workspace.svelte";
 import { todoStore } from "../../routes/todo/todo.svelte";
 import {
-  orderDashboardWidgets,
   orderFeatures,
-  orderSidebarItems,
   orderSidebarSections,
 } from "./order";
 import type {
@@ -273,23 +271,6 @@ export function getSidebarSections(): SidebarSection[] {
   return orderSidebarSections(sections);
 }
 
-export function getSidebarNavigationItems(): SidebarItem[] {
-  const items: SidebarItem[] = [
-    DASHBOARD_NAV_ITEM,
-    ...registeredFeatures.map((feature) => ({
-      href: feature.href,
-      label: feature.label,
-      icon: feature.icon,
-      badgeCount:
-        typeof feature.badgeCount === "function"
-          ? feature.badgeCount()
-          : undefined,
-    })),
-  ];
-
-  return orderSidebarItems(items);
-}
-
 export function getDashboardWidgets(): DashboardWidget[] {
   const widgets: DashboardWidget[] = registeredFeatures
     .filter(
@@ -305,7 +286,7 @@ export function getDashboardWidgets(): DashboardWidget[] {
       component: feature.widget,
     }));
 
-  return orderDashboardWidgets(widgets);
+  return orderFeatures(widgets);
 }
 
 export function getPersistentViews(): PersistentFeatureView[] {

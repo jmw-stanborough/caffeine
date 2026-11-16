@@ -23,8 +23,6 @@
   import { serverStore } from "../../routes/servers/servers.svelte";
   import { todoStore } from "../../routes/todo/todo.svelte";
 
-  export type { AppSettings, GeneratedTokenResponse, ServerTokenPublic };
-
   let {
     open = $bindable(false),
   }: {

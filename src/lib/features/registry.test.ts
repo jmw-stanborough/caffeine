@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getDashboardWidgets,
   getPersistentViews,
-  getSidebarNavigationItems,
   getSidebarSections,
   handleSnapshotSync,
   initializeBackgroundFeatures,
@@ -51,30 +50,6 @@ describe("feature registry", () => {
     vi.unstubAllGlobals();
   });
 
-  it("provides sidebar items with Dashboard first followed by alphabetically sorted features", () => {
-    const items = getSidebarNavigationItems();
-    expect(items[0].label).toBe("Dashboard");
-    expect(items[0].href).toBe("/");
-
-    const featureLabels = items.slice(1).map((item) => item.label);
-    const sortedFeatureLabels = [...featureLabels].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }),
-    );
-
-    expect(featureLabels).toEqual(sortedFeatureLabels);
-    expect(featureLabels).toEqual([
-      "File System",
-      "Hardware",
-      "Notes",
-      "Printers",
-      "Scripts",
-      "Servers",
-      "Terminal",
-      "Todo",
-      "Updates",
-    ]);
-  });
-
   it("provides sidebar sections ordered alphabetically with alphabetically ordered children", () => {
     const sections = getSidebarSections();
     expect(sections).toHaveLength(3);
@@ -115,7 +90,7 @@ describe("feature registry", () => {
     expect(widgetLabels).toEqual(["Hardware", "Printers", "Servers", "Workspace"]);
   });
 
-  it("automatically sorts newly registered features in both sidebar and dashboard", () => {
+  it("automatically sorts newly registered features in dashboard widgets", () => {
     const DummyComponent = (() => null) as unknown as Component;
     registerFeature({
       id: "analytics",
@@ -124,10 +99,6 @@ describe("feature registry", () => {
       icon: DummyComponent,
       widget: DummyComponent,
     });
-
-    const items = getSidebarNavigationItems();
-    expect(items[0].label).toBe("Dashboard");
-    expect(items[1].label).toBe("Analytics");
 
     const widgets = getDashboardWidgets();
     expect(widgets[0].label).toBe("Analytics");
