@@ -5,11 +5,11 @@
   interface Props {
     id: string;
     label: string;
-    placeholder: string;
+    placeholder?: string;
     value: string;
   }
 
-  let { id, label, placeholder, value = $bindable("") }: Props = $props();
+  let { id, label, placeholder = "Default", value = $bindable("") }: Props = $props();
 
   let isMissing = $state(false);
 

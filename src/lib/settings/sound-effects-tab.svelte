@@ -1,6 +1,5 @@
 <script lang="ts">
   import SoundSettingInput from "$lib/components/sound-setting-input.svelte";
-  import { DEFAULT_SOUND_PATHS } from "$lib/sound.svelte";
 
   let {
     soundServerUp = $bindable(""),
@@ -21,20 +20,17 @@
 <SoundSettingInput
   id="soundServerUp"
   label="Server Online (Up) Sound"
-  placeholder={`Default (${DEFAULT_SOUND_PATHS.server_up})`}
   bind:value={soundServerUp}
 />
 
 <SoundSettingInput
   id="soundServerDown"
   label="Server Offline (Down) Sound"
-  placeholder={`Default (${DEFAULT_SOUND_PATHS.server_down})`}
   bind:value={soundServerDown}
 />
 
 <SoundSettingInput
   id="soundNotification"
   label="Task Reminder / Notification Sound"
-  placeholder={`Default (${DEFAULT_SOUND_PATHS.notification})`}
   bind:value={soundNotification}
 />
