@@ -1,7 +1,7 @@
 {
   "name": "caffeine",
-  "version": "0.1.0",
-  "description": "",
+  "version": "1.0.0",
+  "description": "Cross-platform network monitoring, endpoint management, and IT workspace desktop application",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -11,7 +11,10 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "version:patch": "node scripts/version.mjs patch",
+    "version:set": "node scripts/version.mjs set",
+    "release:tag": "node scripts/version.mjs tag"
   },
   "license": "MIT",
   "dependencies": {
