@@ -173,10 +173,38 @@ pub fn save_note_in_dir(
 ) -> Result<NoteDocument, String> {
     let dir = ensure_notes_dir(roaming_dir)?;
 
-    let (target_slug, final_content) = match slug {
+    let (previous_slug, target_slug, final_content) = match slug {
         Some(existing_slug) => {
             validate_safe_slug(&existing_slug, "note")?;
-            (existing_slug, content)
+            let old_path = note_file_path(&dir, &existing_slug)?;
+            let old_title = if old_path.is_file() {
+                let existing_content = fs::read_to_string(&old_path)
+                    .map_err(|e| format!("Failed to read existing note '{existing_slug}': {e}"))?;
+                Some(extract_note_title(&existing_content, &existing_slug))
+            } else {
+                None
+            };
+
+            let trimmed_title = title.trim();
+            let heading_title = extract_heading_title(&content);
+            let title_changed = !trimmed_title.is_empty()
+                && old_title.as_deref() != Some(trimmed_title);
+
+            let (effective_title, final_content) = if title_changed {
+                (
+                    trimmed_title.to_string(),
+                    replace_or_prepend_heading(&content, trimmed_title),
+                )
+            } else if let Some(heading) = heading_title {
+                (heading, content)
+            } else if !trimmed_title.is_empty() {
+                (trimmed_title.to_string(), content)
+            } else {
+                (existing_slug.clone(), content)
+            };
+
+            let new_slug = unique_note_slug(&dir, &effective_title, Some(&existing_slug));
+            (Some(existing_slug), new_slug, final_content)
         }
         None => {
             let trimmed_title = title.trim();
@@ -196,13 +224,23 @@ pub fn save_note_in_dir(
             } else {
                 format!("# {effective_title}\n\n{content}")
             };
-            (new_slug, final_content)
+            (None, new_slug, final_content)
         }
     };
 
     let path = note_file_path(&dir, &target_slug)?;
     fs::write(&path, &final_content)
         .map_err(|e| format!("Failed to write note '{target_slug}' to {:?}: {e}", path))?;
+
+    if let Some(old_slug) = previous_slug
+        && old_slug != target_slug
+    {
+        let old_path = note_file_path(&dir, &old_slug)?;
+        if old_path.is_file() {
+            fs::remove_file(&old_path)
+                .map_err(|e| format!("Failed to remove old note file '{old_slug}': {e}"))?;
+        }
+    }
 
     read_note_in_dir(roaming_dir, &target_slug)
 }
@@ -336,18 +374,32 @@ mod tests {
         let read_back = read_note_in_dir(&dir, "core-switch-runbook").unwrap();
         assert_eq!(read_back.title, "Core Switch Runbook");
 
-        let updated = save_note_in_dir(
+        let renamed_on_title = save_note_in_dir(
             &dir,
             Some("core-switch-runbook".to_string()),
-            "Ignored Title".to_string(),
+            "Edge Switch Runbook".to_string(),
+            "# Core Switch Runbook\nUpdated body".to_string(),
+        )
+        .unwrap();
+        assert_eq!(renamed_on_title.slug, "edge-switch-runbook");
+        assert_eq!(renamed_on_title.filename, "edge-switch-runbook.md");
+        assert_eq!(renamed_on_title.title, "Edge Switch Runbook");
+        assert!(!dir.join("Notes/core-switch-runbook.md").exists());
+
+        let renamed_on_heading = save_note_in_dir(
+            &dir,
+            Some("edge-switch-runbook".to_string()),
+            "Edge Switch Runbook".to_string(),
             "# Core Switch Runbook v2\nUpdated body".to_string(),
         )
         .unwrap();
-        assert_eq!(updated.slug, "core-switch-runbook");
-        assert_eq!(updated.title, "Core Switch Runbook v2");
+        assert_eq!(renamed_on_heading.slug, "core-switch-runbook-v2");
+        assert_eq!(renamed_on_heading.filename, "core-switch-runbook-v2.md");
+        assert_eq!(renamed_on_heading.title, "Core Switch Runbook v2");
+        assert!(!dir.join("Notes/edge-switch-runbook.md").exists());
 
-        delete_note_in_dir(&dir, "core-switch-runbook").unwrap();
-        assert!(read_note_in_dir(&dir, "core-switch-runbook").is_err());
+        delete_note_in_dir(&dir, "core-switch-runbook-v2").unwrap();
+        assert!(read_note_in_dir(&dir, "core-switch-runbook-v2").is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }
