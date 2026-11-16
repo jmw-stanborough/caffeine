@@ -127,6 +127,8 @@ pub fn run() {
             workspace::todo::workspace_update_todo,
             workspace::todo::workspace_toggle_todo,
             workspace::todo::workspace_delete_todo,
+            workspace::todo::workspace_acknowledge_todo_reminder,
+            workspace::todo::workspace_snooze_todo_reminder,
             workspace::notes::workspace_list_notes,
             workspace::notes::workspace_read_note,
             workspace::notes::workspace_save_note,
