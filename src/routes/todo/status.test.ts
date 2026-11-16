@@ -18,6 +18,7 @@ function makeTodo(overrides: Partial<TodoItem> = {}): TodoItem {
     due_at: null,
     reminder_at: null,
     reminder_sent: false,
+    reminder_acknowledged: false,
     recurrence: null,
     created_at: NOW - 10_000,
     sort_order: 0,

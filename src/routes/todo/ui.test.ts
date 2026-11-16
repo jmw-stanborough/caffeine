@@ -34,6 +34,7 @@ function makeTodo(overrides: Partial<TodoItem> = {}): TodoItem {
     due_at: null,
     reminder_at: null,
     reminder_sent: false,
+    reminder_acknowledged: false,
     recurrence: null,
     created_at: NOW - 10_000,
     sort_order: 0,
@@ -150,5 +151,58 @@ describe("TodoStore reminder sound", () => {
 
     store.destroy();
     expect(unlistenReminder).toHaveBeenCalledTimes(1);
+  });
+
+  it("tracks unacknowledged reminders and supports acknowledge and snooze", async () => {
+    const activeSent = makeTodo({
+      id: "r1",
+      title: "Check backup",
+      reminder_at: NOW - 30_000,
+      reminder_sent: true,
+      reminder_acknowledged: false,
+    });
+    const alreadyAcked = makeTodo({
+      id: "r2",
+      title: "Already acked",
+      reminder_at: NOW - 30_000,
+      reminder_sent: true,
+      reminder_acknowledged: true,
+    });
+    const completedSent = makeTodo({
+      id: "r3",
+      title: "Done task",
+      completed: true,
+      completed_at: NOW - 1_000,
+      reminder_at: NOW - 30_000,
+      reminder_sent: true,
+      reminder_acknowledged: false,
+    });
+
+    const store = new TodoStore();
+    store.items = [activeSent, alreadyAcked, completedSent];
+    expect(store.unacknowledgedReminders.map((t) => t.id)).toEqual(["r1"]);
+
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "workspace_acknowledge_todo_reminder") {
+        return { ...activeSent, reminder_acknowledged: true };
+      }
+      if (cmd === "workspace_snooze_todo_reminder") {
+        return {
+          ...activeSent,
+          reminder_at: NOW + 15 * 60_000,
+          reminder_sent: false,
+          reminder_acknowledged: false,
+        };
+      }
+      return null;
+    });
+
+    await store.acknowledgeReminder("r1");
+    expect(store.unacknowledgedReminders).toHaveLength(0);
+
+    store.items = [activeSent];
+    await store.snoozeReminder("r1", 15);
+    expect(store.unacknowledgedReminders).toHaveLength(0);
+    expect(store.items[0].reminder_sent).toBe(false);
   });
 });
