@@ -8,7 +8,7 @@ use tauri::State;
 const TODOS_TABLE: &str = "todos";
 const DAY_MS: i64 = 86_400_000;
 const WEEK_MS: i64 = 604_800_000;
-const TODO_SELECT_COLUMNS: &str = "id, title, completed, completed_at, due_at, reminder_at, reminder_sent, recurrence, created_at, sort_order";
+const TODO_SELECT_COLUMNS: &str = "id, title, completed, completed_at, due_at, reminder_at, reminder_sent, reminder_acknowledged, recurrence, created_at, sort_order";
 
 fn map_todo_row(row: &Row<'_>) -> rusqlite::Result<TodoItem> {
     Ok(TodoItem {
@@ -19,9 +19,10 @@ fn map_todo_row(row: &Row<'_>) -> rusqlite::Result<TodoItem> {
         due_at: row.get(4)?,
         reminder_at: row.get(5)?,
         reminder_sent: row.get::<_, i64>(6)? != 0,
-        recurrence: row.get(7)?,
-        created_at: row.get(8)?,
-        sort_order: row.get(9)?,
+        reminder_acknowledged: row.get::<_, i64>(7)? != 0,
+        recurrence: row.get(8)?,
+        created_at: row.get(9)?,
+        sort_order: row.get(10)?,
     })
 }
 
@@ -143,8 +144,8 @@ pub fn create_todo_at(
     let sort_order = next_sort_order(conn, TODOS_TABLE)?;
 
     conn.execute(
-        "INSERT INTO todos (id, title, completed, completed_at, due_at, reminder_at, reminder_sent, recurrence, created_at, sort_order)
-         VALUES (?1, ?2, 0, NULL, ?3, ?4, 0, ?5, ?6, ?7)",
+        "INSERT INTO todos (id, title, completed, completed_at, due_at, reminder_at, reminder_sent, reminder_acknowledged, recurrence, created_at, sort_order)
+         VALUES (?1, ?2, 0, NULL, ?3, ?4, 0, 0, ?5, ?6, ?7)",
         params![
             id,
             title,
@@ -176,21 +177,22 @@ pub fn update_todo_at(
     let recurrence = normalize_recurrence(input.recurrence)?;
     let existing = get_todo_by_id(conn, &input.id)?;
 
-    let reminder_sent = match input.reminder_at {
-        None => false,
-        Some(ts) if input.reminder_at != existing.reminder_at && ts > now_ms => false,
-        Some(_) => existing.reminder_sent,
+    let (reminder_sent, reminder_acknowledged) = match input.reminder_at {
+        None => (false, false),
+        Some(ts) if input.reminder_at != existing.reminder_at && ts > now_ms => (false, false),
+        Some(_) => (existing.reminder_sent, existing.reminder_acknowledged),
     };
 
     conn.execute(
         "UPDATE todos
-         SET title = ?1, due_at = ?2, reminder_at = ?3, reminder_sent = ?4, recurrence = ?5
-         WHERE id = ?6",
+         SET title = ?1, due_at = ?2, reminder_at = ?3, reminder_sent = ?4, reminder_acknowledged = ?5, recurrence = ?6
+         WHERE id = ?7",
         params![
             title,
             input.due_at,
             input.reminder_at,
             i64::from(reminder_sent),
+            i64::from(reminder_acknowledged),
             recurrence,
             input.id
         ],
@@ -222,7 +224,7 @@ pub fn toggle_todo_at(
         .map_err(|e| format!("Failed to mark todo '{id}' uncompleted: {e}"))?;
     } else {
         tx.execute(
-            "UPDATE todos SET completed = 1, completed_at = ?1 WHERE id = ?2",
+            "UPDATE todos SET completed = 1, completed_at = ?1, reminder_acknowledged = 1 WHERE id = ?2",
             params![now_ms, id],
         )
         .map_err(|e| format!("Failed to mark todo '{id}' completed: {e}"))?;
@@ -240,8 +242,8 @@ pub fn toggle_todo_at(
             let sort_order = next_sort_order(&tx, TODOS_TABLE)?;
 
             tx.execute(
-                "INSERT INTO todos (id, title, completed, completed_at, due_at, reminder_at, reminder_sent, recurrence, created_at, sort_order)
-                 VALUES (?1, ?2, 0, NULL, ?3, ?4, 0, ?5, ?6, ?7)",
+                "INSERT INTO todos (id, title, completed, completed_at, due_at, reminder_at, reminder_sent, reminder_acknowledged, recurrence, created_at, sort_order)
+                 VALUES (?1, ?2, 0, NULL, ?3, ?4, 0, 0, ?5, ?6, ?7)",
                 params![
                     next_id,
                     existing.title,
@@ -296,7 +298,7 @@ pub fn list_due_reminders(conn: &Connection, now_ms: i64) -> Result<Vec<TodoItem
 pub fn mark_reminder_sent(conn: &Connection, id: &str) -> Result<(), String> {
     let affected = conn
         .execute(
-            "UPDATE todos SET reminder_sent = 1 WHERE id = ?1",
+            "UPDATE todos SET reminder_sent = 1, reminder_acknowledged = 0 WHERE id = ?1",
             params![id],
         )
         .map_err(|e| format!("Failed to mark reminder sent for todo '{id}': {e}"))?;
@@ -304,6 +306,55 @@ pub fn mark_reminder_sent(conn: &Connection, id: &str) -> Result<(), String> {
         return Err(format!("Todo '{id}' not found when marking reminder sent"));
     }
     Ok(())
+}
+
+pub fn acknowledge_todo_reminder_in_conn(conn: &Connection, id: &str) -> Result<TodoItem, String> {
+    let affected = conn
+        .execute(
+            "UPDATE todos SET reminder_acknowledged = 1 WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|e| format!("Failed to acknowledge reminder for todo '{id}': {e}"))?;
+    if affected == 0 {
+        return Err(format!("Todo '{id}' not found"));
+    }
+    get_todo_by_id(conn, id)
+}
+
+pub fn snooze_todo_reminder_in_conn(
+    conn: &Connection,
+    id: &str,
+    duration_minutes: i64,
+) -> Result<TodoItem, String> {
+    snooze_todo_reminder_at(conn, id, duration_minutes, current_time_ms()?)
+}
+
+pub fn snooze_todo_reminder_at(
+    conn: &Connection,
+    id: &str,
+    duration_minutes: i64,
+    now_ms: i64,
+) -> Result<TodoItem, String> {
+    if duration_minutes <= 0 {
+        return Err("Snooze duration must be greater than zero minutes".to_string());
+    }
+    let next_reminder = duration_minutes
+        .checked_mul(60_000)
+        .and_then(|offset| now_ms.checked_add(offset))
+        .ok_or_else(|| "Snooze timestamp overflowed i64".to_string())?;
+
+    let affected = conn
+        .execute(
+            "UPDATE todos
+             SET reminder_at = ?1, reminder_sent = 0, reminder_acknowledged = 0
+             WHERE id = ?2",
+            params![next_reminder, id],
+        )
+        .map_err(|e| format!("Failed to snooze reminder for todo '{id}': {e}"))?;
+    if affected == 0 {
+        return Err(format!("Todo '{id}' not found"));
+    }
+    get_todo_by_id(conn, id)
 }
 
 #[tauri::command]
@@ -361,6 +412,31 @@ pub fn workspace_delete_todo(
         .lock()
         .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
     delete_todo_in_conn(&conn, &id)
+}
+
+#[tauri::command]
+pub fn workspace_acknowledge_todo_reminder(
+    state: State<'_, WorkspaceDbState>,
+    id: String,
+) -> Result<TodoItem, String> {
+    let conn = state
+        .0
+        .lock()
+        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    acknowledge_todo_reminder_in_conn(&conn, &id)
+}
+
+#[tauri::command]
+pub fn workspace_snooze_todo_reminder(
+    state: State<'_, WorkspaceDbState>,
+    id: String,
+    duration_minutes: i64,
+) -> Result<TodoItem, String> {
+    let conn = state
+        .0
+        .lock()
+        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    snooze_todo_reminder_in_conn(&conn, &id, duration_minutes)
 }
 
 #[cfg(test)]
@@ -585,5 +661,43 @@ mod tests {
 
         mark_reminder_sent(&conn, &due_task.id).unwrap();
         assert!(list_due_reminders(&conn, 2_000).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_acknowledge_and_snooze_reminder() {
+        let mut conn = memory_db();
+        let task = create_todo_at(
+            &conn,
+            CreateTodoInput {
+                title: "Patch firewall".to_string(),
+                due_at: Some(10_000),
+                reminder_at: Some(1_500),
+                recurrence: None,
+            },
+            1_000,
+        )
+        .unwrap();
+        assert!(!task.reminder_acknowledged);
+
+        mark_reminder_sent(&conn, &task.id).unwrap();
+        let sent = get_todo_by_id(&conn, &task.id).unwrap();
+        assert!(sent.reminder_sent);
+        assert!(!sent.reminder_acknowledged);
+
+        let acked = acknowledge_todo_reminder_in_conn(&conn, &task.id).unwrap();
+        assert!(acked.reminder_acknowledged);
+
+        let snoozed = snooze_todo_reminder_at(&conn, &task.id, 15, 2_000).unwrap();
+        assert_eq!(snoozed.reminder_at, Some(2_000 + 15 * 60_000));
+        assert!(!snoozed.reminder_sent);
+        assert!(!snoozed.reminder_acknowledged);
+
+        assert!(snooze_todo_reminder_at(&conn, &task.id, 0, 2_000).is_err());
+
+        mark_reminder_sent(&conn, &task.id).unwrap();
+        let items = toggle_todo_at(&mut conn, &task.id, 3_000).unwrap();
+        let completed = items.iter().find(|t| t.id == task.id).unwrap();
+        assert!(completed.completed);
+        assert!(completed.reminder_acknowledged);
     }
 }

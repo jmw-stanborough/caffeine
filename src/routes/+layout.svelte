@@ -1,6 +1,7 @@
 <script lang="ts">
   import "@fontsource-variable/roboto";
   import "../app.css";
+  import ReminderBanner from "$lib/components/reminder-banner.svelte";
   import Sidebar from "$lib/sidebar.svelte";
   import { clientMode } from "$lib/client-mode.svelte";
   import {
@@ -60,6 +61,7 @@
 <div class="app-shell">
   <Sidebar />
   <main class="content-area">
+    <ReminderBanner />
     <div class="view-wrapper" class:hidden={isCurrentRoutePersistent}>
       {@render children()}
     </div>
@@ -81,18 +83,22 @@
   }
 
   .content-area {
+    display: flex;
+    flex-direction: column;
     flex: 1;
     min-width: 0;
     height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     background-color: var(--color-base);
   }
 
   .view-wrapper,
   .persistent-view-wrapper {
     width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .hidden {

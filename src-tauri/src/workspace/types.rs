@@ -9,6 +9,7 @@ pub struct TodoItem {
     pub due_at: Option<i64>,
     pub reminder_at: Option<i64>,
     pub reminder_sent: bool,
+    pub reminder_acknowledged: bool,
     pub recurrence: Option<String>,
     pub created_at: i64,
     pub sort_order: i64,

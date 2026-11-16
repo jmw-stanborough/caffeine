@@ -9,6 +9,7 @@ export interface TodoItem {
   due_at: number | null;
   reminder_at: number | null;
   reminder_sent: boolean;
+  reminder_acknowledged: boolean;
   recurrence: RecurrenceRule | null;
   created_at: number;
   sort_order: number;

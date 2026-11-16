@@ -45,8 +45,19 @@ export class TodoStore {
     ),
   );
 
+  private unacknowledgedRemindersDerived = $derived.by<TodoItem[]>(() =>
+    this.items.filter(
+      (item) =>
+        !item.completed && item.reminder_sent && !item.reminder_acknowledged,
+    ),
+  );
+
   get categories(): TodoCategories {
     return this.categoriesDerived;
+  }
+
+  get unacknowledgedReminders(): TodoItem[] {
+    return this.unacknowledgedRemindersDerived;
   }
 
   get attentionCount(): number {
@@ -252,6 +263,40 @@ export class TodoStore {
     try {
       await invoke("workspace_delete_todo", { id });
       this.items = this.items.filter((item) => item.id !== id);
+    } catch (err) {
+      this.errorMessage = toErrorMessage(err);
+      throw err;
+    }
+  }
+
+  async acknowledgeReminder(id: string): Promise<TodoItem> {
+    this.errorMessage = null;
+    try {
+      const updated = await invoke<TodoItem>(
+        "workspace_acknowledge_todo_reminder",
+        { id },
+      );
+      this.items = this.items.map((item) =>
+        item.id === updated.id ? updated : item,
+      );
+      return updated;
+    } catch (err) {
+      this.errorMessage = toErrorMessage(err);
+      throw err;
+    }
+  }
+
+  async snoozeReminder(id: string, durationMinutes: number): Promise<TodoItem> {
+    this.errorMessage = null;
+    try {
+      const updated = await invoke<TodoItem>(
+        "workspace_snooze_todo_reminder",
+        { id, durationMinutes },
+      );
+      this.items = this.items.map((item) =>
+        item.id === updated.id ? updated : item,
+      );
+      return updated;
     } catch (err) {
       this.errorMessage = toErrorMessage(err);
       throw err;
