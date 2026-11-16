@@ -9,7 +9,7 @@
 </script>
 
 <p class="settings-description">
-  Controls how much event history is kept in the local database replica.
+  Controls how much synced event history is cached locally when connected to a remote Caffeine server. These limits only prune your local replica database and never delete logs on the server itself.
 </p>
 
 <div class="settings-row">
