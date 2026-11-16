@@ -9,10 +9,11 @@
     isEmptyToner,
     isLowToner,
   } from "./tags";
-  import type { Printer, TonerSupply } from "./types";
+  import type { Printer, PrinterState, TonerSupply } from "./types";
 
   let {
     printer,
+    status = "checking",
     toners = [],
     detectedMake = undefined,
     detectedModel = undefined,
@@ -28,6 +29,7 @@
     showHiddenCount = true,
   }: {
     printer?: Printer;
+    status?: PrinterState["status"];
     toners?: TonerSupply[];
     detectedMake?: string;
     detectedModel?: string;
@@ -56,13 +58,14 @@
     if (normalized === "printing") return "Printing";
     return undefined;
   });
+  let isDisconnected = $derived(status === "offline");
   let isJammed = $derived(hasPaperJam({ paperJam, printerState, statusMessage }));
   let isNoPaper = $derived(hasOutOfPaper({ outOfPaper, printerState, statusMessage }));
   let hasEmptyToner = $derived(toners.some(isEmptyToner));
   let hasLowToner = $derived(toners.some(isLowToner));
   let colorTag = $derived(
     getPrinterColorTag(printer, {
-      status: "online",
+      status,
       toners,
       detectedMake,
       detectedModel,
@@ -72,7 +75,7 @@
   );
   let duplexTag = $derived(
     getPrinterDuplexTag(printer, {
-      status: "online",
+      status,
       toners,
       detectedMake,
       detectedModel,
@@ -102,6 +105,9 @@
     if (hasLowToner) {
       list.push({ id: "toner-low", label: "Toner Low", className: "tag-warning", title: "One or more cartridges are low on toner" });
     }
+    if (isDisconnected) {
+      list.push({ id: "disconnected", label: "Disconnected", className: "tag-failure", title: "Printer is disconnected" });
+    }
     if (isJammed) {
       list.push({ id: "jam", label: "Paper Jam", className: "tag-failure", title: "Printer has a paper jam" });
     }
@@ -123,7 +129,7 @@
   let allTags = $derived(
     printer
       ? getPrinterTags(printer, {
-          status: "online",
+          status,
           toners,
           detectedMake,
           detectedModel,

@@ -225,6 +225,7 @@
       <div class="footer-left">
         <PrinterTagsRow
           {printer}
+          {status}
           {toners}
           {detectedMake}
           {detectedModel}

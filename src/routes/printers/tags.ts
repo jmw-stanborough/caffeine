@@ -38,6 +38,7 @@ export const PREMADE_TAGS = [
   "Duplex",
   "Simplex",
   "Toner Low",
+  "Disconnected",
   "Paper Jam",
   "Out of Paper",
   "Toner Empty",
@@ -46,6 +47,7 @@ export const PREMADE_TAGS = [
 export function isFailureTag(tag: string): boolean {
   const lower = tag.trim().toLowerCase();
   return (
+    lower === "disconnected" ||
     lower === "paper jam" ||
     lower === "out of paper" ||
     lower === "toner empty"
@@ -130,6 +132,10 @@ export function getPrinterTags(
 
   if (hasLowTonerSupply(state?.toners)) {
     tags.push("Toner Low");
+  }
+
+  if (state?.status === "offline") {
+    tags.push("Disconnected");
   }
 
   if (hasPaperJam(state)) {

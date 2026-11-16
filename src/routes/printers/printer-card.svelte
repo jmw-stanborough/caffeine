@@ -129,6 +129,7 @@
 
   <PrinterTagsRow
     {printer}
+    {status}
     {toners}
     {detectedMake}
     {detectedModel}
