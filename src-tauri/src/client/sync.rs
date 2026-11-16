@@ -154,17 +154,34 @@ fn write_snapshot_to_replica(
     for (idx, s) in snapshot.servers.into_iter().enumerate() {
         let agent_port = s.agent.as_ref().map(|a| a.port as i64);
         let agent_api = s.agent.as_ref().map(|a| a.api_key.as_str());
+        let ssh_port = s.ssh_port.map(|p| p as i64);
+        let rdp_port = s.rdp_port.map(|p| p as i64);
+        let remote_username = s.remote_username.as_deref();
         tx.execute(
-            "INSERT INTO servers (id, host, label, description, agent_port, agent_api_key, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO servers (id, host, label, description, agent_port, agent_api_key, ssh_port, rdp_port, remote_username, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
                 host = excluded.host,
                 label = excluded.label,
                 description = excluded.description,
                 agent_port = excluded.agent_port,
                 agent_api_key = excluded.agent_api_key,
+                ssh_port = excluded.ssh_port,
+                rdp_port = excluded.rdp_port,
+                remote_username = excluded.remote_username,
                 sort_order = excluded.sort_order",
-            params![s.id, s.host, s.label, s.description, agent_port, agent_api, idx as i64],
+            params![
+                s.id,
+                s.host,
+                s.label,
+                s.description,
+                agent_port,
+                agent_api,
+                ssh_port,
+                rdp_port,
+                remote_username,
+                idx as i64
+            ],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -345,4 +362,91 @@ async fn stream_websocket_ticks(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::printer_dashboard::types::PrinterFilterConfig;
+    use crate::server_monitor::types::{Agent, Server};
+
+    #[test]
+    fn snapshot_sync_round_trips_remote_access_fields_on_insert_and_conflict() {
+        let db_path = std::env::temp_dir().join(format!(
+            "caffeine_sync_test_{}.db",
+            uuid::Uuid::new_v4()
+        ));
+
+        init_replica_db(&db_path).expect("replica db initialization should succeed");
+
+        let initial_snapshot = SnapshotResponse {
+            servers: vec![Server {
+                id: "srv-1".to_string(),
+                host: "10.0.0.10".to_string(),
+                label: "App Server".to_string(),
+                description: Some("Primary app host".to_string()),
+                agent: Some(Agent {
+                    port: 8443,
+                    api_key: "secret-key".to_string(),
+                }),
+                ssh_port: Some(2222),
+                rdp_port: Some(13389),
+                remote_username: Some("deploy".to_string()),
+            }],
+            printers: Vec::new(),
+            printer_filter_tags: PrinterFilterConfig::default(),
+        };
+
+        write_snapshot_to_replica(&db_path, initial_snapshot)
+            .expect("initial snapshot write should succeed");
+
+        {
+            let conn = Connection::open(&db_path).expect("replica db should open");
+            let servers = crate::server_monitor::db::get_servers(&conn)
+                .expect("get_servers should succeed");
+            assert_eq!(servers.len(), 1);
+            let s = &servers[0];
+            assert_eq!(s.id, "srv-1");
+            assert_eq!(s.ssh_port, Some(2222));
+            assert_eq!(s.rdp_port, Some(13389));
+            assert_eq!(s.remote_username.as_deref(), Some("deploy"));
+        }
+
+        let updated_snapshot = SnapshotResponse {
+            servers: vec![Server {
+                id: "srv-1".to_string(),
+                host: "10.0.0.10".to_string(),
+                label: "App Server".to_string(),
+                description: Some("Updated app host".to_string()),
+                agent: Some(Agent {
+                    port: 9443,
+                    api_key: "new-key".to_string(),
+                }),
+                ssh_port: Some(22),
+                rdp_port: None,
+                remote_username: Some("admin".to_string()),
+            }],
+            printers: Vec::new(),
+            printer_filter_tags: PrinterFilterConfig::default(),
+        };
+
+        write_snapshot_to_replica(&db_path, updated_snapshot)
+            .expect("conflict update snapshot write should succeed");
+
+        {
+            let conn = Connection::open(&db_path).expect("replica db should open");
+            let servers = crate::server_monitor::db::get_servers(&conn)
+                .expect("get_servers should succeed after update");
+            assert_eq!(servers.len(), 1);
+            let s = &servers[0];
+            assert_eq!(s.id, "srv-1");
+            assert_eq!(s.ssh_port, Some(22));
+            assert_eq!(s.rdp_port, None);
+            assert_eq!(s.remote_username.as_deref(), Some("admin"));
+        }
+
+        let _ = std::fs::remove_file(&db_path);
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+    }
 }
