@@ -8,7 +8,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 interface MockAudioInstance {
   src: string;
+  preload: string;
   currentTime: number;
+  load: ReturnType<typeof vi.fn>;
   play: ReturnType<typeof vi.fn>;
 }
 
@@ -24,7 +26,9 @@ describe("SoundManager", () => {
 
     class MockAudio {
       src: string;
+      preload = "";
       currentTime = 5;
+      load = vi.fn();
       play = vi.fn(() => playBehavior(this.src));
 
       constructor(src: string) {
@@ -34,6 +38,7 @@ describe("SoundManager", () => {
     }
 
     vi.stubGlobal("Audio", MockAudio);
+    vi.stubGlobal("AudioContext", undefined);
   });
 
   afterEach(() => {
@@ -89,7 +94,11 @@ describe("SoundManager", () => {
     });
 
     await manager.play("server_up");
-    expect(createdAudios[0].src).toBe("data:audio/mpeg;base64,SUQz");
+    const customUpAudio = createdAudios.find(
+      (a) => a.src === "data:audio/mpeg;base64,SUQz",
+    );
+    expect(customUpAudio).toBeDefined();
+    expect(customUpAudio?.play).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to default sound path when load_custom_sound_cmd returns null", async () => {
@@ -105,7 +114,11 @@ describe("SoundManager", () => {
     });
 
     await manager.play("notification");
-    expect(createdAudios[0].src).toBe(DEFAULT_SOUND_PATHS.notification);
+    const notificationAudio = createdAudios.find(
+      (a) => a.src === DEFAULT_SOUND_PATHS.notification,
+    );
+    expect(notificationAudio).toBeDefined();
+    expect(notificationAudio?.play).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to default sound path when custom audio playback fails", async () => {
@@ -125,11 +138,57 @@ describe("SoundManager", () => {
 
     await manager.play("server_down");
 
-    expect(createdAudios.map((a) => a.src)).toEqual([
-      customDataUrl,
-      DEFAULT_SOUND_PATHS.server_down,
-    ]);
-    expect(createdAudios[1].play).toHaveBeenCalledTimes(1);
+    const customAudio = createdAudios.find((a) => a.src === customDataUrl);
+    const fallbackAudio = createdAudios.find(
+      (a) => a.src === DEFAULT_SOUND_PATHS.server_down,
+    );
+    expect(customAudio?.play).toHaveBeenCalledTimes(1);
+    expect(fallbackAudio?.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("pre-decodes and plays sounds via Web Audio API AudioContext when available", async () => {
+    const startedBuffers: AudioBuffer[] = [];
+    const resumeMock = vi.fn(async () => {});
+    const decodeMock = vi.fn(async (buf: ArrayBuffer) => ({
+      byteLength: buf.byteLength,
+    } as unknown as AudioBuffer));
+
+    class MockAudioContext {
+      state = "suspended";
+      destination = {};
+      resume = resumeMock;
+      decodeAudioData = decodeMock;
+      createBufferSource() {
+        return {
+          buffer: null as AudioBuffer | null,
+          connect: vi.fn(),
+          start: vi.fn(function (this: { buffer: AudioBuffer | null }) {
+            if (this.buffer) startedBuffers.push(this.buffer);
+          }),
+        };
+      }
+    }
+
+    vi.stubGlobal("AudioContext", MockAudioContext);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+      })),
+    );
+
+    mockedInvoke.mockResolvedValue("data:audio/mpeg;base64,SUQz");
+
+    const manager = new SoundManager();
+    await manager.refreshFromSettings({
+      sound_notification: "C:/sounds/notify.mp3",
+    });
+    expect(decodeMock).toHaveBeenCalled();
+
+    await manager.play("notification");
+    expect(resumeMock).toHaveBeenCalledTimes(1);
+    expect(startedBuffers).toHaveLength(1);
   });
 
   it("propagates playback error when default sound playback fails", async () => {
@@ -143,8 +202,9 @@ describe("SoundManager", () => {
     );
   });
 
-  it("is a no-op when Audio is undefined", async () => {
+  it("is a no-op when Audio and AudioContext are undefined", async () => {
     vi.stubGlobal("Audio", undefined);
+    vi.stubGlobal("AudioContext", undefined);
     const manager = new SoundManager();
     await expect(manager.play("notification")).resolves.toBeUndefined();
   });
