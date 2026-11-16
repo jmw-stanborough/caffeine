@@ -19,18 +19,6 @@ export function compareFeaturesAlphabetically<T extends { label: string }>(
   });
 }
 
-export function orderSidebarItems<
-  T extends { href?: string; id?: string; label: string },
->(items: readonly T[]): T[] {
-  const dashboardItem = items.find(isDashboardFeature);
-  const featureItems = items
-    .filter((item) => item !== dashboardItem && !isDashboardFeature(item))
-    .slice()
-    .sort(compareFeaturesAlphabetically);
-
-  return dashboardItem ? [dashboardItem, ...featureItems] : featureItems;
-}
-
 export function orderFeatures<
   T extends { href?: string; id?: string; label: string },
 >(features: readonly T[]): T[] {
@@ -39,8 +27,6 @@ export function orderFeatures<
     .slice()
     .sort(compareFeaturesAlphabetically);
 }
-
-export const orderDashboardWidgets = orderFeatures;
 
 export function orderSidebarSections<
   I extends { label: string },

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { endpointStore, type EndpointStore } from "./endpoint.svelte";
   import type {
-    UpdateCheckResult,
     UpdateFilterCategory,
     UpdateOperationType,
     UpdateSortOption,
@@ -21,85 +20,39 @@
 
   interface Props {
     store?: EndpointStore;
-    updates?: UpdateCheckResult | null;
-    isChecking?: boolean;
-    downloadingId?: string | null;
-    installingId?: string | null;
-    operationStatus?: string | null;
-    errorMessage?: string | null;
-    isAdmin?: boolean;
-    onCheck?: () => void;
-    onDownload?: (target?: string | string[]) => void;
-    onInstall?: (target?: string | string[]) => void;
-    onDownloadAndInstall?: (target?: string | string[]) => void;
-    onRestart?: () => void;
   }
 
-  let {
-    store = endpointStore,
-    updates: propUpdates,
-    isChecking: propIsChecking,
-    downloadingId: propDownloadingId,
-    installingId: propInstallingId,
-    operationStatus: propOperationStatus,
-    errorMessage: propErrorMessage,
-    isAdmin: propIsAdmin,
-    onCheck: propOnCheck,
-    onDownload: propOnDownload,
-    onInstall: propOnInstall,
-    onDownloadAndInstall: propOnDownloadAndInstall,
-    onRestart: propOnRestart,
-  }: Props = $props();
+  let { store = endpointStore }: Props = $props();
 
-  let effectiveUpdates = $derived(propUpdates !== undefined ? propUpdates : store.updates);
-  let effectiveIsChecking = $derived(
-    propIsChecking !== undefined ? propIsChecking : store.updatesChecking,
-  );
-  let effectiveDownloadingId = $derived(
-    propDownloadingId !== undefined ? propDownloadingId : store.downloadingId,
-  );
-  let effectiveInstallingId = $derived(
-    propInstallingId !== undefined ? propInstallingId : store.installingId,
-  );
-  let effectiveOperationStatus = $derived(
-    propOperationStatus !== undefined ? propOperationStatus : store.operationStatus,
-  );
-  let effectiveErrorMessage = $derived(
-    propErrorMessage !== undefined ? propErrorMessage : store.updatesError,
-  );
-  let effectiveIsAdmin = $derived(
-    propIsAdmin !== undefined ? propIsAdmin : store.isAdmin,
-  );
-
-  let isRebootRequired = $derived(effectiveUpdates?.reboot_required ?? false);
+  let isRebootRequired = $derived(store.updates?.reboot_required ?? false);
 
   let hasPendingDownloads = $derived(
-    effectiveUpdates?.updates.some((u) => !u.is_downloaded) ?? false,
+    store.updates?.updates.some((u) => !u.is_downloaded) ?? false,
   );
   let hasReadyInstalls = $derived(
-    effectiveUpdates?.updates.some((u) => u.is_downloaded) ?? false,
+    store.updates?.updates.some((u) => u.is_downloaded) ?? false,
   );
 
   let pendingDownloadBytes = $derived(
-    effectiveUpdates?.updates
+    store.updates?.updates
       .filter((u) => !u.is_downloaded)
       .reduce((sum, u) => sum + (u.size_bytes ?? 0), 0) ?? 0,
   );
 
   let mandatoryCount = $derived(
-    effectiveUpdates?.updates.filter((u) => u.is_mandatory).length ?? 0,
+    store.updates?.updates.filter((u) => u.is_mandatory).length ?? 0,
   );
 
   let readyToInstallCount = $derived(
-    effectiveUpdates?.updates.filter((u) => u.is_downloaded).length ?? 0,
+    store.updates?.updates.filter((u) => u.is_downloaded).length ?? 0,
   );
 
   let pendingDownloadCount = $derived(
-    effectiveUpdates?.updates.filter((u) => !u.is_downloaded).length ?? 0,
+    store.updates?.updates.filter((u) => !u.is_downloaded).length ?? 0,
   );
 
   let isBusy = $derived(
-    effectiveIsChecking || effectiveDownloadingId !== null || effectiveInstallingId !== null,
+    store.updatesChecking || store.downloadingId !== null || store.installingId !== null,
   );
 
   let activeFilter = $state<UpdateFilterCategory>("all");
@@ -109,7 +62,7 @@
   let showRestartModal = $state(false);
 
   let filteredUpdates = $derived(
-    filterAndSortUpdates(effectiveUpdates?.updates, activeFilter, searchQuery, sortOption),
+    filterAndSortUpdates(store.updates?.updates, activeFilter, searchQuery, sortOption),
   );
 
   let allFilteredSelected = $derived(
@@ -118,7 +71,7 @@
   );
 
   let selectedUpdatesList = $derived(
-    effectiveUpdates?.updates.filter((u) => selectedIds.has(u.id)) ?? [],
+    store.updates?.updates.filter((u) => selectedIds.has(u.id)) ?? [],
   );
 
   let selectedTotalBytes = $derived(
@@ -160,21 +113,16 @@
   }
 
   function handleCheck() {
-    if (propOnCheck) {
-      propOnCheck();
-    } else {
-      void store.checkForUpdates();
-    }
+    void store.checkForUpdates();
   }
 
   function dispatchOrQueue(
     type: UpdateOperationType,
     target: string | string[] | undefined,
-    propAction?: (target?: string | string[]) => void,
-    storeAction?: (target?: string | string[]) => Promise<unknown> | void,
+    storeAction: (target?: string | string[]) => Promise<unknown> | void,
   ) {
     if (isBusy && typeof target === "string") {
-      const updateItem = effectiveUpdates?.updates.find((u) => u.id === target);
+      const updateItem = store.updates?.updates.find((u) => u.id === target);
       store.queueOperation({
         id: target,
         title: updateItem?.title ?? target,
@@ -183,36 +131,26 @@
       return;
     }
 
-    if (propAction) {
-      propAction(target);
-    } else if (storeAction) {
-      void storeAction(target);
-    }
+    void storeAction(target);
   }
 
   function handleDownload(target?: string | string[]) {
-    dispatchOrQueue("download", target, propOnDownload, (t) => store.downloadUpdates(t));
+    dispatchOrQueue("download", target, (t) => store.downloadUpdates(t));
   }
 
   function handleInstall(target?: string | string[]) {
     if (isRebootRequired) return;
-    dispatchOrQueue("install", target, propOnInstall, (t) => store.installUpdates(t));
+    dispatchOrQueue("install", target, (t) => store.installUpdates(t));
   }
 
   function handleDownloadAndInstall(target?: string | string[]) {
     if (isRebootRequired) return;
-    dispatchOrQueue("download_and_install", target, propOnDownloadAndInstall, (t) =>
-      store.downloadAndInstallUpdates(t),
-    );
+    dispatchOrQueue("download_and_install", target, (t) => store.downloadAndInstallUpdates(t));
   }
 
   function confirmRestart() {
     showRestartModal = false;
-    if (propOnRestart) {
-      propOnRestart();
-    } else {
-      void store.restartSystem();
-    }
+    void store.restartSystem();
   }
 
   function handleBatchDownload() {
@@ -236,13 +174,13 @@
 
 <div class="updates-module">
   <UpdatesHeader
-    updates={effectiveUpdates}
+    updates={store.updates}
     {isRebootRequired}
     {hasPendingDownloads}
     {hasReadyInstalls}
     {isBusy}
-    downloadingId={effectiveDownloadingId}
-    installingId={effectiveInstallingId}
+    downloadingId={store.downloadingId}
+    installingId={store.installingId}
     onRestart={() => (showRestartModal = true)}
     onDownloadAndInstall={() => handleDownloadAndInstall()}
     onDownload={() => handleDownload()}
@@ -253,37 +191,37 @@
     <UpdatesRebootBanner onRestart={() => (showRestartModal = true)} />
   {/if}
 
-  {#if !effectiveIsAdmin}
+  {#if !store.isAdmin}
     <UpdatesAdminBanner />
   {/if}
 
-  {#if effectiveOperationStatus}
+  {#if store.operationStatus}
     <UpdatesStatusBanner
-      operationStatus={effectiveOperationStatus}
+      operationStatus={store.operationStatus}
       updateProgress={store.updateProgress}
       queueLength={store.operationQueue.length}
       onClearQueue={() => store.clearQueue()}
     />
   {/if}
 
-  {#if effectiveErrorMessage}
-    <UpdatesErrorBanner message={effectiveErrorMessage} onRetry={handleCheck} />
+  {#if store.updatesError}
+    <UpdatesErrorBanner message={store.updatesError} onRetry={handleCheck} />
   {/if}
 
-  {#if effectiveUpdates && effectiveUpdates.updates.length > 0}
+  {#if store.updates && store.updates.updates.length > 0}
     <UpdatesStatsBar
-      totalUpdates={effectiveUpdates.updates.length}
+      totalUpdates={store.updates.updates.length}
       {pendingDownloadCount}
       {pendingDownloadBytes}
       {readyToInstallCount}
       {mandatoryCount}
-      lastChecked={effectiveUpdates.last_checked}
+      lastChecked={store.updates.last_checked}
     />
 
     <UpdatesFilterBar
       {activeFilter}
       onFilterChange={(cat) => (activeFilter = cat)}
-      totalCount={effectiveUpdates.updates.length}
+      totalCount={store.updates.updates.length}
       {pendingDownloadCount}
       {readyToInstallCount}
       {mandatoryCount}
@@ -310,15 +248,15 @@
   {/if}
 
   <div class="updates-content">
-    {#if effectiveIsChecking}
+    {#if store.updatesChecking}
       <UpdatesEmptyState state="loading" onCheck={handleCheck} />
-    {:else if effectiveUpdates && effectiveUpdates.updates.length === 0}
+    {:else if store.updates && store.updates.updates.length === 0}
       <UpdatesEmptyState
         state="clean"
-        lastChecked={effectiveUpdates.last_checked}
+        lastChecked={store.updates.last_checked}
         onCheck={handleCheck}
       />
-    {:else if effectiveUpdates && filteredUpdates.length === 0}
+    {:else if store.updates && filteredUpdates.length === 0}
       <UpdatesEmptyState
         state="no-match"
         onCheck={handleCheck}
@@ -327,7 +265,7 @@
           searchQuery = "";
         }}
       />
-    {:else if effectiveUpdates && filteredUpdates.length > 0}
+    {:else if store.updates && filteredUpdates.length > 0}
       <UpdatesListView
         updates={filteredUpdates}
         {selectedIds}

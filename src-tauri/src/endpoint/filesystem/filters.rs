@@ -1,26 +1,12 @@
 use super::types::{FilterCondition, FilterCriterion, FilterProperty, FilterTarget, SavedFilter};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-const APP_DIR_NAME: &str = "caffeine";
 const FILTERS_FILE_NAME: &str = "filesystem_filters.json";
 
 fn get_filters_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .or_else(|_| {
-            app.path()
-                .config_dir()
-                .map(|p| p.join(APP_DIR_NAME))
-        })
-        .map_err(|e| format!("Failed to resolve user config directory: {e}"))?;
-
-    fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config directory at {config_dir:?}: {e}"))?;
-
-    Ok(config_dir.join(FILTERS_FILE_NAME))
+    Ok(crate::config::get_user_roaming_dir(app)?.join(FILTERS_FILE_NAME))
 }
 
 pub fn get_preset_filters() -> Vec<SavedFilter> {

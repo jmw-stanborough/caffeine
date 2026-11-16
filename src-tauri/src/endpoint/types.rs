@@ -164,12 +164,3 @@ pub struct ShellDetectionResult {
     pub version: String,
     pub is_pwsh: bool,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TerminalCommandResult {
-    pub command: String,
-    pub exit_code: i32,
-    pub stdout: String,
-    pub stderr: String,
-    pub working_dir: String,
-}

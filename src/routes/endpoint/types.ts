@@ -157,20 +157,3 @@ export interface ShellDetectionResult {
   version: string;
   is_pwsh: boolean;
 }
-
-export interface TerminalCommandResult {
-  command: string;
-  exit_code: number;
-  stdout: string;
-  stderr: string;
-  working_dir: string;
-}
-
-export interface TerminalEntry {
-  id: string;
-  command: string;
-  working_dir: string;
-  timestamp: string;
-  result?: TerminalCommandResult;
-  is_running?: boolean;
-}

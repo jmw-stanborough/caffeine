@@ -16,14 +16,12 @@
   let unlistenData: UnlistenFn | null = null;
   let unlistenExit: UnlistenFn | null = null;
   let isConnecting = $state(true);
-  let connectionError = $state<string | null>(null);
 
   const effectivePort = $derived(server.ssh_port ?? 22);
   const effectiveUser = $derived(server.remote_username || null);
 
   async function startSession() {
     if (!terminalView) return;
-    connectionError = null;
     isConnecting = true;
 
     const dims = terminalView.getDimensions();
@@ -39,7 +37,6 @@
       });
       isConnecting = false;
     } catch (err: unknown) {
-      connectionError = String(err);
       terminalView?.writeError("Failed to launch SSH session", err);
       isConnecting = false;
       return;
