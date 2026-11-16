@@ -26,7 +26,6 @@
   let description = $state("");
   let hasAgent = $state(false);
   let agentPort = $state(DEFAULT_AGENT_PORT);
-  let agentApiKey = $state("");
   let sshPort = $state<number | undefined>(22);
   let rdpPort = $state<number | undefined>(3389);
   let remoteUsername = $state("");
@@ -43,7 +42,6 @@
         description = server.description ?? "";
         hasAgent = Boolean(server.agent);
         agentPort = server.agent?.port ?? DEFAULT_AGENT_PORT;
-        agentApiKey = server.agent?.api_key ?? "";
         sshPort = server.ssh_port ?? 22;
         rdpPort = server.rdp_port ?? 3389;
         remoteUsername = server.remote_username ?? "";
@@ -54,7 +52,6 @@
         description = "";
         hasAgent = false;
         agentPort = DEFAULT_AGENT_PORT;
-        agentApiKey = "";
         sshPort = 22;
         rdpPort = 3389;
         remoteUsername = "";
@@ -89,7 +86,7 @@
       agent: hasAgent
         ? {
             port: Number(agentPort),
-            api_key: agentApiKey.trim(),
+            api_key: server?.agent?.api_key ?? "",
           }
         : undefined,
       ssh_port: sshPort ? Number(sshPort) : undefined,
@@ -154,18 +151,14 @@
 
   <label class="checkbox-field">
     <input type="checkbox" bind:checked={hasAgent} />
-    <span>Enable Agent Integration</span>
+    <span>Use Custom Probe Port</span>
   </label>
 
   {#if hasAgent}
     <div class="agent-fields">
       <label class="form-field">
-        <span>Agent Port</span>
+        <span>Custom TCP Probe Port</span>
         <input type="number" bind:value={agentPort} />
-      </label>
-      <label class="form-field">
-        <span>Agent API Key</span>
-        <input type="password" bind:value={agentApiKey} />
       </label>
     </div>
   {/if}

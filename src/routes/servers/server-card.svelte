@@ -45,7 +45,7 @@
       {/if}
       <h2 class="card-label">{server.label}</h2>
       {#if server.agent && !nocMode}
-        <span class="badge-agent">Agent :{server.agent.port}</span>
+        <span class="badge-agent">Port :{server.agent.port}</span>
       {/if}
     </div>
 
