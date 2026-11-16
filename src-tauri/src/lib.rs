@@ -20,8 +20,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            if let Err(e) = sound::ensure_windows_aumid_registered() {
-                eprintln!("Failed to register Windows AUMID for notifications: {e}");
+            match sound::resolve_notification_icon_path(app.handle()) {
+                Ok(icon_path) => {
+                    if let Err(e) = sound::ensure_windows_aumid_registered(&icon_path) {
+                        eprintln!("Failed to register Windows AUMID for notifications: {e}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to materialize notification icon: {e}");
+                }
             }
 
             if let Some(window) = app.get_webview_window("main") {
