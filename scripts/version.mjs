@@ -5,11 +5,13 @@ import { fileURLToPath } from "node:url";
 
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
 const CARGO_VERSION_PATTERN = /(\[package\][\s\S]*?^version\s*=\s*")([^"]+)(")/m;
+const CARGO_LOCK_VERSION_PATTERN = /(\[\[package\]\]\r?\nname = "caffeine"\r?\nversion = ")([^"]+)(")/;
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageJsonPath = resolve(rootDir, "package.json");
 const tauriConfPath = resolve(rootDir, "src-tauri/tauri.conf.json");
 const cargoTomlPath = resolve(rootDir, "src-tauri/Cargo.toml");
+const cargoLockPath = resolve(rootDir, "src-tauri/Cargo.lock");
 
 function assertValidSemver(version, source) {
   if (typeof version !== "string" || !SEMVER_PATTERN.test(version)) {
@@ -55,6 +57,14 @@ function writeAllVersions(version) {
   writeJsonVersion(packageJsonPath, version);
   writeJsonVersion(tauriConfPath, version);
   writeCargoVersion(cargoTomlPath, version);
+  const lockContent = readFileSync(cargoLockPath, "utf-8");
+  if (CARGO_LOCK_VERSION_PATTERN.test(lockContent)) {
+    const updatedLock = lockContent.replace(
+      CARGO_LOCK_VERSION_PATTERN,
+      (_, prefix, _old, suffix) => `${prefix}${version}${suffix}`,
+    );
+    writeFileSync(cargoLockPath, updatedLock, "utf-8");
+  }
 }
 
 function patchVersion() {
