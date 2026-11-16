@@ -17,7 +17,9 @@
   import WorkspaceTab from "$lib/settings/workspace-tab.svelte";
   import { soundManager } from "$lib/sound.svelte";
   import { applyTheme } from "$lib/theme";
+  import { notesStore } from "../../routes/notes/notes.svelte";
   import { printerStore } from "../../routes/printers/printers.svelte";
+  import { scriptsStore } from "../../routes/scripts/scripts.svelte";
   import { serverStore } from "../../routes/servers/servers.svelte";
   import { todoStore } from "../../routes/todo/todo.svelte";
 
@@ -43,6 +45,7 @@
   let retentionDays = $state(14);
   let maxLogEntries = $state(1000);
   let todoWarningMinutes = $state(120);
+  let workspaceDir = $state("");
   let soundServerUp = $state("");
   let soundServerDown = $state("");
   let soundNotification = $state("");
@@ -84,6 +87,7 @@
       retentionDays = settings.retention_days;
       maxLogEntries = settings.max_log_entries;
       todoWarningMinutes = settings.todo_warning_minutes ?? 120;
+      workspaceDir = settings.workspace_dir ?? "";
       soundServerUp = settings.sound_server_up ?? "";
       soundServerDown = settings.sound_server_down ?? "";
       soundNotification = settings.sound_notification ?? "";
@@ -184,6 +188,7 @@
       retention_days: validRetentionDays,
       max_log_entries: validMaxLogEntries,
       todo_warning_minutes: validTodoWarningMinutes,
+      workspace_dir: workspaceDir.trim() || null,
       sound_server_up: soundServerUp.trim() || null,
       sound_server_down: soundServerDown.trim() || null,
       sound_notification: soundNotification.trim() || null,
@@ -207,6 +212,8 @@
         serverStore.fetchServers(),
         printerStore.fetchPrinters(),
         todoStore.refreshSettings(),
+        notesStore.fetchNotes(),
+        scriptsStore.fetchScripts(),
         soundManager.refreshFromSettings(payload),
         refreshClientMode(),
       ]);
@@ -310,7 +317,7 @@
             bind:soundNotification
           />
         {:else if activeTab === "workspace"}
-          <WorkspaceTab bind:todoWarningMinutes />
+          <WorkspaceTab bind:todoWarningMinutes bind:workspaceDir />
         {/if}
       </div>
 

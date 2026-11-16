@@ -25,6 +25,7 @@ export interface AppSettings {
   retention_days: number;
   max_log_entries: number;
   todo_warning_minutes?: number;
+  workspace_dir?: string | null;
   sound_server_up?: string | null;
   sound_server_down?: string | null;
   sound_notification?: string | null;
