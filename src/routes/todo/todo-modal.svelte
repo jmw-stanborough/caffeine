@@ -188,20 +188,6 @@
     min-width: 0;
   }
 
-  .form-field select {
-    background-color: var(--color-base);
-    border: solid var(--width-border) var(--color-border);
-    border-radius: 0.375rem;
-    padding: 0.5rem 0.65rem;
-    color: var(--color-text);
-    font-size: 0.9rem;
-    outline: none;
-  }
-
-  .form-field select:focus {
-    border-color: var(--color-primary);
-  }
-
   .btn-clear {
     background: transparent;
     border: solid var(--width-border) var(--color-border);

@@ -29,7 +29,11 @@
 
   function handleBackdropKeyDown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      open = false;
+      if (onBackdropClose) {
+        onBackdropClose();
+      } else {
+        open = false;
+      }
     }
   }
 </script>

@@ -33,7 +33,7 @@
   });
 </script>
 
-<div class="form-group">
+<div class="form-field sound-field">
   <label for={id}>{label}</label>
   <div class="sound-input-row">
     <input
@@ -60,18 +60,6 @@
 </div>
 
 <style>
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 12px;
-  }
-
-  label {
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
   .sound-input-row {
     display: flex;
     align-items: center;
