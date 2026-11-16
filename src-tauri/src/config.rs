@@ -90,8 +90,6 @@ pub struct MachineSettings {
     pub server_bind: String,
     #[serde(default)]
     pub server_tokens: Vec<ServerTokenEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub admin_token: Option<String>,
 }
 
 impl Default for MachineSettings {
@@ -101,7 +99,6 @@ impl Default for MachineSettings {
             server_port: default_port(),
             server_bind: default_server_bind(),
             server_tokens: Vec::new(),
-            admin_token: None,
         }
     }
 }
@@ -120,8 +117,6 @@ pub struct AppSettings {
     pub server_bind: String,
     #[serde(default)]
     pub server_tokens: Vec<ServerTokenPublic>,
-    #[serde(default)]
-    pub server_admin_token: Option<String>,
     #[serde(default)]
     pub admin_token: Option<String>,
     #[serde(default = "default_theme")]
@@ -179,7 +174,6 @@ impl Default for AppSettings {
             server_port: default_port(),
             server_bind: default_server_bind(),
             server_tokens: Vec::new(),
-            server_admin_token: None,
             admin_token: None,
             theme: default_theme(),
             retention_days: default_retention_days(),
@@ -232,23 +226,8 @@ fn load_machine_settings_from_path(path: &std::path::Path) -> Result<MachineSett
     let contents = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read machine settings at {:?}: {e}", path))?;
 
-    let mut settings = serde_json::from_str::<MachineSettings>(&contents)
-        .map_err(|e| format!("Failed to parse machine settings JSON at {:?}: {e}", path))?;
-
-    if settings.server_tokens.is_empty() {
-        if let Some(tok) = &settings.admin_token {
-            if !tok.trim().is_empty() {
-                settings.server_tokens.push(ServerTokenEntry {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    label: "Default Admin".to_string(),
-                    token: tok.trim().to_string(),
-                    created_at: current_utc_iso(),
-                });
-            }
-        }
-    }
-
-    Ok(settings)
+    serde_json::from_str::<MachineSettings>(&contents)
+        .map_err(|e| format!("Failed to parse machine settings JSON at {:?}: {e}", path))
 }
 
 pub fn save_machine_settings(settings: &MachineSettings) -> Result<(), String> {
@@ -304,7 +283,6 @@ fn app_settings_from_parts(
         server_port: machine_settings.server_port,
         server_bind: machine_settings.server_bind,
         server_tokens: public_tokens,
-        server_admin_token: machine_settings.admin_token,
         admin_token: user_settings.admin_token,
         theme: user_settings.theme,
         retention_days: user_settings.retention_days,
@@ -356,7 +334,6 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), 
         server_port: settings.server_port,
         server_bind: settings.server_bind.clone(),
         server_tokens: current_machine_settings.server_tokens.clone(),
-        admin_token: None,
     };
 
     if new_machine_settings != current_machine_settings {
@@ -469,10 +446,8 @@ pub fn mask_token(token: &str) -> String {
 
 pub fn generate_secure_token() -> String {
     let mut bytes = [0u8; 32];
-    argon2::password_hash::rand_core::RngCore::fill_bytes(
-        &mut argon2::password_hash::rand_core::OsRng,
-        &mut bytes,
-    );
+    bytes[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+    bytes[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
     format!("caff_sec_{}", hex::encode(bytes))
 }
 
@@ -651,7 +626,6 @@ mod tests {
             server_port: 6310,
             server_bind: "127.0.0.1".to_string(),
             server_tokens: Vec::new(),
-            admin_token: Some("machine_server_token".to_string()),
         };
 
         let user_json = serde_json::to_string(&user).unwrap();
@@ -661,7 +635,6 @@ mod tests {
         assert!(!machine_json.contains("target_host"));
         assert!(!machine_json.contains("theme"));
         assert!(!machine_json.contains("todo_warning_minutes"));
-        assert!(machine_json.contains("machine_server_token"));
 
         let combined = app_settings_from_parts(user, machine);
         assert_eq!(combined.todo_warning_minutes, 90);
@@ -684,7 +657,6 @@ mod tests {
             server_port: 6310,
             server_bind: "0.0.0.0".to_string(),
             server_tokens: Vec::new(),
-            admin_token: None,
         };
         let ms2 = MachineSettings::default();
         assert_eq!(ms1, ms2);
@@ -694,7 +666,6 @@ mod tests {
             server_port: 6310,
             server_bind: "0.0.0.0".to_string(),
             server_tokens: Vec::new(),
-            admin_token: None,
         };
         assert_ne!(ms1, ms3);
     }
@@ -732,21 +703,6 @@ mod tests {
         let loaded = load_machine_settings_from_path(&settings_path).unwrap();
         assert_eq!(loaded, MachineSettings::default());
         assert!(!non_existent_dir.exists());
-    }
-
-    #[test]
-    fn test_load_machine_settings_migrates_legacy_admin_token() {
-        let dir = unique_test_dir("caffeine_config_migrate");
-        fs::create_dir_all(&dir).unwrap();
-        let settings_path = dir.join(MACHINE_SETTINGS_FILE_NAME);
-        fs::write(&settings_path, r#"{"server_mode":true,"admin_token":"legacy_tok"}"#).unwrap();
-
-        let loaded = load_machine_settings_from_path(&settings_path).unwrap();
-        assert!(loaded.server_mode);
-        assert_eq!(loaded.server_tokens.len(), 1);
-        assert_eq!(loaded.server_tokens[0].token, "legacy_tok");
-
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

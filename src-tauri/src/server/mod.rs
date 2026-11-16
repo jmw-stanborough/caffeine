@@ -91,23 +91,9 @@ pub fn init_server_db(db_path: &PathBuf) -> Result<Connection, String> {
         PRAGMA busy_timeout = 5000;
         PRAGMA journal_mode = WAL;
         PRAGMA foreign_keys = ON;
-
-        CREATE TABLE IF NOT EXISTS server_users (
-            id TEXT PRIMARY KEY,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'admin',
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS server_sessions (
-            token TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES server_users(id) ON DELETE CASCADE,
-            expires_at TEXT NOT NULL
-        );
         ",
     )
-    .map_err(|e| format!("Failed to initialize server users schema: {e}"))?;
+    .map_err(|e| format!("Failed to configure server database pragmas: {e}"))?;
 
     Ok(conn)
 }

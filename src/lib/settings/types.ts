@@ -19,7 +19,6 @@ export interface AppSettings {
   server_port: number;
   server_bind: string;
   server_tokens?: ServerTokenPublic[];
-  server_admin_token?: string | null;
   admin_token: string | null;
   theme: string;
   retention_days: number;
