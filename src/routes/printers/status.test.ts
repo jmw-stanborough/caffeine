@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { getEffectivePrinterStatus } from "./status";
-import type { TonerSupply } from "./types";
+import { filterPrintersByTags, getPrinterTags, isFailureTag } from "./tags";
+import type { Printer, TonerSupply } from "./types";
+
+const samplePrinter: Printer = {
+  id: "p1",
+  host: "192.168.1.50",
+  label: "Main Office",
+  snmp_community: "public",
+};
 
 function createToner(percent: number, color = "black"): TonerSupply {
   return {
@@ -67,5 +75,42 @@ describe("getEffectivePrinterStatus", () => {
         outOfPaper: false,
       }),
     ).toBe("online");
+  });
+});
+
+describe("disconnected printer badge", () => {
+  it("classifies Disconnected as a failure tag", () => {
+    expect(isFailureTag("Disconnected")).toBe(true);
+    expect(isFailureTag("disconnected")).toBe(true);
+  });
+
+  it("includes Disconnected tag when printer status is offline", () => {
+    const tags = getPrinterTags(samplePrinter, {
+      status: "offline",
+      toners: [],
+    });
+    expect(tags).toContain("Disconnected");
+  });
+
+  it("omits Disconnected tag when printer is online or checking", () => {
+    expect(
+      getPrinterTags(samplePrinter, { status: "online", toners: [] }),
+    ).not.toContain("Disconnected");
+    expect(
+      getPrinterTags(samplePrinter, { status: "checking", toners: [] }),
+    ).not.toContain("Disconnected");
+  });
+
+  it("matches offline printers when filtering by Disconnected tag", () => {
+    const onlinePrinter: Printer = { ...samplePrinter, id: "p2" };
+    const matched = filterPrintersByTags(
+      [samplePrinter, onlinePrinter],
+      {
+        p1: { status: "offline", toners: [] },
+        p2: { status: "online", toners: [] },
+      },
+      ["Disconnected"],
+    );
+    expect(matched).toEqual([samplePrinter]);
   });
 });
