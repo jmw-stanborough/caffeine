@@ -29,6 +29,8 @@ pub struct UserProfileSettings {
     #[serde(default = "default_todo_warning_minutes")]
     pub todo_warning_minutes: u32,
     #[serde(default)]
+    pub workspace_dir: Option<String>,
+    #[serde(default)]
     pub sound_server_up: Option<String>,
     #[serde(default)]
     pub sound_server_down: Option<String>,
@@ -46,6 +48,7 @@ impl Default for UserProfileSettings {
             retention_days: default_retention_days(),
             max_log_entries: default_max_log_entries(),
             todo_warning_minutes: default_todo_warning_minutes(),
+            workspace_dir: None,
             sound_server_up: None,
             sound_server_down: None,
             sound_notification: None,
@@ -130,6 +133,8 @@ pub struct AppSettings {
     #[serde(default = "default_todo_warning_minutes")]
     pub todo_warning_minutes: u32,
     #[serde(default)]
+    pub workspace_dir: Option<String>,
+    #[serde(default)]
     pub sound_server_up: Option<String>,
     #[serde(default)]
     pub sound_server_down: Option<String>,
@@ -180,6 +185,7 @@ impl Default for AppSettings {
             retention_days: default_retention_days(),
             max_log_entries: default_max_log_entries(),
             todo_warning_minutes: default_todo_warning_minutes(),
+            workspace_dir: None,
             sound_server_up: None,
             sound_server_down: None,
             sound_notification: None,
@@ -304,6 +310,7 @@ fn app_settings_from_parts(
         retention_days: user_settings.retention_days,
         max_log_entries: user_settings.max_log_entries,
         todo_warning_minutes: user_settings.todo_warning_minutes,
+        workspace_dir: user_settings.workspace_dir,
         sound_server_up: user_settings.sound_server_up,
         sound_server_down: user_settings.sound_server_down,
         sound_notification: user_settings.sound_notification,
@@ -327,6 +334,7 @@ fn user_profile_from_app_settings(settings: &AppSettings) -> UserProfileSettings
         retention_days: settings.retention_days,
         max_log_entries: settings.max_log_entries,
         todo_warning_minutes: settings.todo_warning_minutes,
+        workspace_dir: normalize_optional_path(&settings.workspace_dir),
         sound_server_up: normalize_optional_path(&settings.sound_server_up),
         sound_server_down: normalize_optional_path(&settings.sound_server_down),
         sound_notification: normalize_optional_path(&settings.sound_notification),
@@ -411,6 +419,19 @@ pub async fn update_app_settings_cmd(
     settings: AppSettings,
 ) -> Result<AppSettings, String> {
     let old_settings = load_app_settings(&app)?;
+    let new_workspace_dir = normalize_optional_path(&settings.workspace_dir);
+    if old_settings.workspace_dir != new_workspace_dir {
+        let old_dir = crate::workspace::resolve_configured_workspace_dir(
+            &app,
+            old_settings.workspace_dir.as_deref(),
+        )?;
+        let new_dir = crate::workspace::resolve_configured_workspace_dir(
+            &app,
+            new_workspace_dir.as_deref(),
+        )?;
+        crate::workspace::migrate_workspace_directory(&old_dir, &new_dir)?;
+    }
+
     save_app_settings(&app, &settings)?;
 
     if old_settings.server_mode != settings.server_mode
@@ -620,6 +641,7 @@ mod tests {
             retention_days: 7,
             max_log_entries: 500,
             todo_warning_minutes: 90,
+            workspace_dir: Some("\\\\fileserver\\home\\jwalters\\Caffeine".to_string()),
             sound_server_up: Some("C:\\sounds\\up.mp3".to_string()),
             sound_server_down: None,
             sound_notification: Some("C:\\sounds\\notify.mp3".to_string()),
@@ -730,6 +752,7 @@ mod tests {
     #[test]
     fn test_sound_settings_round_trip_and_normalization() {
         let settings = AppSettings {
+            workspace_dir: Some("  \\\\fileserver\\share\\Caffeine  ".to_string()),
             sound_server_up: Some("  C:\\sounds\\up.mp3  ".to_string()),
             sound_server_down: Some("   ".to_string()),
             sound_notification: Some(String::new()),
@@ -737,6 +760,10 @@ mod tests {
         };
 
         let user_profile = user_profile_from_app_settings(&settings);
+        assert_eq!(
+            user_profile.workspace_dir,
+            Some("\\\\fileserver\\share\\Caffeine".to_string())
+        );
         assert_eq!(
             user_profile.sound_server_up,
             Some("C:\\sounds\\up.mp3".to_string())

@@ -13,15 +13,54 @@ use tauri::{AppHandle, Manager};
 
 const WORKSPACE_HOME_DIR_NAME: &str = "Caffeine";
 
-pub fn get_user_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let home_dir = app
-        .path()
-        .home_dir()
-        .map_err(|e| format!("Failed to resolve user home directory: {e}"))?;
-    let workspace_dir = home_dir.join(WORKSPACE_HOME_DIR_NAME);
+pub fn resolve_configured_workspace_dir(
+    app: &AppHandle,
+    configured: Option<&str>,
+) -> Result<PathBuf, String> {
+    let workspace_dir = match configured.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(custom) => PathBuf::from(custom),
+        None => app
+            .path()
+            .home_dir()
+            .map_err(|e| format!("Failed to resolve user home directory: {e}"))?
+            .join(WORKSPACE_HOME_DIR_NAME),
+    };
+
     fs::create_dir_all(&workspace_dir)
         .map_err(|e| format!("Failed to create workspace directory at {workspace_dir:?}: {e}"))?;
     Ok(workspace_dir)
+}
+
+pub fn get_user_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let settings = crate::config::load_app_settings(app)?;
+    resolve_configured_workspace_dir(app, settings.workspace_dir.as_deref())
+}
+
+pub fn migrate_workspace_directory(old_dir: &Path, new_dir: &Path) -> Result<(), String> {
+    if old_dir == new_dir {
+        return Ok(());
+    }
+    if old_dir.exists()
+        && new_dir.exists()
+        && let (Ok(old_canon), Ok(new_canon)) = (fs::canonicalize(old_dir), fs::canonicalize(new_dir))
+        && old_canon == new_canon
+    {
+        return Ok(());
+    }
+
+    fs::create_dir_all(new_dir)
+        .map_err(|e| format!("Failed to create new workspace directory {new_dir:?}: {e}"))?;
+
+    if !old_dir.is_dir() {
+        return Ok(());
+    }
+
+    for subdir in ["Notes", "Scripts"] {
+        migrate_legacy_workspace_subdir(&old_dir.join(subdir), &new_dir.join(subdir))?;
+    }
+
+    let _ = fs::remove_dir(old_dir);
+    Ok(())
 }
 
 pub(crate) fn migrate_legacy_workspace_subdir(
@@ -186,6 +225,35 @@ mod tests {
 
         migrate_legacy_workspace_subdir(&legacy_dir, &target_dir).unwrap();
         assert!(!target_dir.exists());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_migrate_workspace_directory_moves_notes_and_scripts() {
+        let root = temp_roaming_dir("caffeine_workspace_relocate");
+        let old_dir = root.join("old_caffeine");
+        let new_dir = root.join("network_share").join("Caffeine");
+        fs::create_dir_all(old_dir.join("Notes")).unwrap();
+        fs::create_dir_all(old_dir.join("Scripts")).unwrap();
+
+        fs::write(old_dir.join("Notes").join("dns.md"), "# DNS").unwrap();
+        fs::write(old_dir.join("Scripts").join("ping.ps1"), "Test-Connection").unwrap();
+
+        migrate_workspace_directory(&old_dir, &new_dir).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(new_dir.join("Notes").join("dns.md")).unwrap(),
+            "# DNS"
+        );
+        assert_eq!(
+            fs::read_to_string(new_dir.join("Scripts").join("ping.ps1")).unwrap(),
+            "Test-Connection"
+        );
+        assert!(!old_dir.exists());
+
+        migrate_workspace_directory(&new_dir, &new_dir).unwrap();
+        assert!(new_dir.join("Notes").join("dns.md").is_file());
 
         let _ = fs::remove_dir_all(&root);
     }
