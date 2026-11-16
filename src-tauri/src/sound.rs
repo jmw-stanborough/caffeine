@@ -1,11 +1,27 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub const APP_AUMID: &str = "uk.jmwalters.caffeine";
+const NOTIFICATION_ICON_BYTES: &[u8] = include_bytes!("../icons/128x128.png");
+const NOTIFICATION_ICON_FILENAME: &str = "notification-icon.png";
 
-pub fn ensure_windows_aumid_registered() -> Result<(), String> {
+pub fn ensure_notification_icon_file(dir: &Path) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Failed to create notification icon directory {dir:?}: {e}"))?;
+    let icon_path = dir.join(NOTIFICATION_ICON_FILENAME);
+    std::fs::write(&icon_path, NOTIFICATION_ICON_BYTES)
+        .map_err(|e| format!("Failed to write notification icon at {icon_path:?}: {e}"))?;
+    Ok(icon_path)
+}
+
+pub fn resolve_notification_icon_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let roaming_dir = crate::config::get_user_roaming_dir(app)?;
+    ensure_notification_icon_file(&roaming_dir)
+}
+
+pub fn ensure_windows_aumid_registered(icon_path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        // Portable executables lack MSI-installed Start Menu shortcuts, so Windows Toast notifications require an HKCU AUMID entry.
+        // Portable executables lack MSI-installed Start Menu shortcuts, and Windows WinRT reads the toast sender logo from AUMID IconUri rather than per-toast icon fields.
         let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
         let subkey_path = format!("Software\\Classes\\AppUserModelId\\{APP_AUMID}");
         let (key, _) = hkcu
@@ -13,11 +29,15 @@ pub fn ensure_windows_aumid_registered() -> Result<(), String> {
             .map_err(|e| format!("Failed to open or create AUMID registry key '{subkey_path}': {e}"))?;
         key.set_value("DisplayName", &"Caffeine")
             .map_err(|e| format!("Failed to set DisplayName on AUMID registry key '{subkey_path}': {e}"))?;
+        let icon_uri = icon_path.to_string_lossy();
+        key.set_value("IconUri", &icon_uri.as_ref())
+            .map_err(|e| format!("Failed to set IconUri on AUMID registry key '{subkey_path}': {e}"))?;
         Ok(())
     }
 
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = icon_path;
         Ok(())
     }
 }
@@ -140,7 +160,33 @@ mod tests {
     }
 
     #[test]
+    fn test_ensure_notification_icon_file() {
+        let dir = unique_test_dir("caffeine_notification_icon");
+        let icon_path = ensure_notification_icon_file(&dir).unwrap();
+        assert_eq!(icon_path, dir.join(NOTIFICATION_ICON_FILENAME));
+        let bytes = fs::read(&icon_path).unwrap();
+        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn test_ensure_windows_aumid_registered() {
-        assert_eq!(ensure_windows_aumid_registered(), Ok(()));
+        let dir = unique_test_dir("caffeine_aumid_icon");
+        let icon_path = ensure_notification_icon_file(&dir).unwrap();
+        assert_eq!(ensure_windows_aumid_registered(&icon_path), Ok(()));
+
+        #[cfg(target_os = "windows")]
+        {
+            let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+            let subkey_path = format!("Software\\Classes\\AppUserModelId\\{APP_AUMID}");
+            let key = hkcu.open_subkey(&subkey_path).unwrap();
+            let display_name: String = key.get_value("DisplayName").unwrap();
+            let icon_uri: String = key.get_value("IconUri").unwrap();
+            assert_eq!(display_name, "Caffeine");
+            assert_eq!(icon_uri, icon_path.to_string_lossy().as_ref());
+        }
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

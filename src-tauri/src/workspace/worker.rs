@@ -43,15 +43,30 @@ pub fn start_reminder_worker(app: AppHandle) {
                 }
             };
 
+            let icon_path = if due_todos.is_empty() {
+                None
+            } else {
+                match crate::sound::resolve_notification_icon_path(&app) {
+                    Ok(path) => Some(path.to_string_lossy().into_owned()),
+                    Err(err) => {
+                        eprintln!("Failed to resolve notification icon path: {err}");
+                        None
+                    }
+                }
+            };
+
             let mut any_marked = false;
             for todo in due_todos {
-                if let Err(err) = app
+                let mut builder = app
                     .notification()
                     .builder()
                     .title("Caffeine Task Reminder")
-                    .body(&todo.title)
-                    .show()
-                {
+                    .body(&todo.title);
+                if let Some(ref icon) = icon_path {
+                    builder = builder.icon(icon);
+                }
+
+                if let Err(err) = builder.show() {
                     eprintln!(
                         "Failed to display OS notification for todo '{}': {err}",
                         todo.id
