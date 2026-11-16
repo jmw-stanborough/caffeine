@@ -71,3 +71,4 @@ jobs:
           releaseName: "Caffeine v__VERSION__"
           releaseDraft: true
           prerelease: false
+          uploadPlainBinary: ${{ runner.os == 'Windows' }}
