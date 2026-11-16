@@ -2,6 +2,8 @@ use crate::printer_dashboard::types::{Printer, PrinterFilterConfig, PrinterLog, 
 use crate::server_monitor::types::{Server, ServerLog, ServerStatusEvent};
 use serde::{Deserialize, Serialize};
 
+pub const REDACTED_SECRET: &str = "__REDACTED__";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ServerBroadcastEvent {

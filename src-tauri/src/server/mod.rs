@@ -366,4 +366,105 @@ mod tests {
         server_instance.stop();
         let _ = std::fs::remove_file(db_path);
     }
+
+    #[tokio::test]
+    async fn test_snapshot_endpoint_redacts_secrets_while_preserving_db() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("caffeine_test_redact_{nanos}.db"));
+
+        let mut server_instance = start_embedded_server(
+            None,
+            "127.0.0.1",
+            0,
+            db_path.clone(),
+            None,
+        )
+        .await
+        .expect("Failed to start test server");
+
+        let raw_agent_key = "caff_agent_top_secret_value";
+        let raw_snmp_comm = "snmp_top_secret_community";
+
+        {
+            let conn = Connection::open(&db_path).expect("Failed to open test DB");
+            crate::server_monitor::db::insert_server(
+                &conn,
+                &crate::server_monitor::types::Server {
+                    id: "srv-sec-1".to_string(),
+                    host: "10.0.1.10".to_string(),
+                    label: "Secret Server".to_string(),
+                    description: None,
+                    agent: Some(crate::server_monitor::types::Agent {
+                        port: 9001,
+                        api_key: raw_agent_key.to_string(),
+                    }),
+                    ssh_port: None,
+                    rdp_port: None,
+                    remote_username: None,
+                },
+            )
+            .expect("Failed to insert test server");
+
+            crate::printer_dashboard::db::insert_printer(
+                &conn,
+                &crate::printer_dashboard::types::Printer {
+                    id: "prt-sec-1".to_string(),
+                    host: "10.0.1.20".to_string(),
+                    label: "Secret Printer".to_string(),
+                    description: None,
+                    model: None,
+                    location: None,
+                    snmp_community: raw_snmp_comm.to_string(),
+                    web_url: None,
+                },
+            )
+            .expect("Failed to insert test printer");
+        }
+
+        let addr = server_instance.bound_addr;
+        let client = reqwest::Client::new();
+        let snapshot_url = format!("http://{addr}/api/v1/sync/snapshot");
+
+        let response = client
+            .get(&snapshot_url)
+            .send()
+            .await
+            .expect("Failed to query snapshot endpoint");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        let raw_body = response.text().await.expect("Failed to read snapshot body");
+        assert!(!raw_body.contains(raw_agent_key));
+        assert!(!raw_body.contains(raw_snmp_comm));
+
+        let snapshot: types::SnapshotResponse =
+            serde_json::from_str(&raw_body).expect("Failed to deserialize snapshot JSON");
+
+        assert_eq!(snapshot.servers.len(), 1);
+        let agent = snapshot.servers[0]
+            .agent
+            .as_ref()
+            .expect("Agent should still be present with port");
+        assert_eq!(agent.port, 9001);
+        assert_eq!(agent.api_key, "");
+
+        assert_eq!(snapshot.printers.len(), 1);
+        assert_eq!(snapshot.printers[0].snmp_community, types::REDACTED_SECRET);
+
+        {
+            let conn = Connection::open(&db_path).expect("Failed to reopen test DB");
+            let stored_servers = crate::server_monitor::db::get_servers(&conn).unwrap();
+            assert_eq!(
+                stored_servers[0].agent.as_ref().unwrap().api_key,
+                raw_agent_key
+            );
+            let stored_printers = crate::printer_dashboard::db::get_printers(&conn).unwrap();
+            assert_eq!(stored_printers[0].snmp_community, raw_snmp_comm);
+        }
+
+        server_instance.stop();
+        let _ = std::fs::remove_file(db_path);
+    }
 }

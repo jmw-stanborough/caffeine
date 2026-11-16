@@ -24,11 +24,13 @@ pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
     let rows = stmt
         .query_map([], |row| {
             let community: Option<String> = row.get(6)?;
-            let snmp_community = community
-                .as_deref()
-                .map(normalize_snmp_community)
-                .unwrap_or(DEFAULT_SNMP_COMMUNITY)
-                .to_string();
+            let snmp_community = match community.as_deref() {
+                Some(c) if c.trim() == crate::server::types::REDACTED_SECRET => {
+                    DEFAULT_SNMP_COMMUNITY.to_string()
+                }
+                Some(c) => normalize_snmp_community(c).to_string(),
+                None => DEFAULT_SNMP_COMMUNITY.to_string(),
+            };
 
             Ok(Printer {
                 id: row.get(0)?,
@@ -73,11 +75,17 @@ pub fn insert_printer(conn: &Connection, printer: &Printer) -> Result<(), String
 }
 
 pub fn update_printer_entry(conn: &Connection, id: &str, printer: &Printer) -> Result<(), String> {
-    let community = normalize_snmp_community(&printer.snmp_community);
+    let trimmed = printer.snmp_community.trim();
+    let community = if trimmed.is_empty() || trimmed == crate::server::types::REDACTED_SECRET {
+        ""
+    } else {
+        trimmed
+    };
 
     conn.execute(
         "UPDATE printers
-         SET host = ?1, label = ?2, description = ?3, snmp_community = ?4
+         SET host = ?1, label = ?2, description = ?3,
+             snmp_community = CASE WHEN ?4 = '' OR ?4 = '__REDACTED__' THEN snmp_community ELSE ?4 END
          WHERE id = ?5",
         params![
             printer.host,
@@ -402,5 +410,66 @@ mod tests {
         };
         save_printer_filter_tags_entries(&mut conn, &dual_config).unwrap();
         assert_eq!(get_printer_filter_tags(&conn).unwrap(), dual_config);
+    }
+
+    #[test]
+    fn test_printer_redacted_community_normalization_and_preservation() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE printers (
+                id TEXT PRIMARY KEY,
+                host TEXT NOT NULL,
+                label TEXT NOT NULL,
+                description TEXT,
+                model TEXT,
+                location TEXT,
+                snmp_community TEXT NOT NULL DEFAULT 'public',
+                web_url TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
+            ",
+        )
+        .unwrap();
+
+        let p_secret = Printer {
+            id: "p-sec".to_string(),
+            host: "192.168.1.100".to_string(),
+            label: "Secure Printer".to_string(),
+            description: None,
+            model: None,
+            location: None,
+            snmp_community: "corp_secret_comm".to_string(),
+            web_url: None,
+        };
+        insert_printer(&conn, &p_secret).unwrap();
+
+        let edit_empty = Printer {
+            label: "Secure Printer Edited".to_string(),
+            snmp_community: "   ".to_string(),
+            ..p_secret.clone()
+        };
+        update_printer_entry(&conn, "p-sec", &edit_empty).unwrap();
+        assert_eq!(get_printers(&conn).unwrap()[0].snmp_community, "corp_secret_comm");
+
+        let edit_redacted = Printer {
+            label: "Secure Printer Redacted".to_string(),
+            snmp_community: crate::server::types::REDACTED_SECRET.to_string(),
+            ..p_secret.clone()
+        };
+        update_printer_entry(&conn, "p-sec", &edit_redacted).unwrap();
+        let after_redacted_edit = get_printers(&conn).unwrap();
+        assert_eq!(after_redacted_edit[0].label, "Secure Printer Redacted");
+        assert_eq!(after_redacted_edit[0].snmp_community, "corp_secret_comm");
+
+        conn.execute(
+            "INSERT INTO printers (id, host, label, snmp_community, sort_order)
+             VALUES ('p-redacted', '192.168.1.101', 'Display Normalized', ?1, 1)",
+            params![crate::server::types::REDACTED_SECRET],
+        )
+        .unwrap();
+        let printers = get_printers(&conn).unwrap();
+        let normalized = printers.into_iter().find(|p| p.id == "p-redacted").unwrap();
+        assert_eq!(normalized.snmp_community, DEFAULT_SNMP_COMMUNITY);
     }
 }

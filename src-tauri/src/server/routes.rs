@@ -150,10 +150,20 @@ async fn get_snapshot(
     State(state): State<Arc<ServerAppState>>,
 ) -> Result<Json<SnapshotResponse>, (StatusCode, String)> {
     let conn = state.db.lock().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    let printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let mut servers = get_servers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let mut printers = get_printers(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     let printer_filter_tags =
         get_printer_filter_tags(&conn).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    for server in &mut servers {
+        if let Some(ref mut agent) = server.agent {
+            agent.api_key = String::new();
+        }
+    }
+
+    for printer in &mut printers {
+        printer.snmp_community = super::types::REDACTED_SECRET.to_string();
+    }
 
     Ok(Json(SnapshotResponse {
         servers,
