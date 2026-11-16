@@ -35,31 +35,7 @@ pub fn init_workspace_schema(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to initialize workspace database schema: {e}"))?;
 
-    migrate_todos_reminder_acknowledged(conn)
-}
-
-fn migrate_todos_reminder_acknowledged(conn: &Connection) -> Result<(), String> {
-    let mut stmt = conn
-        .prepare("PRAGMA table_info(todos)")
-        .map_err(|e| format!("Failed to inspect todos schema: {e}"))?;
-    let columns = stmt
-        .query_map([], |row| row.get::<_, String>(1))
-        .map_err(|e| format!("Failed to read todos column names: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to collect todos column names: {e}"))?;
-
-    if columns.iter().any(|name| name == "reminder_acknowledged") {
-        return Ok(());
-    }
-
-    // Backfill historical reminders as acknowledged so upgrading does not surface past notifications as missed.
-    conn.execute_batch(
-        "
-        ALTER TABLE todos ADD COLUMN reminder_acknowledged INTEGER NOT NULL DEFAULT 0;
-        UPDATE todos SET reminder_acknowledged = 1 WHERE reminder_sent = 1 OR completed = 1;
-        ",
-    )
-    .map_err(|e| format!("Failed to migrate todos.reminder_acknowledged column: {e}"))
+    Ok(())
 }
 
 pub fn init_workspace_db_at(roaming_dir: &Path) -> Result<WorkspaceDbState, String> {
