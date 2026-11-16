@@ -50,7 +50,16 @@
     const trimmedTitle = draftTitle.trim();
     if (!trimmedTitle || notesStore.saving) return;
 
-    const saved = await notesStore.saveNote(draftSlug, trimmedTitle, draftContent);
+    const titleChanged =
+      draftSlug !== null &&
+      notesStore.activeNote !== null &&
+      trimmedTitle !== notesStore.activeNote.title;
+
+    let saved = await notesStore.saveNote(draftSlug, trimmedTitle, draftContent);
+    if (titleChanged) {
+      saved = await notesStore.renameNote(saved.slug, trimmedTitle);
+    }
+
     draftSlug = saved.slug;
     draftTitle = saved.title;
     draftContent = saved.content;
