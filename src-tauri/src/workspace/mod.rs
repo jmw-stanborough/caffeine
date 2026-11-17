@@ -40,12 +40,14 @@ pub fn migrate_workspace_directory(old_dir: &Path, new_dir: &Path) -> Result<(),
     if old_dir == new_dir {
         return Ok(());
     }
-    if old_dir.exists()
-        && new_dir.exists()
-        && let (Ok(old_canon), Ok(new_canon)) = (fs::canonicalize(old_dir), fs::canonicalize(new_dir))
-        && old_canon == new_canon
-    {
-        return Ok(());
+    if old_dir.exists() && new_dir.exists() {
+        let old_canon = fs::canonicalize(old_dir)
+            .map_err(|e| format!("Failed to resolve workspace directory {old_dir:?}: {e}"))?;
+        let new_canon = fs::canonicalize(new_dir)
+            .map_err(|e| format!("Failed to resolve workspace directory {new_dir:?}: {e}"))?;
+        if old_canon == new_canon {
+            return Ok(());
+        }
     }
 
     fs::create_dir_all(new_dir)
@@ -59,7 +61,18 @@ pub fn migrate_workspace_directory(old_dir: &Path, new_dir: &Path) -> Result<(),
         move_workspace_subdir(&old_dir.join(subdir), &new_dir.join(subdir))?;
     }
 
-    let _ = fs::remove_dir(old_dir);
+    remove_dir_if_empty(old_dir)
+}
+
+fn remove_dir_if_empty(dir: &Path) -> Result<(), String> {
+    let is_empty = fs::read_dir(dir)
+        .map_err(|e| format!("Failed to inspect directory {dir:?} for cleanup: {e}"))?
+        .next()
+        .is_none();
+    if is_empty {
+        fs::remove_dir(dir)
+            .map_err(|e| format!("Failed to remove empty directory {dir:?}: {e}"))?;
+    }
     Ok(())
 }
 
@@ -103,8 +116,7 @@ fn move_workspace_subdir(src_dir: &Path, target_dir: &Path) -> Result<(), String
         }
     }
 
-    let _ = fs::remove_dir(src_dir);
-    Ok(())
+    remove_dir_if_empty(src_dir)
 }
 
 pub(crate) fn current_time_ms() -> Result<i64, String> {
