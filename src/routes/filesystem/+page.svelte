@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { formatBytes } from "../endpoint/metrics";
   import BreadcrumbsBar from "./components/breadcrumbs-bar.svelte";
   import DeleteConfirmModal from "./components/delete-confirm-modal.svelte";
@@ -18,9 +18,13 @@
   let isDeleteConfirmOpen = $state(false);
 
   onMount(() => {
-    store.init().catch((err: unknown) => {
+    store.subscribe().catch((err: unknown) => {
       console.error("Failed to initialize filesystem store:", err);
     });
+  });
+
+  onDestroy(() => {
+    store.unsubscribe();
   });
 
   function handleOpenEntry(entry: FileEntry) {

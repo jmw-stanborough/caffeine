@@ -1,6 +1,6 @@
 [package]
 name = "caffeine"
-version = "1.0.1"
+version = "1.0.2"
 description = "Cross-platform network monitoring, endpoint management, and IT workspace desktop application"
 authors = ["JMWalters"]
 edition = "2024"

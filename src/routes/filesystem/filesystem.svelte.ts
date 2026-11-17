@@ -48,6 +48,9 @@ export class FilesystemStore {
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
   private currentScanGeneration = 0;
+  private volumePollTimer: ReturnType<typeof setInterval> | null = null;
+  private isRefreshingVolumes = false;
+  private subscriberCount = 0;
 
   async init(): Promise<void> {
     if (this.isInitialized) return;
@@ -86,6 +89,8 @@ export class FilesystemStore {
   }
 
   destroy(): void {
+    this.subscriberCount = 0;
+    this.stopVolumePolling();
     if (this.unlistenProgress) {
       this.unlistenProgress();
       this.unlistenProgress = null;
@@ -93,17 +98,85 @@ export class FilesystemStore {
     this.isInitialized = false;
   }
 
+  async subscribe(intervalMs = 3000): Promise<void> {
+    this.subscriberCount++;
+    if (!this.isInitialized) {
+      await this.init();
+    } else {
+      await this.loadVolumes();
+    }
+    if (this.subscriberCount > 0) {
+      this.startVolumePolling(intervalMs);
+    }
+  }
+
+  unsubscribe(): void {
+    this.subscriberCount = Math.max(0, this.subscriberCount - 1);
+    if (this.subscriberCount === 0) {
+      this.stopVolumePolling();
+    }
+  }
+
+  startVolumePolling(intervalMs = 3000): void {
+    this.stopVolumePolling();
+    this.volumePollTimer = setInterval(() => {
+      if (this.subscriberCount > 0 && !this.isRefreshingVolumes) {
+        this.loadVolumes().catch((err: unknown) => {
+          console.warn("Filesystem volume refresh failed:", err);
+        });
+      }
+    }, intervalMs);
+  }
+
+  stopVolumePolling(): void {
+    if (this.volumePollTimer) {
+      clearInterval(this.volumePollTimer);
+      this.volumePollTimer = null;
+    }
+  }
+
   async loadVolumes(): Promise<void> {
+    if (this.isRefreshingVolumes) return;
+    this.isRefreshingVolumes = true;
+
     try {
       this.volumes = await invoke<StorageVolume[]>("filesystem_list_volumes");
       if (this.selectedVolume) {
         const found = this.volumes.find((v) => v.id === this.selectedVolume?.id);
-        if (found) this.selectedVolume = found;
+        if (found) {
+          this.selectedVolume = found;
+        } else {
+          await this.handleSelectedVolumeRemoved();
+        }
+      } else if (this.volumes.length > 0 && this.isInitialized) {
+        await this.selectVolume(this.volumes[0]);
       }
     } catch (err: unknown) {
       this.error = String(err);
       throw err;
+    } finally {
+      this.isRefreshingVolumes = false;
     }
+  }
+
+  private async handleSelectedVolumeRemoved(): Promise<void> {
+    if (this.activeTaskId) {
+      await this.cancelActiveTask().catch((err: unknown) => {
+        console.warn("Failed to cancel search task on removed volume:", err);
+      });
+    }
+
+    if (this.volumes.length > 0) {
+      await this.selectVolume(this.volumes[0]);
+      return;
+    }
+
+    this.currentScanGeneration++;
+    this.selectedVolume = null;
+    this.currentPath = "";
+    this.listing = null;
+    this.searchResults = null;
+    this.selectedPaths = new Set();
   }
 
   async selectVolume(vol: StorageVolume): Promise<void> {
