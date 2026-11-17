@@ -74,14 +74,10 @@ pub fn insert_server(conn: &Connection, server: &Server) -> Result<(), String> {
 
 pub fn update_server_entry(conn: &Connection, id: &str, server: &Server) -> Result<(), String> {
     let port = server.agent.as_ref().map(|a| a.port as i64);
-    let key = server.agent.as_ref().map(|a| {
-        let trimmed = a.api_key.trim();
-        if trimmed.is_empty() || trimmed == crate::server::types::REDACTED_SECRET {
-            ""
-        } else {
-            a.api_key.as_str()
-        }
-    });
+    let key = server
+        .agent
+        .as_ref()
+        .map(|a| crate::server::types::sanitize_secret_update(&a.api_key));
     let ssh_port = server.ssh_port.map(|p| p as i64);
     let rdp_port = server.rdp_port.map(|p| p as i64);
 
