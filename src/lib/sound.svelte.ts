@@ -77,47 +77,56 @@ export class SoundManager {
   }
 
   async play(key: SoundEffectKey): Promise<void> {
-    const src = this.sources[key];
-    const defaultSrc = DEFAULT_SOUND_PATHS[key];
-
     if (typeof AudioContext !== "undefined") {
-      try {
-        await this.playBuffer(key, src);
-        return;
-      } catch (err) {
-        if (src === defaultSrc) {
-          throw err;
-        }
-        // Fall back to the built-in sound if a custom audio source fails to decode or play.
-        this.sources[key] = defaultSrc;
-        await this.playBuffer(key, defaultSrc);
-        return;
-      }
+      await this.playWithFallback(key, (src) => this.playBuffer(key, src));
+      return;
     }
 
     if (typeof Audio === "undefined") return;
 
-    const audio = this.getAudio(key, src);
+    await this.playWithFallback(key, (src) => this.playHtmlAudio(key, src));
+  }
+
+  private async playWithFallback(
+    key: SoundEffectKey,
+    playSource: (src: string) => Promise<void>,
+  ): Promise<void> {
+    const src = this.sources[key];
+    const defaultSrc = DEFAULT_SOUND_PATHS[key];
+
     try {
-      audio.currentTime = 0;
-      await audio.play();
+      await playSource(src);
     } catch (err) {
       if (src === defaultSrc) {
         throw err;
       }
+      // Fall back to the built-in sound if a custom audio source fails to decode or play.
       this.sources[key] = defaultSrc;
-      const fallbackAudio = this.getAudio(key, defaultSrc);
-      fallbackAudio.currentTime = 0;
-      await fallbackAudio.play();
+      await playSource(defaultSrc);
     }
+  }
+
+  private async playHtmlAudio(key: SoundEffectKey, src: string): Promise<void> {
+    const audio = this.getAudio(key, src);
+    audio.currentTime = 0;
+    await audio.play();
   }
 
   private async preload(key: SoundEffectKey, src: string): Promise<void> {
     if (typeof AudioContext !== "undefined") {
       try {
         await this.getDecodedBuffer(key, src);
-      } catch {
-        // Defer error handling to play() so fallback to defaultSrc can run cleanly.
+      } catch (err) {
+        const defaultSrc = DEFAULT_SOUND_PATHS[key];
+        if (src === defaultSrc) {
+          throw err;
+        }
+        console.warn(
+          `Failed to pre-decode custom sound for "${key}", falling back to default:`,
+          err,
+        );
+        this.sources[key] = defaultSrc;
+        await this.getDecodedBuffer(key, defaultSrc);
       }
       return;
     }
