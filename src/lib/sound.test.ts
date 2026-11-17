@@ -191,6 +191,55 @@ describe("SoundManager", () => {
     expect(startedBuffers).toHaveLength(1);
   });
 
+  it("falls back to default buffer on preload when custom Web Audio decode fails and propagates default failures", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const decodeMock = vi.fn(async (buf: ArrayBuffer) => {
+      if (buf.byteLength === 3) {
+        throw new Error("corrupt custom audio");
+      }
+      return { byteLength: buf.byteLength } as unknown as AudioBuffer;
+    });
+
+    class MockAudioContext {
+      state = "running";
+      destination = {};
+      resume = vi.fn(async () => {});
+      decodeAudioData = decodeMock;
+      createBufferSource() {
+        return {
+          buffer: null as AudioBuffer | null,
+          connect: vi.fn(),
+          start: vi.fn(),
+        };
+      }
+    }
+
+    vi.stubGlobal("AudioContext", MockAudioContext);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+      })),
+    );
+
+    mockedInvoke.mockResolvedValue("data:audio/mpeg;base64,SUQz");
+
+    const manager = new SoundManager();
+    await manager.refreshFromSettings({
+      sound_notification: "C:/sounds/broken.mp3",
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(decodeMock).toHaveBeenCalledTimes(4);
+    warnSpy.mockRestore();
+
+    decodeMock.mockRejectedValue(new Error("broken default audio"));
+    const failingManager = new SoundManager();
+    await expect(failingManager.refreshFromSettings({})).rejects.toThrow(
+      "broken default audio",
+    );
+  });
+
   it("propagates playback error when default sound playback fails", async () => {
     playBehavior = async () => {
       throw new Error("AudioContext blocked");

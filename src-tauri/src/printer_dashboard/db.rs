@@ -24,13 +24,12 @@ pub fn get_printers(conn: &Connection) -> Result<Vec<Printer>, String> {
     let rows = stmt
         .query_map([], |row| {
             let community: Option<String> = row.get(6)?;
-            let snmp_community = match community.as_deref() {
-                Some(c) if c.trim() == crate::server::types::REDACTED_SECRET => {
-                    DEFAULT_SNMP_COMMUNITY.to_string()
-                }
-                Some(c) => normalize_snmp_community(c).to_string(),
-                None => DEFAULT_SNMP_COMMUNITY.to_string(),
-            };
+            let snmp_community = community
+                .as_deref()
+                .map(crate::server::types::sanitize_secret_update)
+                .map(normalize_snmp_community)
+                .unwrap_or(DEFAULT_SNMP_COMMUNITY)
+                .to_string();
 
             Ok(Printer {
                 id: row.get(0)?,
@@ -75,17 +74,12 @@ pub fn insert_printer(conn: &Connection, printer: &Printer) -> Result<(), String
 }
 
 pub fn update_printer_entry(conn: &Connection, id: &str, printer: &Printer) -> Result<(), String> {
-    let trimmed = printer.snmp_community.trim();
-    let community = if trimmed.is_empty() || trimmed == crate::server::types::REDACTED_SECRET {
-        ""
-    } else {
-        trimmed
-    };
+    let community = crate::server::types::sanitize_secret_update(&printer.snmp_community);
 
     conn.execute(
         "UPDATE printers
          SET host = ?1, label = ?2, description = ?3,
-             snmp_community = CASE WHEN ?4 = '' OR ?4 = '__REDACTED__' THEN snmp_community ELSE ?4 END
+             snmp_community = COALESCE(NULLIF(?4, ''), snmp_community)
          WHERE id = ?5",
         params![
             printer.host,

@@ -214,93 +214,71 @@ export class TodoStore {
     }
   };
 
-  async createTodo(input: CreateTodoInput): Promise<TodoItem> {
+  private async runCommand<T>(action: () => Promise<T>): Promise<T> {
     this.errorMessage = null;
     try {
+      return await action();
+    } catch (err) {
+      this.errorMessage = toErrorMessage(err);
+      throw err;
+    }
+  }
+
+  private async updateItemFromCommand(
+    command: string,
+    args: Record<string, unknown>,
+  ): Promise<TodoItem> {
+    return this.runCommand(async () => {
+      const updated = await invoke<TodoItem>(command, args);
+      this.items = this.items.map((item) =>
+        item.id === updated.id ? updated : item,
+      );
+      return updated;
+    });
+  }
+
+  async createTodo(input: CreateTodoInput): Promise<TodoItem> {
+    return this.runCommand(async () => {
       const created = await invoke<TodoItem>("workspace_create_todo", {
         input,
       });
       this.items = [...this.items, created];
       return created;
-    } catch (err) {
-      this.errorMessage = toErrorMessage(err);
-      throw err;
-    }
+    });
   }
 
   async updateTodo(input: UpdateTodoInput): Promise<TodoItem> {
-    this.errorMessage = null;
-    try {
-      const updated = await invoke<TodoItem>("workspace_update_todo", {
-        input,
-      });
-      this.items = this.items.map((item) =>
-        item.id === updated.id ? updated : item,
-      );
-      return updated;
-    } catch (err) {
-      this.errorMessage = toErrorMessage(err);
-      throw err;
-    }
+    return this.updateItemFromCommand("workspace_update_todo", { input });
   }
 
   async toggleTodo(id: string): Promise<TodoItem[]> {
-    this.errorMessage = null;
-    try {
+    return this.runCommand(async () => {
       const updated = await invoke<TodoItem[]>("workspace_toggle_todo", {
         id,
       });
       this.items = updated;
       return updated;
-    } catch (err) {
-      this.errorMessage = toErrorMessage(err);
-      throw err;
-    }
+    });
   }
 
   async deleteTodo(id: string): Promise<void> {
-    this.errorMessage = null;
-    try {
+    return this.runCommand(async () => {
       await invoke("workspace_delete_todo", { id });
       this.items = this.items.filter((item) => item.id !== id);
-    } catch (err) {
-      this.errorMessage = toErrorMessage(err);
-      throw err;
-    }
+    });
   }
 
   async acknowledgeReminder(id: string): Promise<TodoItem> {
-    this.errorMessage = null;
-    try {
-      const updated = await invoke<TodoItem>(
-        "workspace_acknowledge_todo_reminder",
-        { id },
-      );
-      this.items = this.items.map((item) =>
-        item.id === updated.id ? updated : item,
-      );
-      return updated;
-    } catch (err) {
-      this.errorMessage = toErrorMessage(err);
-      throw err;
-    }
+    return this.updateItemFromCommand("workspace_acknowledge_todo_reminder", {
+      id,
+    });
   }
 
   async snoozeReminder(id: string, durationMinutes: number): Promise<TodoItem> {
-    this.errorMessage = null;
-    try {
-      const updated = await invoke<TodoItem>(
-        "workspace_snooze_todo_reminder",
-        { id, durationMinutes },
-      );
-      this.items = this.items.map((item) =>
-        item.id === updated.id ? updated : item,
-      );
-      return updated;
-    } catch (err) {
-      this.errorMessage = toErrorMessage(err);
-      throw err;
-    }
+    return this.updateItemFromCommand("workspace_snooze_todo_reminder", {
+      id,
+      durationMinutes,
+    });
   }
 }
 

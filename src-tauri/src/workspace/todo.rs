@@ -3,6 +3,7 @@ use super::db::WorkspaceDbState;
 use super::types::{CreateTodoInput, TodoItem, UpdateTodoInput};
 use crate::db::next_sort_order;
 use rusqlite::{Connection, OptionalExtension, Row, params};
+use std::sync::MutexGuard;
 use tauri::State;
 
 const TODOS_TABLE: &str = "todos";
@@ -357,12 +358,18 @@ pub fn snooze_todo_reminder_at(
     get_todo_by_id(conn, id)
 }
 
-#[tauri::command]
-pub fn workspace_load_todos(state: State<'_, WorkspaceDbState>) -> Result<Vec<TodoItem>, String> {
-    let conn = state
+fn lock_workspace_db<'a>(
+    state: &'a State<'_, WorkspaceDbState>,
+) -> Result<MutexGuard<'a, Connection>, String> {
+    state
         .0
         .lock()
-        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+        .map_err(|e| format!("Workspace database lock poisoned: {e}"))
+}
+
+#[tauri::command]
+pub fn workspace_load_todos(state: State<'_, WorkspaceDbState>) -> Result<Vec<TodoItem>, String> {
+    let conn = lock_workspace_db(&state)?;
     load_todos_from_conn(&conn)
 }
 
@@ -371,10 +378,7 @@ pub fn workspace_create_todo(
     state: State<'_, WorkspaceDbState>,
     input: CreateTodoInput,
 ) -> Result<TodoItem, String> {
-    let conn = state
-        .0
-        .lock()
-        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    let conn = lock_workspace_db(&state)?;
     create_todo_in_conn(&conn, input)
 }
 
@@ -383,10 +387,7 @@ pub fn workspace_update_todo(
     state: State<'_, WorkspaceDbState>,
     input: UpdateTodoInput,
 ) -> Result<TodoItem, String> {
-    let conn = state
-        .0
-        .lock()
-        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    let conn = lock_workspace_db(&state)?;
     update_todo_in_conn(&conn, input)
 }
 
@@ -395,10 +396,7 @@ pub fn workspace_toggle_todo(
     state: State<'_, WorkspaceDbState>,
     id: String,
 ) -> Result<Vec<TodoItem>, String> {
-    let mut conn = state
-        .0
-        .lock()
-        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    let mut conn = lock_workspace_db(&state)?;
     toggle_todo_in_conn(&mut conn, &id)
 }
 
@@ -407,10 +405,7 @@ pub fn workspace_delete_todo(
     state: State<'_, WorkspaceDbState>,
     id: String,
 ) -> Result<(), String> {
-    let conn = state
-        .0
-        .lock()
-        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    let conn = lock_workspace_db(&state)?;
     delete_todo_in_conn(&conn, &id)
 }
 
@@ -419,10 +414,7 @@ pub fn workspace_acknowledge_todo_reminder(
     state: State<'_, WorkspaceDbState>,
     id: String,
 ) -> Result<TodoItem, String> {
-    let conn = state
-        .0
-        .lock()
-        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    let conn = lock_workspace_db(&state)?;
     acknowledge_todo_reminder_in_conn(&conn, &id)
 }
 
@@ -432,10 +424,7 @@ pub fn workspace_snooze_todo_reminder(
     id: String,
     duration_minutes: i64,
 ) -> Result<TodoItem, String> {
-    let conn = state
-        .0
-        .lock()
-        .map_err(|e| format!("Workspace database lock poisoned: {e}"))?;
+    let conn = lock_workspace_db(&state)?;
     snooze_todo_reminder_in_conn(&conn, &id, duration_minutes)
 }
 

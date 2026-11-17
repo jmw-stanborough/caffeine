@@ -164,6 +164,68 @@ pub fn read_note_in_dir(roaming_dir: &Path, slug: &str) -> Result<NoteDocument, 
     })
 }
 
+fn resolve_existing_note_target(
+    dir: &Path,
+    existing_slug: String,
+    title: &str,
+    content: String,
+) -> Result<(Option<String>, String, String), String> {
+    let old_path = note_file_path(dir, &existing_slug)?;
+    let old_title = if old_path.is_file() {
+        let existing_content = fs::read_to_string(&old_path)
+            .map_err(|e| format!("Failed to read existing note '{existing_slug}': {e}"))?;
+        Some(extract_note_title(&existing_content, &existing_slug))
+    } else {
+        None
+    };
+
+    let trimmed_title = title.trim();
+    let heading_title = extract_heading_title(&content);
+    let title_changed = !trimmed_title.is_empty() && old_title.as_deref() != Some(trimmed_title);
+
+    let (effective_title, final_content) = if title_changed {
+        (
+            trimmed_title.to_string(),
+            replace_or_prepend_heading(&content, trimmed_title),
+        )
+    } else if let Some(heading) = heading_title {
+        (heading, content)
+    } else if !trimmed_title.is_empty() {
+        (trimmed_title.to_string(), content)
+    } else {
+        (existing_slug.clone(), content)
+    };
+
+    let new_slug = unique_note_slug(dir, &effective_title, Some(&existing_slug));
+    Ok((Some(existing_slug), new_slug, final_content))
+}
+
+fn resolve_new_note_target(
+    dir: &Path,
+    title: &str,
+    content: String,
+) -> Result<(Option<String>, String, String), String> {
+    let trimmed_title = title.trim();
+    let heading_title = extract_heading_title(&content);
+    let effective_title = if !trimmed_title.is_empty() {
+        trimmed_title.to_string()
+    } else if let Some(heading) = heading_title.clone() {
+        heading
+    } else {
+        return Err("Note title cannot be empty".to_string());
+    };
+
+    let new_slug = unique_note_slug(dir, &effective_title, None);
+    let final_content = if heading_title.is_some() {
+        content
+    } else if content.trim().is_empty() {
+        format!("# {effective_title}\n")
+    } else {
+        format!("# {effective_title}\n\n{content}")
+    };
+    Ok((None, new_slug, final_content))
+}
+
 pub fn save_note_in_dir(
     roaming_dir: &Path,
     slug: Option<String>,
@@ -173,58 +235,8 @@ pub fn save_note_in_dir(
     let dir = ensure_notes_dir(roaming_dir)?;
 
     let (previous_slug, target_slug, final_content) = match slug {
-        Some(existing_slug) => {
-            validate_safe_slug(&existing_slug, "note")?;
-            let old_path = note_file_path(&dir, &existing_slug)?;
-            let old_title = if old_path.is_file() {
-                let existing_content = fs::read_to_string(&old_path)
-                    .map_err(|e| format!("Failed to read existing note '{existing_slug}': {e}"))?;
-                Some(extract_note_title(&existing_content, &existing_slug))
-            } else {
-                None
-            };
-
-            let trimmed_title = title.trim();
-            let heading_title = extract_heading_title(&content);
-            let title_changed = !trimmed_title.is_empty()
-                && old_title.as_deref() != Some(trimmed_title);
-
-            let (effective_title, final_content) = if title_changed {
-                (
-                    trimmed_title.to_string(),
-                    replace_or_prepend_heading(&content, trimmed_title),
-                )
-            } else if let Some(heading) = heading_title {
-                (heading, content)
-            } else if !trimmed_title.is_empty() {
-                (trimmed_title.to_string(), content)
-            } else {
-                (existing_slug.clone(), content)
-            };
-
-            let new_slug = unique_note_slug(&dir, &effective_title, Some(&existing_slug));
-            (Some(existing_slug), new_slug, final_content)
-        }
-        None => {
-            let trimmed_title = title.trim();
-            let effective_title = if !trimmed_title.is_empty() {
-                trimmed_title.to_string()
-            } else if let Some(heading) = extract_heading_title(&content) {
-                heading
-            } else {
-                return Err("Note title cannot be empty".to_string());
-            };
-
-            let new_slug = unique_note_slug(&dir, &effective_title, None);
-            let final_content = if extract_heading_title(&content).is_some() {
-                content
-            } else if content.trim().is_empty() {
-                format!("# {effective_title}\n")
-            } else {
-                format!("# {effective_title}\n\n{content}")
-            };
-            (None, new_slug, final_content)
-        }
+        Some(existing_slug) => resolve_existing_note_target(&dir, existing_slug, &title, content)?,
+        None => resolve_new_note_target(&dir, &title, content)?,
     };
 
     let path = note_file_path(&dir, &target_slug)?;
