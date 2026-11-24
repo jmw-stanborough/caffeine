@@ -47,6 +47,7 @@ async function fetchSoundBytes(src: string): Promise<ArrayBuffer> {
 
 export class SoundManager {
   private sources: Record<SoundEffectKey, string> = { ...DEFAULT_SOUND_PATHS };
+  private nativeBackendAudio = false;
   private audioContext: AudioContext | null = null;
   private bufferCache: Partial<
     Record<SoundEffectKey, { src: string; buffer: AudioBuffer }>
@@ -55,7 +56,15 @@ export class SoundManager {
     Record<SoundEffectKey, { src: string; audio: HTMLAudioElement }>
   > = {};
 
+  setNativeBackendAudio(enabled: boolean): void {
+    this.nativeBackendAudio = enabled;
+  }
+
   async refreshFromSettings(settings?: SoundSettings): Promise<void> {
+    if (this.nativeBackendAudio) {
+      return;
+    }
+
     const resolvedSettings =
       settings ?? (await invoke<SoundSettings>("get_app_settings_cmd"));
 
@@ -77,6 +86,10 @@ export class SoundManager {
   }
 
   async play(key: SoundEffectKey): Promise<void> {
+    if (this.nativeBackendAudio) {
+      return;
+    }
+
     if (typeof AudioContext !== "undefined") {
       await this.playWithFallback(key, (src) => this.playBuffer(key, src));
       return;

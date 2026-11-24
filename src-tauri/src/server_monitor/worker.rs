@@ -98,6 +98,10 @@ pub fn start_ping_worker(app: AppHandle) {
                         }
                     }
 
+                    if let Some(effect) = crate::sound::server_transition_sound(&existing.status, &status) {
+                        crate::sound::play_sound_effect(&app, effect);
+                    }
+
                     existing.status = status.clone();
                     existing
                 } else {

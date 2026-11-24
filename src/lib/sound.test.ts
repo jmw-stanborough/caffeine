@@ -257,4 +257,50 @@ describe("SoundManager", () => {
     const manager = new SoundManager();
     await expect(manager.play("notification")).resolves.toBeUndefined();
   });
+
+  it("suppresses frontend refresh and playback while nativeBackendAudio is enabled and restores afterward", async () => {
+    const startMock = vi.fn();
+    const decodeMock = vi.fn().mockResolvedValue({ duration: 0.5 } as AudioBuffer);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(8),
+    });
+    const audioCtorMock = vi.fn();
+
+    class MockAudioContext {
+      state = "running";
+      destination = {};
+      resume = vi.fn().mockResolvedValue(undefined);
+      decodeAudioData = decodeMock;
+      createBufferSource = vi.fn(() => ({
+        buffer: null,
+        connect: vi.fn(),
+        start: startMock,
+      }));
+    }
+
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("AudioContext", MockAudioContext);
+    vi.stubGlobal("Audio", audioCtorMock);
+
+    const manager = new SoundManager();
+    manager.setNativeBackendAudio(true);
+
+    await manager.refreshFromSettings();
+    await manager.play("server_up");
+    await manager.play("notification");
+
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(decodeMock).not.toHaveBeenCalled();
+    expect(startMock).not.toHaveBeenCalled();
+    expect(audioCtorMock).not.toHaveBeenCalled();
+
+    manager.setNativeBackendAudio(false);
+    await manager.play("server_down");
+
+    expect(fetchMock).toHaveBeenCalledWith(DEFAULT_SOUND_PATHS.server_down);
+    expect(decodeMock).toHaveBeenCalledTimes(1);
+    expect(startMock).toHaveBeenCalledTimes(1);
+  });
 });

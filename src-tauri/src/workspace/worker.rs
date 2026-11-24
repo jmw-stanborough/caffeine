@@ -90,6 +90,7 @@ pub fn start_reminder_worker(app: AppHandle) {
             }
 
             if any_marked {
+                crate::sound::play_sound_effect(&app, crate::sound::SoundEffect::Notification);
                 if let Err(err) = app.emit(REMINDER_TRIGGERED_EVENT, ()) {
                     eprintln!("Failed to emit '{REMINDER_TRIGGERED_EVENT}': {err}");
                 }

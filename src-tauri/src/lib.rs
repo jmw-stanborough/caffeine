@@ -124,6 +124,7 @@ pub fn run() {
             config::delete_server_token_cmd,
             sound::check_sound_file_cmd,
             sound::load_custom_sound_cmd,
+            sound::is_native_sound_playback_enabled_cmd,
             workspace::todo::workspace_load_todos,
             workspace::todo::workspace_create_todo,
             workspace::todo::workspace_update_todo,

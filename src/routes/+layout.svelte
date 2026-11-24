@@ -27,11 +27,15 @@
     let unlistenSync: UnlistenFn | null = null;
     clientMode.refresh();
 
-    invoke<{ theme?: string } & SoundSettings>("get_app_settings_cmd")
-      .then((settings) => {
+    Promise.all([
+      invoke<{ theme?: string } & SoundSettings>("get_app_settings_cmd"),
+      invoke<boolean>("is_native_sound_playback_enabled_cmd").catch(() => false),
+    ])
+      .then(([settings, nativeAudio]) => {
         if (settings?.theme) {
           applyTheme(settings.theme);
         }
+        soundManager.setNativeBackendAudio(nativeAudio === true);
         return soundManager.refreshFromSettings(settings);
       })
       .catch((err) => {

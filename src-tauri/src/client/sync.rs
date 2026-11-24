@@ -18,6 +18,11 @@ pub fn start_client_sync_worker(app: AppHandle) {
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
+        let mut last_server_statuses: std::collections::HashMap<
+            String,
+            crate::server_monitor::types::HealthStatus,
+        > = std::collections::HashMap::new();
+        let mut active_ws_url = String::new();
 
         loop {
             let settings = match load_app_settings(&app) {
@@ -30,6 +35,8 @@ pub fn start_client_sync_worker(app: AppHandle) {
             };
 
             if is_self_serving(&settings.target_host) {
+                last_server_statuses.clear();
+                active_ws_url.clear();
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 continue;
             }
@@ -55,6 +62,10 @@ pub fn start_client_sync_worker(app: AppHandle) {
 
             let base_url = crate::config::build_http_base_url(&settings.target_host, settings.target_port);
             let ws_url = crate::config::build_ws_url(&settings.target_host, settings.target_port, "api/v1/stream");
+            if ws_url != active_ws_url {
+                last_server_statuses.clear();
+                active_ws_url = ws_url.clone();
+            }
 
             match fetch_initial_snapshot(&http_client, &base_url).await {
                 Ok(snapshot) => {
@@ -92,7 +103,16 @@ pub fn start_client_sync_worker(app: AppHandle) {
                 Err(err) => eprintln!("Failed to open replica DB for pruning: {err}"),
             }
 
-            if let Err(err) = stream_websocket_ticks(&ws_url, &http_client, &base_url, &replica_path, &app).await {
+            if let Err(err) = stream_websocket_ticks(
+                &ws_url,
+                &http_client,
+                &base_url,
+                &replica_path,
+                &app,
+                &mut last_server_statuses,
+            )
+            .await
+            {
                 eprintln!("WebSocket stream disconnected from {ws_url}: {err}");
             }
 
@@ -317,6 +337,10 @@ async fn stream_websocket_ticks(
     base_url: &str,
     replica_path: &Path,
     app: &AppHandle,
+    last_server_statuses: &mut std::collections::HashMap<
+        String,
+        crate::server_monitor::types::HealthStatus,
+    >,
 ) -> Result<(), String> {
     let (ws_stream, _) = connect_async(ws_url)
         .await
@@ -337,6 +361,15 @@ async fn stream_websocket_ticks(
         if let Ok(event) = serde_json::from_str::<ServerBroadcastEvent>(text) {
             match event {
                 ServerBroadcastEvent::ServerTick(payload) => {
+                    if let Some(previous) = last_server_statuses
+                        .insert(payload.server_id.clone(), payload.status.clone())
+                    {
+                        if let Some(effect) =
+                            crate::sound::server_transition_sound(&previous, &payload.status)
+                        {
+                            crate::sound::play_sound_effect(app, effect);
+                        }
+                    }
                     let _ = app.emit(SERVER_STATUS_EVENT_NAME, &payload);
                     sync_incremental_logs(http_client, base_url, replica_path).await;
                 }
