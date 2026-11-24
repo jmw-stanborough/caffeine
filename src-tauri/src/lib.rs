@@ -12,6 +12,7 @@ pub mod process;
 pub mod server;
 pub mod server_monitor;
 pub mod sound;
+pub mod webview_recovery;
 pub mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,6 +36,7 @@ pub fn run() {
                 if let Some(icon) = app.default_window_icon() {
                     window.set_icon(icon.clone())?;
                 }
+                webview_recovery::install(&window);
             }
 
             let db_state = db::init_db(app.handle()).map_err(std::io::Error::other)?;

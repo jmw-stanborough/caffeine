@@ -426,6 +426,8 @@ dependencies = [
  "tokio-tungstenite 0.26.2",
  "url",
  "uuid",
+ "webview2-com",
+ "windows",
  "windows-sys 0.59.0",
  "winping",
  "winreg 0.55.0",

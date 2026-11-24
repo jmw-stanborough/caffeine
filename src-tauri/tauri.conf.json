@@ -19,7 +19,7 @@
         "minWidth": 960,
         "minHeight": 640,
         "dragDropEnabled": false,
-        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling --disable-features=CalculateNativeWinOcclusion,AudioServiceOutOfProcess"
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --disable-background-media-suspend --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
       }
     ],
     "security": {
